@@ -724,7 +724,6 @@ async function requestMinecraftControl(
 /** エンドポイントの結果コードをユーザー向け文へ変換する（ポーリングで確定するものは null） */
 export function minecraftControlImmediateMessage(
   server: MinecraftControlServer,
-  action: MinecraftControlAction,
   outcome: MinecraftControlResult,
 ): string | null {
   const label = MINECRAFT_SERVER_LABELS[server];
@@ -807,7 +806,7 @@ async function executeMinecraftControl(
   // stop / restart はエンドポイント側でセーブと停止完了まで待つため、長めのタイムアウトにする
   const timeoutMs = action === 'stop' || action === 'restart' ? 300_000 : 30_000;
   const outcome = await requestMinecraftControl(server, action, timeoutMs);
-  const immediate = minecraftControlImmediateMessage(server, action, outcome);
+  const immediate = minecraftControlImmediateMessage(server, outcome);
   if (immediate) {
     await interaction.editReply({ content: immediate, allowedMentions: { parse: [] } });
     return;

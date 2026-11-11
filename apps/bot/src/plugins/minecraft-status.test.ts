@@ -137,38 +137,38 @@ describe('Minecraft Status v1', () => {
     expect(minecraftControlPath('main', 'stop')).toBe('/v1/servers/main/stop');
     expect(minecraftControlPath('resource', 'regenerate')).toBe('/v1/servers/resource/regenerate');
     expect(
-      minecraftControlImmediateMessage('resource', 'save', {
+      minecraftControlImmediateMessage('resource', {
         kind: 'responded',
         status: 200,
         result: 'saved',
       }),
     ).toBe('資源サーバーをセーブしました。');
     expect(
-      minecraftControlImmediateMessage('main', 'stop', {
+      minecraftControlImmediateMessage('main', {
         kind: 'responded',
         status: 200,
         result: 'stopped',
       }),
     ).toBe('メインワールドをセーブして停止しました。');
     expect(
-      minecraftControlImmediateMessage('main', 'save', {
+      minecraftControlImmediateMessage('main', {
         kind: 'responded',
         status: 200,
         result: 'not_running',
       }),
     ).toContain('セーブは行われませんでした');
     expect(
-      minecraftControlImmediateMessage('resource', 'start', {
+      minecraftControlImmediateMessage('resource', {
         kind: 'responded',
         status: 409,
         result: 'busy',
       }),
     ).toContain('他の操作が実行中です');
+    expect(minecraftControlImmediateMessage('resource', { kind: 'unconfigured' })).toContain(
+      '未設定です',
+    );
     expect(
-      minecraftControlImmediateMessage('resource', 'start', { kind: 'unconfigured' }),
-    ).toContain('未設定です');
-    expect(
-      minecraftControlImmediateMessage('resource', 'start', {
+      minecraftControlImmediateMessage('resource', {
         kind: 'responded',
         status: 200,
         result: 'started',
