@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   bar,
   buildMinecraftControlSignature,
-  canStartMinecraftResource,
+  canControlMinecraftServer,
+  minecraftControlImmediateMessage,
+  minecraftControlPath,
   buildMinecraftStatusCardModel,
   buildMinecraftStatusEmbed,
   buildMinecraftStatusImageEmbed,
@@ -109,14 +111,14 @@ describe('Minecraft Status v1', () => {
 
   it('起動権限は必須ロールと設定ロールの和集合で判定する', () => {
     const config = normalizeMinecraftStatusConfig({ operatorRoleIds: ['999999999999999999'] });
-    expect(canStartMinecraftResource({ member: { roles: ['1114417432346501130'] } }, config)).toBe(
+    expect(canControlMinecraftServer({ member: { roles: ['1114417432346501130'] } }, config)).toBe(
       true,
     );
-    expect(canStartMinecraftResource({ member: { roles: ['999999999999999999'] } }, config)).toBe(
+    expect(canControlMinecraftServer({ member: { roles: ['999999999999999999'] } }, config)).toBe(
       true,
     );
-    expect(canStartMinecraftResource({ member: { roles: ['12345'] } }, config)).toBe(false);
-    expect(canStartMinecraftResource({ member: null }, config)).toBe(false);
+    expect(canControlMinecraftServer({ member: { roles: ['12345'] } }, config)).toBe(false);
+    expect(canControlMinecraftServer({ member: null }, config)).toBe(false);
   });
 
   it('起動エンドポイント向け署名が固定ベクタと一致する', () => {
@@ -129,6 +131,56 @@ describe('Minecraft Status v1', () => {
         '',
       ),
     ).toBe('04deb3b47ced43ec925d091c195ed41d2fed6d9ba0410a1841566b20364bcb0a');
+  });
+
+  it('操作パスと結果メッセージを組み立てる', () => {
+    expect(minecraftControlPath('main', 'stop')).toBe('/v1/servers/main/stop');
+    expect(minecraftControlPath('resource', 'regenerate')).toBe('/v1/servers/resource/regenerate');
+    expect(
+      minecraftControlImmediateMessage('resource', {
+        kind: 'responded',
+        status: 200,
+        result: 'saved',
+      }),
+    ).toBe('資源サーバーをセーブしました。');
+    expect(
+      minecraftControlImmediateMessage('main', {
+        kind: 'responded',
+        status: 200,
+        result: 'stopped',
+      }),
+    ).toBe('メインワールドをセーブして停止しました。');
+    expect(
+      minecraftControlImmediateMessage('main', {
+        kind: 'responded',
+        status: 200,
+        result: 'not_running',
+      }),
+    ).toContain('セーブは行われませんでした');
+    expect(
+      minecraftControlImmediateMessage('resource', {
+        kind: 'responded',
+        status: 409,
+        result: 'busy',
+      }),
+    ).toContain('他の操作が実行中です');
+    expect(minecraftControlImmediateMessage('resource', { kind: 'unconfigured' })).toContain(
+      '未設定です',
+    );
+    expect(
+      minecraftControlImmediateMessage('resource', {
+        kind: 'responded',
+        status: 200,
+        result: 'started',
+      }),
+    ).toBeNull();
+    expect(
+      minecraftControlImmediateMessage('resource', {
+        kind: 'responded',
+        status: 401,
+        result: '',
+      }),
+    ).toContain('受け付けられませんでした');
   });
 
   it('取得先は稼働中の status.ivrm.jp を既定値にする', () => {
