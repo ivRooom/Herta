@@ -202,12 +202,14 @@ export function buildMinecraftStatusEmbed(
   if (config.showResources && current?.resources) {
     const resources = current.resources;
     const lines: string[] = [];
-    const cpuPercent = parsePercent(resources.docker_cpu);
+    const rawCpuPercent = parsePercent(resources.docker_cpu);
+    const cpuPercent =
+      rawCpuPercent === null ? null : normalizeCpuPercent(rawCpuPercent, cpuCoreCount(current));
     if (resources.docker_cpu) {
       lines.push(
         cpuPercent === null
           ? `CPU ${resources.docker_cpu}`
-          : `CPU ${bar(cpuPercent / 100)} ${resources.docker_cpu}`,
+          : `CPU ${bar(cpuPercent / 100)} ${Math.round(cpuPercent)}%`,
       );
     }
     const dockerMemory = parseMemoryUsage(resources.docker_memory);
@@ -371,7 +373,7 @@ export function buildMinecraftStatusCardModel(
   if (config.showResources && current?.resources) {
     const resources: NonNullable<MinecraftStatusCardModel['resources']> = {};
     const cpu = parsePercent(current.resources.docker_cpu);
-    if (cpu !== null) resources.cpuPercent = cpu;
+    if (cpu !== null) resources.cpuPercent = normalizeCpuPercent(cpu, cpuCoreCount(current));
     const memory = parseMemoryUsage(current.resources.docker_memory);
     if (memory !== null) resources.memoryPercent = memory.percent;
     const hostMemory = parseMemoryUsage(current.resources.host_memory);
@@ -469,6 +471,22 @@ function parsePercent(value: string | undefined): number | null {
   if (!match) return null;
   const parsed = Number.parseFloat(match[1]!);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * docker stats の CPU% は「1コア = 100%」換算で、複数コアのホストでは 100% を超える。
+ * 表示ではホスト全体を 100% として正規化し、上限を 100% にする。
+ */
+export function normalizeCpuPercent(rawPercent: number, cores: number): number {
+  const safeCores = Number.isFinite(cores) && cores >= 1 ? cores : 1;
+  return Math.min(100, Math.max(0, rawPercent / safeCores));
+}
+
+function cpuCoreCount(current: MinecraftCurrentStatus | null): number {
+  const raw = current?.runtime?.cpu_cores;
+  const parsed =
+    typeof raw === 'string' ? Number.parseInt(raw, 10) : typeof raw === 'number' ? raw : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
 }
 
 const MEMORY_UNIT_BYTES: Record<string, number> = {
