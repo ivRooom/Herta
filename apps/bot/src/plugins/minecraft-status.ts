@@ -1311,7 +1311,7 @@ function stopEventWorker(guildId: string): void {
 
 async function runEventCycle(context: MinecraftStatusContext): Promise<void> {
   try {
-    const config = normalizeMinecraftStatusConfig(await context.config.get());
+    const config = normalizeMinecraftStatusConfig(context.config);
     if (!config.announceEvents || !config.eventChannelId) return;
     const response = await fetch(eventsUrl(), {
       headers: { accept: 'application/json' },
