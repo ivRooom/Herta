@@ -491,6 +491,12 @@ describe('日次レポート通知', () => {
     expect(reportAlreadyPosted([{ content: `see ${url}` }], url)).toBe(true);
     expect(reportAlreadyPosted([{ embeds: [{ url }] }], url)).toBe(true);
     expect(reportAlreadyPosted([{ content: 'unrelated' }], url)).toBe(false);
+    // discord.js の Collection は values() で反復する形もカバーする
+    const collection = new Map([
+      ['1', { content: 'hello' }],
+      ['2', { embeds: [{ url }] }],
+    ]);
+    expect(reportAlreadyPosted(collection.values(), url)).toBe(true);
   });
 
   it('通知 Embed にハイライトとリンクが入る', () => {

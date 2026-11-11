@@ -123,9 +123,12 @@ interface MinecraftReportChannel {
   isTextBased(): boolean;
   send(options: { embeds: APIEmbed[]; allowedMentions: { parse: [] } }): Promise<unknown>;
   messages: {
-    fetch(options: {
-      limit: number;
-    }): Promise<Iterable<{ content?: string; embeds?: { url?: string; description?: string }[] }>>;
+    fetch(options: { limit: number }): Promise<{
+      values(): Iterable<{
+        content?: string;
+        embeds?: { url?: string; description?: string }[];
+      }>;
+    }>;
   };
 }
 
@@ -1077,6 +1080,7 @@ export interface MinecraftReportEntry {
 }
 
 const REPORT_WORKER_INTERVAL_MS = 10 * 60 * 1000;
+const announcedReportDates = new Map<string, string>();
 const reportWorkerTimers = new Map<string, NodeJS.Timeout>();
 const reportWorkerRuns = new Map<string, Promise<void>>();
 
@@ -1165,14 +1169,19 @@ async function runReportCycle(context: MinecraftStatusContext): Promise<void> {
       );
       const target = pickReportToAnnounce(entries, todayInTokyo());
       if (!target) return;
+      if (announcedReportDates.get(context.guildId) === target.date) return;
       const channel = await context.client.channels.fetch(config.reportChannelId);
       if (!channel || !channel.isTextBased()) return;
-      const recent = await channel.messages.fetch({ limit: 30 });
-      if (reportAlreadyPosted(recent, target.url)) return;
+      const recent = await channel.messages.fetch({ limit: 50 });
+      if (reportAlreadyPosted(recent.values(), target.url)) {
+        announcedReportDates.set(context.guildId, target.date);
+        return;
+      }
       await channel.send({
         embeds: [buildReportAnnouncement(target)],
         allowedMentions: { parse: [] },
       });
+      announcedReportDates.set(context.guildId, target.date);
     } catch {
       // 通知の失敗は次周期で再試行する（ここでは落とさない）
     }
