@@ -1,9 +1,9 @@
 [
   {
     "id": "CVE-2026-85091",
-    "reason": "zlib 1.3.1.2-1.3.2のheap buffer overflow。NVDのfix.versionsが空でupstream/Alpine 3.21/3.22/edgeいずれにも修正版が存在しない。EPSS 0.44%、confidentiality影響なし。",
+    "reason": "zlib 1.3.1.2-1.3.2のheap buffer overflow。NVDのfix.versionsが空でupstream/Alpine 3.21/3.22/3.23いずれにも修正版が存在しない（2026-11-12 再確認）。EPSS 0.44%、confidentiality影響なし。",
     "issue": "https://github.com/ivRooom/Herta/issues/390",
-    "expires": "2026-12-15",
+    "expires": "2027-01-31",
     "package": {
       "name": "zlib",
       "type": "apk"
@@ -11,9 +11,9 @@
   },
   {
     "id": "CVE-2026-4738",
-    "reason": "zlib 1.3.2-r1のCritical。修正版1.4-r0は存在するが、ベースイメージAlpine 3.21への適用可否が未検証で、ベースイメージ移行は別判断。恒久対処はIssue #840で期限までに判断する。",
+    "reason": "zlib 1.3.2-r1のCritical。2026-11-12 に Alpine 3.22/3.23 を実測したが zlib は 1.3.2-r1 のままで修正版 1.4-r0 は提供されておらず、さらに両系とも OpenSSL 3.5.9 を含むため、ベースイメージ移行では解消せず別の CVE 曝露を招く。現行 3.21（OpenSSL 3.3系）を維持し、Alpine の zlib 更新を次回期限で再確認する。恒久対処は Issue #840 で追跡。",
     "issue": "https://github.com/ivRooom/Herta/issues/840",
-    "expires": "2026-12-15",
+    "expires": "2027-01-31",
     "package": {
       "name": "zlib",
       "type": "apk"
