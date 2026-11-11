@@ -45,7 +45,9 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
   return {
     fetchConfig: vi.fn().mockResolvedValue(config),
     fetchMedia: vi.fn().mockResolvedValue(Buffer.from('webp')),
-    render: vi.fn().mockResolvedValue(Buffer.from('rendered png')),
+    render: vi
+      .fn()
+      .mockResolvedValue({ data: Buffer.from('rendered png'), fileName: 'herta-daily-result.png' }),
     ...overrides,
   };
 }
@@ -123,6 +125,27 @@ describe('replyDailyParticipationAnswer', () => {
     // Same finalized answer + same revision -> same artwork on re-display.
     expect(descriptions[0]).toBe(expected!.alt);
     expect(descriptions[1]).toBe(descriptions[0]);
+  });
+
+  it('names the attachment .webp when the render is animated, keeping alt as description', async () => {
+    vi.stubEnv('DAILY_RESULT_CARD_ENABLED', 'true');
+    const { interaction, editReply } = makeInteraction();
+    const deps = makeDeps({
+      render: vi.fn().mockResolvedValue({
+        data: Buffer.from('rendered animated webp'),
+        fileName: 'herta-daily-result.webp',
+      }),
+    });
+    await replyDailyParticipationAnswer(interaction, baseInput(), deps as never);
+    const payload = editReply.mock.calls[0]![0];
+    expect(payload.content).toBe(CONTENT);
+    expect(payload.files).toHaveLength(1);
+    const attachment = payload.files[0];
+    expect(attachment.name).toBe('herta-daily-result.webp');
+    expect(attachment.name).not.toContain('correct');
+    expect(attachment.name).not.toContain('incorrect');
+    const expected = selectDailyQuizResultAsset(config.pool, 'correct', RECEIPT);
+    expect(attachment.description).toBe(expected!.alt);
   });
 
   it('uses the incorrect pool for an incorrect result', async () => {
