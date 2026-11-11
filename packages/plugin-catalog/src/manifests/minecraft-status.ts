@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const minecraftStatusManifest: PluginManifest = {
   id: 'minecraft-status',
   name: 'Minecraft Status',
-  version: '1.4.0',
+  version: '1.5.0',
   description: 'Minecraftサーバーの稼働状態・プレイヤー・リソースを確認できます',
   author: { name: 'Herta' },
   category: 'utility',
@@ -99,6 +99,24 @@ export const minecraftStatusManifest: PluginManifest = {
           help: '日次レポートのリンクを投稿するテキストチャンネルのIDを指定します。',
         },
       },
+      announceEvents: {
+        type: 'boolean',
+        title: 'サーバーの起動/停止をDiscordに通知する',
+        default: false,
+        'x-herta-ui': {
+          section: '通知設定',
+          help: 'ONにすると、Minecraft サーバーの起動・停止・異常終了を指定チャンネルへ投稿します（接続による自動起動・自動停止も対象）。',
+        },
+      },
+      eventChannelId: {
+        type: 'string',
+        title: '起動/停止の通知先チャンネルID',
+        default: '',
+        'x-herta-ui': {
+          section: '通知設定',
+          help: '起動/停止イベントを投稿するテキストチャンネルのIDを指定します。レポート通知先と分けることも、同じチャンネルにすることもできます。',
+        },
+      },
       operatorRoleIds: {
         type: 'array',
         title: 'サーバー操作を追加で許可するロールID',
@@ -117,6 +135,8 @@ export const minecraftStatusManifest: PluginManifest = {
       'showPerformanceGraph',
       'announceReports',
       'reportChannelId',
+      'announceEvents',
+      'eventChannelId',
       'showServers',
       'showBackup',
       'staleAfterMinutes',

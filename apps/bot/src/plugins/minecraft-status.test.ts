@@ -16,6 +16,9 @@ import {
   buildReportAnnouncement,
   pickReportToAnnounce,
   reportAlreadyPosted,
+  parseServerEvents,
+  pickNewServerEvents,
+  describeServerEvent,
   todayInTokyo,
   type MinecraftCurrentStatus,
   type MinecraftRuntimeStatus,
@@ -470,6 +473,62 @@ describe('Minecraft Status v1', () => {
     );
     expect(embed?.title).toContain('🔴 オフライン');
     expect(embed?.color).toBe(0xed4245);
+  });
+});
+
+describe('サーバーイベント通知', () => {
+  it('parses and sorts events, dropping invalid entries', () => {
+    const events = parseServerEvents({
+      events: [
+        { seq: 3, at: '2026-11-11T19:00:37+09:00', server: 'resource', action: 'die', exitCode: 0 },
+        { seq: 1, at: '2026-11-11T18:58:53+09:00', server: 'resource', action: 'start' },
+        { seq: 2, server: 'other', action: 'start' },
+        { seq: 0, server: 'main', action: 'start' },
+        { seq: 4, server: 'main', action: 'explode' },
+      ],
+    });
+    expect(events.map((event) => event.seq)).toEqual([1, 3]);
+    expect(parseServerEvents(null)).toEqual([]);
+    expect(parseServerEvents({})).toEqual([]);
+  });
+
+  it('picks only events newer than the cursor', () => {
+    const events = parseServerEvents({
+      events: [
+        { seq: 1, server: 'main', action: 'start' },
+        { seq: 2, server: 'main', action: 'die', exitCode: 0 },
+        { seq: 3, server: 'resource', action: 'start' },
+      ],
+    });
+    expect(pickNewServerEvents(events, 1).map((event) => event.seq)).toEqual([2, 3]);
+    expect(pickNewServerEvents(events, 3)).toEqual([]);
+  });
+
+  it('describes start, clean stop, crash and oom distinctly', () => {
+    expect(
+      describeServerEvent({ seq: 1, at: '', server: 'main', action: 'start' }).title,
+    ).toContain('生活サーバーが起動しました');
+    const clean = describeServerEvent({
+      seq: 2,
+      at: '',
+      server: 'resource',
+      action: 'die',
+      exitCode: 0,
+    });
+    expect(clean.title).toContain('資源サーバーが停止しました');
+    const crash = describeServerEvent({
+      seq: 3,
+      at: '',
+      server: 'main',
+      action: 'die',
+      exitCode: 137,
+    });
+    expect(crash.title).toContain('異常終了');
+    expect(crash.description).toContain('137');
+    expect(crash.color).not.toBe(clean.color);
+    expect(describeServerEvent({ seq: 4, at: '', server: 'main', action: 'oom' }).title).toContain(
+      'メモリ不足',
+    );
   });
 });
 
