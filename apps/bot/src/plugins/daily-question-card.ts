@@ -1,11 +1,21 @@
 import sharp from 'sharp';
 
+export interface DailyQuestionCardResult {
+  state: 'pending' | 'graded' | 'void';
+  isCorrect: boolean | null;
+  selectedOptionIndex: number | null;
+  selectedText: string | null;
+  rewardPoints: number;
+}
+
 export interface DailyQuestionCardInput {
   slot: 'daily' | 'bonus';
   prompt: string;
   options: { label: string }[];
   format: 'choice2' | 'choice3' | 'choice4' | 'image_choice' | 'audio_choice' | 'free_text';
   maxTextLength: number;
+  /** When present, the card renders the member's own answered state (#851 follow-up). */
+  result?: DailyQuestionCardResult;
 }
 
 const WIDTH = 1000;
@@ -70,11 +80,26 @@ const escapeXml = (value: string) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!,
   );
 
+function answeredStatusLine(result: DailyQuestionCardResult): { text: string; color: string } {
+  if (result.state === 'pending') return { text: '回答済み（結果待ち）', color: '#abb7c9' };
+  if (result.state === 'void') return { text: 'この問題は無効化されました', color: '#abb7c9' };
+  if (result.isCorrect === true) return { text: '✅ 正解', color: '#8ce99a' };
+  if (result.isCorrect === false) return { text: '❌ 不正解', color: '#ff9d9d' };
+  return { text: '回答済み', color: '#e9e7f5' };
+}
+
+function answeredFooterLine(result: DailyQuestionCardResult): string {
+  if (result.state === 'pending') return '結果が確定したらお知らせします。';
+  if (result.state === 'void') return 'ポイントは付与されません。';
+  return `獲得 ${result.rewardPoints}pt`;
+}
+
 /**
  * Question card with an explicit boundary between the prompt section and the
  * numbered options section, in the daily-bonus-card palette (#851).
  */
 export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string {
+  const result = input.result;
   const parts: string[] = [];
   const text = (value: string, x: number, y: number, size = 26, color = '#e9e7f5') =>
     `<text x="${x}" y="${y}" font-size="${size}" fill="${color}">${escapeXml(value)}</text>`;
@@ -85,6 +110,11 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
   parts.push(text('HERTA  /  DAILY QUESTION', MARGIN, cursor, 24, '#b9a2ff'));
   cursor += 52;
   parts.push(text(input.slot === 'bonus' ? 'ボーナス問題' : '今日の問題', MARGIN, cursor, 36));
+  if (result) {
+    const status = answeredStatusLine(result);
+    cursor += 42;
+    parts.push(text(status.text, MARGIN, cursor, 26, status.color));
+  }
   cursor += 34;
   parts.push(divider(cursor));
 
@@ -100,27 +130,43 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
 
   cursor += 48;
   if (input.format === 'free_text' || !input.options.length) {
-    parts.push(text('✍ 回答方法', MARGIN, cursor, 26, '#b9a2ff'));
-    cursor += 48;
-    for (const line of wrapCardText(
-      `下のボタンから自由記述で回答してください（最大${input.maxTextLength}文字）`,
-      26,
-      CONTENT_WIDTH,
-      3,
-    )) {
-      parts.push(text(line, MARGIN, cursor, 26));
-      cursor += 38;
+    if (result) {
+      parts.push(text('✍ あなたの回答', MARGIN, cursor, 26, '#b9a2ff'));
+      cursor += 48;
+      for (const line of wrapCardText(
+        result.selectedText ?? '（回答なし）',
+        26,
+        CONTENT_WIDTH,
+        6,
+      )) {
+        parts.push(text(line, MARGIN, cursor, 26));
+        cursor += 38;
+      }
+    } else {
+      parts.push(text('✍ 回答方法', MARGIN, cursor, 26, '#b9a2ff'));
+      cursor += 48;
+      for (const line of wrapCardText(
+        `下のボタンから自由記述で回答してください（最大${input.maxTextLength}文字）`,
+        26,
+        CONTENT_WIDTH,
+        3,
+      )) {
+        parts.push(text(line, MARGIN, cursor, 26));
+        cursor += 38;
+      }
     }
   } else {
     parts.push(text('🔢 選択肢', MARGIN, cursor, 26, '#b9a2ff'));
     cursor += 50;
     input.options.forEach((option, index) => {
-      const lines = wrapCardText(option.label, 28, CONTENT_WIDTH - 44, 3);
+      const selected = result?.selectedOptionIndex === index;
+      const lines = wrapCardText(option.label, 28, CONTENT_WIDTH - 44 - (selected ? 40 : 0), 3);
+      const optionColor = result ? (selected ? '#ffd479' : '#abb7c9') : undefined;
       lines.forEach((line, lineIndex) => {
         parts.push(
           lineIndex === 0
-            ? text(`${index + 1}.  ${line}`, MARGIN, cursor, 28)
-            : text(line, MARGIN + 44, cursor, 28),
+            ? text(`${selected ? '▶ ' : ''}${index + 1}.  ${line}`, MARGIN, cursor, 28, optionColor)
+            : text(line, MARGIN + 44, cursor, 28, optionColor),
         );
         cursor += 40;
       });
@@ -132,7 +178,13 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
   parts.push(divider(cursor));
   cursor += 44;
   parts.push(
-    text('回答は下のボタンから。番号は選択肢と対応しています。', MARGIN, cursor, 22, '#abb7c9'),
+    text(
+      result ? answeredFooterLine(result) : '回答は下のボタンから。番号は選択肢と対応しています。',
+      MARGIN,
+      cursor,
+      22,
+      '#abb7c9',
+    ),
   );
   const height = cursor + 44;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}">

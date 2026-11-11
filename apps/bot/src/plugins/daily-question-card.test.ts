@@ -93,6 +93,148 @@ describe('daily question card (#851)', () => {
     expect((await renderDailyQuestionCard(choice4)).length).toBeGreaterThan(0);
   });
 
+  it('leaves the unanswered card free of answered-state markers', () => {
+    const svg = buildDailyQuestionCardSvg(choice4);
+    expect(svg).not.toContain('▶');
+    expect(svg).not.toContain('正解');
+    expect(svg).not.toContain('獲得');
+    expect(svg).not.toContain('#ffd479');
+  });
+
+  it('marks only the selected option and shows the verdict on a correct answered card', () => {
+    const svg = buildDailyQuestionCardSvg({
+      ...choice4,
+      result: {
+        state: 'graded',
+        isCorrect: true,
+        selectedOptionIndex: 3,
+        selectedText: null,
+        rewardPoints: 10,
+      },
+    });
+    expect(svg).toContain('✅ 正解');
+    expect(svg).toContain('▶ 4.  大島優子');
+    expect(svg).not.toContain('▶ 1.');
+    expect(svg).not.toContain('▶ 2.');
+    expect(svg).not.toContain('▶ 3.');
+    expect(svg).toContain('fill="#ffd479"');
+    expect(svg).toContain('fill="#abb7c9"');
+    expect(svg).toContain('獲得 10pt');
+    expect(svg).not.toContain('番号は選択肢と対応しています');
+  });
+
+  it('shows the incorrect verdict and the pending and void footers', () => {
+    const incorrect = buildDailyQuestionCardSvg({
+      ...choice4,
+      result: {
+        state: 'graded',
+        isCorrect: false,
+        selectedOptionIndex: 0,
+        selectedText: null,
+        rewardPoints: 0,
+      },
+    });
+    expect(incorrect).toContain('❌ 不正解');
+    expect(incorrect).toContain('▶ 1.  前田敦子');
+    expect(incorrect).toContain('獲得 0pt');
+
+    const pending = buildDailyQuestionCardSvg({
+      ...choice4,
+      result: {
+        state: 'pending',
+        isCorrect: null,
+        selectedOptionIndex: 1,
+        selectedText: null,
+        rewardPoints: 0,
+      },
+    });
+    expect(pending).toContain('回答済み（結果待ち）');
+    expect(pending).toContain('▶ 2.  渡辺麻友');
+    expect(pending).toContain('結果が確定したらお知らせします。');
+
+    const voided = buildDailyQuestionCardSvg({
+      ...choice4,
+      result: {
+        state: 'void',
+        isCorrect: null,
+        selectedOptionIndex: null,
+        selectedText: null,
+        rewardPoints: 0,
+      },
+    });
+    expect(voided).toContain('この問題は無効化されました');
+    expect(voided).toContain('ポイントは付与されません。');
+    expect(voided).not.toContain('▶');
+  });
+
+  it('shows a plain answered status when a graded result has no verdict', () => {
+    const svg = buildDailyQuestionCardSvg({
+      ...choice4,
+      result: {
+        state: 'graded',
+        isCorrect: null,
+        selectedOptionIndex: 2,
+        selectedText: null,
+        rewardPoints: 5,
+      },
+    });
+    expect(svg).toContain('>回答済み<');
+    expect(svg).toContain('獲得 5pt');
+  });
+
+  it('shows the submitted text instead of how-to-answer on a free-text answered card', () => {
+    const svg = buildDailyQuestionCardSvg({
+      slot: 'daily',
+      prompt: '今日の感想を教えてください',
+      options: [],
+      format: 'free_text',
+      maxTextLength: 300,
+      result: {
+        state: 'graded',
+        isCorrect: null,
+        selectedOptionIndex: null,
+        selectedText: 'とても楽しかった',
+        rewardPoints: 5,
+      },
+    });
+    expect(svg).toContain('✍ あなたの回答');
+    expect(svg).toContain('とても楽しかった');
+    expect(svg).not.toContain('✍ 回答方法');
+    expect(svg).toContain('獲得 5pt');
+
+    const missing = buildDailyQuestionCardSvg({
+      slot: 'daily',
+      prompt: '今日の感想を教えてください',
+      options: [],
+      format: 'free_text',
+      maxTextLength: 300,
+      result: {
+        state: 'pending',
+        isCorrect: null,
+        selectedOptionIndex: null,
+        selectedText: null,
+        rewardPoints: 0,
+      },
+    });
+    expect(missing).toContain('（回答なし）');
+  });
+
+  it('renders an answered card to a bounded PNG', async () => {
+    const card = await renderDailyQuestionCard({
+      ...choice4,
+      result: {
+        state: 'graded',
+        isCorrect: true,
+        selectedOptionIndex: 3,
+        selectedText: null,
+        rewardPoints: 10,
+      },
+    });
+    const meta = await sharp(card).metadata();
+    expect(meta).toMatchObject({ width: 1000, format: 'png' });
+    expect(card.byteLength).toBeLessThan(1024 * 1024);
+  });
+
   it('escapes markup in prompt and option labels', () => {
     const svg = buildDailyQuestionCardSvg({
       ...choice4,

@@ -149,13 +149,47 @@ export async function showParticipationQuestions(
     const response = state.responses.find((r) => r.questionId === question.id);
     if (response) {
       shown = true;
+      const content =
+        response.state === 'pending'
+          ? '回答済みです。結果確定をお待ちください。'
+          : `回答済み / 獲得 ${response.rewardPoints}pt`;
+      if (process.env.DAILY_QUESTION_CARD_ENABLED === 'true') {
+        try {
+          const selectedIndex = question.options.findIndex((o) => o.id === response.optionId);
+          const card = await renderDailyQuestionCard({
+            slot: question.slot,
+            prompt: question.prompt,
+            options: question.options,
+            format: question.format,
+            maxTextLength: question.maxTextLength,
+            result: {
+              state: response.state,
+              isCorrect: response.isCorrect,
+              selectedOptionIndex: selectedIndex >= 0 ? selectedIndex : null,
+              selectedText: response.text,
+              rewardPoints: response.rewardPoints,
+            },
+          });
+          await interaction.followUp({
+            flags: MessageFlags.Ephemeral,
+            allowedMentions: { parse: [] },
+            content,
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0xb9a2ff)
+                .setImage('attachment://daily-question-answered.png'),
+            ],
+            files: [new AttachmentBuilder(card, { name: 'daily-question-answered.png' })],
+          });
+          continue;
+        } catch {
+          // Card rendering is presentation only; fall back to the Embed below.
+        }
+      }
       await interaction.followUp({
         flags: MessageFlags.Ephemeral,
         allowedMentions: { parse: [] },
-        content:
-          response.state === 'pending'
-            ? '回答済みです。結果確定をお待ちください。'
-            : `回答済み / 獲得 ${response.rewardPoints}pt`,
+        content,
         embeds: [new EmbedBuilder().setColor(0xb9a2ff).setDescription(question.prompt)],
       });
       continue;

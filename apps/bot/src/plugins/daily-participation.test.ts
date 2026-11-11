@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   claim: vi.fn(),
   answer: vi.fn(),
   reply: vi.fn(),
+  renderCard: vi.fn(),
 }));
 vi.mock('@herta/db', () => ({
   getDailyQuizSession: mocks.getSession,
@@ -22,6 +23,7 @@ vi.mock('./daily-participation-client.js', () => ({
   participationAnswer: mocks.answer,
 }));
 vi.mock('./daily-bonus-reply.js', () => ({ replyDailyBonusResult: mocks.reply }));
+vi.mock('./daily-question-card.js', () => ({ renderDailyQuestionCard: mocks.renderCard }));
 import { handleDailyParticipation, isParticipationInteraction } from './daily-participation.js';
 const f = JSON.parse(
   readFileSync(
@@ -82,6 +84,7 @@ beforeEach(() => {
   mocks.status.mockResolvedValue(f.status);
   mocks.claim.mockResolvedValue(f.claimResponse);
   mocks.answer.mockResolvedValue(f.answerResponse);
+  mocks.renderCard.mockResolvedValue(Buffer.from('answered-card-png'));
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -184,6 +187,76 @@ it('still offers an independent question alongside claim-required questions', as
   expect(i.followUp).not.toHaveBeenCalledWith(
     expect.objectContaining({ content: expect.stringContaining('受取が必要です') }),
   );
+});
+const answeredStatus = {
+  ...f.status,
+  responses: [
+    {
+      questionId: f.publicQuestion.id,
+      optionId: 'b',
+      text: null,
+      state: 'graded',
+      isCorrect: false,
+      rewardPoints: 10,
+      submittedAt: '2026-10-31T00:30:00.000Z',
+      origin: 'discord',
+    },
+  ],
+};
+it('renders the answered view as an image card when the card flag is on', async () => {
+  vi.stubEnv('DAILY_QUESTION_CARD_ENABLED', 'true');
+  mocks.status.mockResolvedValue(answeredStatus);
+  const i = interaction('daily-participation:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.renderCard).toHaveBeenCalledWith(
+    expect.objectContaining({
+      result: expect.objectContaining({
+        state: 'graded',
+        isCorrect: false,
+        selectedOptionIndex: 1,
+        selectedText: null,
+        rewardPoints: 10,
+      }),
+    }),
+  );
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as {
+    content: string;
+    files?: { name: string }[];
+    embeds?: { toJSON: () => { image?: { url: string }; description?: string } }[];
+  };
+  expect(sent.content).toBe('回答済み / 獲得 10pt');
+  expect(sent.files).toHaveLength(1);
+  expect(sent.files![0]!.name).toBe('daily-question-answered.png');
+  expect(sent.embeds![0]!.toJSON().image?.url).toBe('attachment://daily-question-answered.png');
+});
+it('falls back to the prompt embed when the answered card fails to render', async () => {
+  vi.stubEnv('DAILY_QUESTION_CARD_ENABLED', 'true');
+  mocks.status.mockResolvedValue(answeredStatus);
+  mocks.renderCard.mockRejectedValueOnce(new Error('synthetic render failure'));
+  const i = interaction('daily-participation:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as {
+    content: string;
+    files?: unknown;
+    embeds?: { toJSON: () => { description?: string } }[];
+  };
+  expect(sent.content).toBe('回答済み / 獲得 10pt');
+  expect(sent.files).toBeUndefined();
+  expect(sent.embeds![0]!.toJSON().description).toBe(f.publicQuestion.prompt);
+});
+it('keeps the embed-only answered view when the card flag is off', async () => {
+  mocks.status.mockResolvedValue(answeredStatus);
+  const i = interaction('daily-participation:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.renderCard).not.toHaveBeenCalled();
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as {
+    content: string;
+    files?: unknown;
+    embeds?: { toJSON: () => { description?: string } }[];
+  };
+  expect(sent.content).toBe('回答済み / 獲得 10pt');
+  expect(sent.files).toBeUndefined();
+  expect(sent.embeds![0]!.toJSON().description).toBe(f.publicQuestion.prompt);
 });
 it('keeps a maximum Unicode prompt in an embed within Discord content limits', async () => {
   const prompt = '🎮'.repeat(1000);
