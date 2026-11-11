@@ -735,6 +735,9 @@ export function minecraftControlImmediateMessage(
   if (outcome.status === 409) {
     return '他の操作が実行中です。終わってからお試しください。';
   }
+  if (outcome.status < 200 || outcome.status >= 300) {
+    return `${label}の操作リクエストが受け付けられませんでした。/mc status で状態を確認してください。`;
+  }
   switch (outcome.result) {
     case 'already_running':
       return `${label}は既に起動しています。`;
@@ -806,6 +809,10 @@ async function executeMinecraftControl(
   // stop / restart はエンドポイント側でセーブと停止完了まで待つため、長めのタイムアウトにする
   const timeoutMs = action === 'stop' || action === 'restart' ? 300_000 : 30_000;
   const outcome = await requestMinecraftControl(server, action, timeoutMs);
+  if (outcome.kind !== 'responded' || outcome.status >= 400) {
+    // 受け付けられなかった操作ではクールダウンを解除し、すぐ再試行できるようにする
+    lastControlRequest.delete(cooldownKey);
+  }
   const immediate = minecraftControlImmediateMessage(server, outcome);
   if (immediate) {
     await interaction.editReply({ content: immediate, allowedMentions: { parse: [] } });

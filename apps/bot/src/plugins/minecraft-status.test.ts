@@ -174,6 +174,13 @@ describe('Minecraft Status v1', () => {
         result: 'started',
       }),
     ).toBeNull();
+    expect(
+      minecraftControlImmediateMessage('resource', {
+        kind: 'responded',
+        status: 401,
+        result: '',
+      }),
+    ).toContain('受け付けられませんでした');
   });
 
   it('取得先は稼働中の status.ivrm.jp を既定値にする', () => {
