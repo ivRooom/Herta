@@ -41,6 +41,7 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
         assert local['services'][name]['environment'].pop('DAILY_BONUS_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('DAILY_BONUS_RESULT_CARD_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('DAILY_PARTICIPATION_ENABLED') == 'false'
+    assert local['services']['bot']['environment'].pop('DAILY_QUESTION_CARD_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('HERTA_POINTS_SECRET') == values.get('HERTA_POINTS_SECRET', '')
     # Minecraft control settings are not a database topology change.
     assert local['services']['bot']['environment'].pop('MINECRAFT_CONTROL_URL') == values.get('MINECRAFT_CONTROL_URL', '')
