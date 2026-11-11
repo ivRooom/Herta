@@ -178,7 +178,6 @@ services:
       MINECRAFT_CONTROL_SECRET: ${MINECRAFT_CONTROL_SECRET:-}
       HERTA_POINTS_SECRET: ${HERTA_POINTS_SECRET:-}
       HENRIKDEV_API_KEY: ${HENRIKDEV_API_KEY:-}
-      
       STUDIO_PUBLIC_BASE_URL: ${STUDIO_PUBLIC_BASE_URL:-}
       # VC要約のAWS Transcribe Streaming。認証情報はRuntime Secret Store優先、未設定時のみenvを使う。
       # regionが無いと認証情報があっても文字起こしがスキップされるため、既定でTokyoを渡す。
