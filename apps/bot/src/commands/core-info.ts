@@ -250,9 +250,7 @@ export const versionCommand: SlashCommand = {
     const build = getBuildInfo();
     const uptimeSeconds = Math.floor(process.uptime());
     const environment =
-      process.env['NODE_ENV'] === 'production'
-        ? '本番'
-        : process.env['NODE_ENV'] || '不明';
+      process.env['NODE_ENV'] === 'production' ? '本番' : process.env['NODE_ENV'] || '不明';
 
     const embed = new EmbedBuilder()
       .setTitle('Herta Bot バージョン')
@@ -266,9 +264,7 @@ export const versionCommand: SlashCommand = {
         { name: '環境', value: environment, inline: true },
         {
           name: 'コミット',
-          value: build.commitSha
-            ? `\`${build.commitSha}\``
-            : 'このビルドには記録されていません',
+          value: build.commitSha ? `\`${build.commitSha}\`` : 'このビルドには記録されていません',
           inline: false,
         },
         {
