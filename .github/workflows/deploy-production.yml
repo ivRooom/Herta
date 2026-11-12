@@ -215,7 +215,7 @@ jobs:
           load: true
           push: false
           build-args: |
-          HERTA_BUILD_SHA=${{ needs.quality-gate.outputs.deploy_sha }}
+            HERTA_BUILD_SHA=${{ needs.quality-gate.outputs.deploy_sha }}
           tags: |
             ${{ steps.image.outputs.image_ref }}
             ${{ env.IMAGE_REPOSITORY }}:latest
