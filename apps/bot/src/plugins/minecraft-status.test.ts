@@ -177,6 +177,29 @@ describe('Minecraft Status v1', () => {
         result: 'busy',
       }),
     ).toContain('他の操作が実行中です');
+    expect(
+      minecraftControlImmediateMessage('main', {
+        kind: 'responded',
+        status: 409,
+        result: 'players_online',
+        onlineCount: 3,
+      }),
+    ).toContain('現在3人');
+    expect(
+      minecraftControlImmediateMessage('main', {
+        kind: 'responded',
+        status: 409,
+        result: 'players_online',
+        onlineCount: 3,
+      }),
+    ).toContain('force オプション');
+    expect(
+      minecraftControlImmediateMessage('resource', {
+        kind: 'responded',
+        status: 409,
+        result: 'players_unknown',
+      }),
+    ).toContain('確認できなかったため');
     expect(minecraftControlImmediateMessage('resource', { kind: 'unconfigured' })).toContain(
       '未設定です',
     );
