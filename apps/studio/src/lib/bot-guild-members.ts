@@ -9,7 +9,7 @@ const guildMemberOptionSchema = z.object({
   avatarUrl: z.url().nullable(),
   bot: z.boolean(),
   roleIds: z
-    .array(z.string().regex(/^\d{17,20}$/u))
+    .array(z.string().regex(/^\d{1,20}$/u))
     .max(250)
     .default([]),
 });
