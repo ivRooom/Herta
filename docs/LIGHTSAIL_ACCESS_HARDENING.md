@@ -2,13 +2,13 @@
 
 対応Issue: [#381](https://github.com/ivRooom/Herta/issues/381)（関連: [#354](https://github.com/ivRooom/Herta/issues/354), [#373](https://github.com/ivRooom/Herta/issues/373)）
 
-## 背景・現状 (read-only確認結果、Issue #354 production preflightより)
+## 現在の観測（2026-10-30 JST）と初期調査の区別
 
 - Lightsail instance `ivrm-herta` は `ap-northeast-1` でrunning。
 - SSH 22/tcp が IPv4 / IPv6 とも全公開 (`0.0.0.0/0`, `::/0`)。
-- Systems Manager managed instanceとして未登録（LightsailはEC2と異なりIAM instance profileを直接attachできないため、標準のSSM自動登録の対象外）。
-- Lightsail instance snapshot / automatic snapshotは0件。
-- PostgreSQL application backupはS3へ正常継続中（`.dump` + `.sha256`、S3 Versioning、SSE-S3、180日保持+30日後Glacier、freshness checker daily稼働）。
+- **SSM Hybrid Managed Instanceは登録済み**（2026-09-23）。2026-10-29/30のAWS読取では`Online`かつ`GetConnectionStatus=connected`、Lightsailのprivate IPと一致。ただし`StartSession`実接続とGitHub Actionsの非SSH deployは未受入。
+- **Lightsail AutoSnapshotはEnabled**。直近7日分はすべてStatus=`Success`（最終2026-10-29 JST）。`GetInstanceSnapshots`での手動Snapshotは0件。Snapshotからの復旧成功は未確認。
+- PostgreSQL S3 Backupの仕組みは継続。AWS S3のオブジェクト鮮度（2026-10-29 JST更新）とVersioningを確認したが、**最新dumpの内容・checksum・復元成功を今回再検証したわけではない**。
 - デプロイは`.github/workflows/deploy-production.yml`から`appleboy/ssh-action`経由の直接SSHに依存している（`secrets.LIGHTSAIL_HOST` / `LIGHTSAIL_USER` / `LIGHTSAIL_SSH_KEY`）。
 
 **本ドキュメントは設計とRunbookのみを定義します。ここに書かれたfirewall変更・SSM登録・snapshot設定・IAM変更はいずれも本番mutationであり、実施前に都度この会話の外で明示的な人間の確認を取ってから、別途1ステップずつ実行します。**
@@ -16,6 +16,16 @@
 ## Goal
 
 Production hostの管理経路を、公開SSH依存から段階的に離脱させつつ、host-level disaster recoveryの手段を整備する。
+
+## 2026-10-30 SSMの非破壊受入状況・IAM Blocker
+
+- AWS `SSM DescribeInstanceInformation`：Herta Hybrid Managed Instance `Online`。Private IPがLightsailホストと一致。`GetConnectionStatus`は`connected`。
+- `DescribeSessions(State=Active)`：確認時のActive Sessionは0。**Session Managerの対話操作は実施していない**。`SSM-SessionManagerRunShell`のAccount-scoped Documentは`GetDocument`で`InvalidDocument`だった。これはAccount側のカスタムSession Preferences/Logging受入の証明ではなく、監査ログ/KMS/S3/CloudWatchの設定は要再確認。
+- IAM `GetRole` / `ListAttachedRolePolicies`：Herta Hybrid Managed InstanceのRoleには`AmazonSSMManagedInstanceCore`が付与済み。GitHub OIDC Deploy RoleにはインラインPolicy 11件があり、`ssm:SendCommand`・`ssm:GetCommandInvocation`は一部許可されている。
+- **Blocker：現GitHub Deploy Roleの`ssm:SendCommand`対象はEC2 `instance`型＋SSM Documentであり、HertaのSSM Hybrid `managed-instance`型に一致しない。** IAM `SimulatePrincipalPolicy`のHerta Hybrid宛`ssm:SendCommand`も`implicitDeny`（シミュレーションContextの評価条件を含むため、本番実行権限の最終証拠とは別）。**現状ではSSM経由Deployが可能だと断定しない**。
+- GitHub `deploy-production.yml`は引き続き`appleboy/ssh-action`利用。SSH全公開の縮小はまだBlocked。`SendCommand`にGitHub Secretsの**値**を直渡しするとCloudTrail/実行ログへ残る可能性があるため禁止。実装ではParameter StoreからHost-side取得する方式やKMS/実行権限の設計を別途レビューし、単にIAMのResourceを`*`へ広げない。
+- **次の承認ゲート**：必要な`managed-instance`とSSM Documentへの最小権限IAM修正を独立したPR/変更管理で審査 → 非機密・非変更のSSM Readiness/Command試験（本番ホスト実行は別承認） → HostからのSecret安全取得/権限分離 → SSHとSSM二経路のDeploy/rollback実証 → Session LoggingとBreak-glass証拠確認 → IPv4/IPv6 SSH Firewallの別承認。
+- この文書更新ではIAM/Cloudflare/Firewall/SSM SendCommand/StartSession/DB/Secretへの変更やサーバー実行を行っていない。詳細は[Notion監査台帳](https://app.notion.com/p/4087322f39fa81868648dba3dbf99d1d)。
 
 ## 方針決定
 
@@ -68,7 +78,7 @@ LightsailインスタンスはEC2と異なりIAM instance profileを直接attach
 
 ### 4. Snapshot / automatic snapshot方針
 
-- Lightsailの**automatic snapshot**機能（日次、最大7日ローリング保持）を`ivrm-herta`に対して有効化する。実行時刻はデプロイ・DB backupジョブと重複しない時間帯（例: 18:00 UTC = JST 03:00台、既存のPostgreSQL backup/freshness checkerのスケジュールと突き合わせて最終決定する）を選ぶ。
+- **[適用済・Provider確認済]** `ivrm-herta`のAutomatic Snapshotは有効で、直近7件がSuccess。2026-10-29 JSTの実行記録あり。今後も失敗通知・Retention・復旧演習を別に検収する。
 - リスクのある変更（今回のfirewall/SSM/OSレベル変更そのものを含む）の直前には、都度**manual instance snapshot**を作成する（Runbook参照）。manual snapshotは自動削除されないため、変更の安定運用を確認できた時点（目安1〜2週間）で削除し、snapshot storageコストを抑える。
 
 ### 5. 既存PostgreSQL S3 backupとの責務分離
