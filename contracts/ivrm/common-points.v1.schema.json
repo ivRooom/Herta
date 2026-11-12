@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ivrm.jp/contracts/points/v1/herta.schema.json",
+  "$defs": {
+    "balanceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["guildId", "discordUserId"],
+      "properties": {
+        "guildId": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+        "discordUserId": { "type": "string", "pattern": "^[0-9]{17,20}$" }
+      }
+    },
+    "earnRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "guildId",
+        "discordUserId",
+        "amount",
+        "earningId",
+        "epoch",
+        "ruleVersion",
+        "occurredAt"
+      ],
+      "properties": {
+        "guildId": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+        "discordUserId": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+        "amount": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "earningId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9:_.-]{1,160}$",
+          "description": "Stable immutable earning identity within guild. Changing transport event UUID must never create a second credit for the same earning."
+        },
+        "epoch": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "Approved frozen baseline epoch for this guild/user. Never infer from current formula."
+        },
+        "ruleVersion": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Hash of frozen tariff/settlement semantics; old accrual is never recalculated."
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+          "description": "Canonical ISO UTC with milliseconds; after enrollment cutoff and no later than receiver clock. Preserve across retry."
+        }
+      }
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["balance", "lifetimeEarned", "lifetimeSpent"],
+      "properties": {
+        "balance": { "type": "integer", "minimum": 0 },
+        "lifetimeEarned": { "type": "integer", "minimum": 0 },
+        "lifetimeSpent": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "description": "New opt-in endpoints, separate from legacy activity snapshot. See docs/COMMON-POINTS-V1.md for HMAC, receipts, identity, sequencing and production gates. Not enabled in production by this schema."
+}
