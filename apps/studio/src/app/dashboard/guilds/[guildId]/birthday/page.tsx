@@ -9,7 +9,7 @@ import { BirthdayAdmin } from '@/components/birthday-admin';
 import { BirthdayCardEditor } from '@/components/birthday-card-editor';
 import { BirthdayRegistrationShare } from '@/components/birthday-registration-share';
 import { listBirthdayRegistrations } from '@/lib/birthday-admin';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { prisma } from '@/lib/db';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
@@ -38,7 +38,7 @@ async function BirthdayAdminPage({ params }: { params: Promise<{ guildId: string
   const [plugin, studioAccess, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'birthday-role'),
     resolveStudioAccess(guildId, session.user.id),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
 
   const canReadRegistrations =

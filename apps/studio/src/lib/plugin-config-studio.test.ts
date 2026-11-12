@@ -15,6 +15,7 @@ import {
   normalizeConfigForStudio,
   parseConfigJson,
   removeConfigValue,
+  schemaNeedsDiscordOptions,
   stringifyConfig,
   updateConfigValue,
   type JsonSchema,
@@ -275,4 +276,53 @@ test('検索は親・子のtitle/descriptionを対象にする', () => {
 
 test('undefinedにはSchema defaultが適用される', () => {
   assert.equal(applySchemaDefaults({ type: 'integer', default: 5 }, undefined), 5);
+});
+
+test('schemaNeedsDiscordOptionsは候補pickerの有無を判定する', () => {
+  assert.equal(schemaNeedsDiscordOptions(schema), false);
+  assert.equal(
+    schemaNeedsDiscordOptions({
+      type: 'object',
+      properties: {
+        channelId: { type: 'string', 'x-herta-ui': { widget: 'discord-channel' } },
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    schemaNeedsDiscordOptions({
+      type: 'object',
+      properties: {
+        targets: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              roleId: { type: 'string', 'x-herta-ui': { widget: 'discord-role' } },
+            },
+          },
+        },
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    schemaNeedsDiscordOptions({
+      type: 'object',
+      properties: {
+        notify: { 'x-herta-ui': { widget: 'discord-message-target' } },
+      },
+    }),
+    true,
+  );
+  // discord-user picker は options を使わないため対象外
+  assert.equal(
+    schemaNeedsDiscordOptions({
+      type: 'object',
+      properties: {
+        userId: { type: 'string', 'x-herta-ui': { widget: 'discord-user' } },
+      },
+    }),
+    false,
+  );
 });

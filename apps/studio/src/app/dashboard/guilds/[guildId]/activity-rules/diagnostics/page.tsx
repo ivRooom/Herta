@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { Activity, ArrowLeft } from 'lucide-react';
 import { auth } from '@/auth';
 import { ActivityRulesDiagnostics } from '@/components/activity-rules-diagnostics';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -27,7 +27,7 @@ export default async function ActivityRulesDiagnosticsPage({
   const [activityRules, xpLevel, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'activity-rules'),
     getGuildPlugin(guildId, 'xp-level'),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
   if (!activityRules || !xpLevel) notFound();
 
