@@ -62,6 +62,36 @@ export function isConfigObject(value: unknown): value is ConfigObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+const DISCORD_OPTIONS_WIDGETS: ReadonlySet<string> = new Set([
+  'discord-channel',
+  'discord-role',
+  'discord-emoji',
+  'discord-message-target',
+]);
+
+/**
+ * スキーマ内に Guild options (チャンネル/Role/Emoji/メッセージ送信先の候補) を
+ * 使う picker が含まれるかを返す。picker が無いプラグインでは options を
+ * 取得する必要がないため、設定ページでの Bot 問い合わせを省略できる。
+ * discord-user picker は候補を別経路で取得するため対象外とする。
+ */
+export function schemaNeedsDiscordOptions(schema: unknown): boolean {
+  if (Array.isArray(schema)) {
+    return schema.some((item) => schemaNeedsDiscordOptions(item));
+  }
+  if (!isConfigObject(schema)) return false;
+
+  const ui = schema['x-herta-ui'];
+  if (
+    isConfigObject(ui) &&
+    typeof ui['widget'] === 'string' &&
+    DISCORD_OPTIONS_WIDGETS.has(ui['widget'])
+  ) {
+    return true;
+  }
+  return Object.values(schema).some((value) => schemaNeedsDiscordOptions(value));
+}
+
 export function schemaAllowsNull(schema: JsonSchema): boolean {
   if (schema.nullable) return true;
   return Array.isArray(schema.type) && schema.type.includes('null');

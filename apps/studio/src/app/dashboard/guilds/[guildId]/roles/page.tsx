@@ -12,7 +12,7 @@ import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
 import { RoleLifecycleManager } from '@/components/role-lifecycle-manager';
 import { RuleExecutionHistory } from '@/components/rule-execution-history';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { prisma } from '@/lib/db';
 import { authorizeStudioPermission } from '@/lib/studio-access';
 import { STUDIO_ROOT_DISCORD_ROLE_ID } from '@/lib/studio-access-policy';
@@ -35,7 +35,7 @@ async function GuildRoleManagerPage({ params }: { params: Promise<{ guildId: str
     return <AccessUnavailable guildId={guildId} status={authorization.response.status} />;
   }
 
-  const options = await getGuildConfigurationOptions(guildId);
+  const options = await getGuildConfigurationOptionsCached(guildId);
   if (!options) return <AccessUnavailable guildId={guildId} status={503} />;
   const [legacyPolicies, recentOperations, ruleExecutionLogs] = await Promise.all([
     listStudioRolePolicies(guildId),

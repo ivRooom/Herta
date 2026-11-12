@@ -93,3 +93,51 @@ export async function getGuildConfigurationOptions(
     clearTimeout(timeout);
   }
 }
+
+const GUILD_CONFIGURATION_OPTIONS_CACHE_TTL_MS = 30_000;
+
+type GuildConfigurationOptionsCacheEntry = {
+  promise: Promise<GuildConfigurationOptions | null>;
+  expiresAt: number;
+};
+
+const guildConfigurationOptionsCache = new Map<string, GuildConfigurationOptionsCacheEntry>();
+
+/**
+ * 画面表示専用の、TTL付きキャッシュで Guild options を取得する。
+ *
+ * チャンネル/Role/Emoji の候補一覧は表示データであり、画面遷移のたびに Bot へ
+ * 問い合わせると遷移全体が Bot の応答待ちになるため、30秒のハードTTLで再利用する。
+ * 進行中の取得は Promise ごとキャッシュし、同時リクエストを1回の取得へ合流させる。
+ * 取得失敗 (null) はキャッシュせず、次回アクセスで再取得して Bot の復旧を早く反映する。
+ * 新規取得のついでに期限切れエントリを掃除し、活動していない Guild のペイロードを
+ * プロセス内に保持し続けないようにする。
+ *
+ * 注意: 認可判断や更新系の検証 (Bot権限の確認、Role の存在確認など) には使わないこと。
+ * それらは鮮度が要るため `getGuildConfigurationOptions` で常時最新を取得する。
+ */
+export function getGuildConfigurationOptionsCached(
+  guildId: string,
+): Promise<GuildConfigurationOptions | null> {
+  if (!/^\d+$/u.test(guildId)) return Promise.resolve(null);
+
+  const now = Date.now();
+  const cached = guildConfigurationOptionsCache.get(guildId);
+  if (cached && cached.expiresAt > now) return cached.promise;
+
+  for (const [key, entry] of guildConfigurationOptionsCache) {
+    if (entry.expiresAt <= now) guildConfigurationOptionsCache.delete(key);
+  }
+
+  const promise = getGuildConfigurationOptions(guildId).then((result) => {
+    if (!result && guildConfigurationOptionsCache.get(guildId)?.promise === promise) {
+      guildConfigurationOptionsCache.delete(guildId);
+    }
+    return result;
+  });
+  guildConfigurationOptionsCache.set(guildId, {
+    promise,
+    expiresAt: now + GUILD_CONFIGURATION_OPTIONS_CACHE_TTL_MS,
+  });
+  return promise;
+}

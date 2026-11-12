@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
 import { PluginConfigForm } from '@/components/plugin-config-form';
 import { RestrictedPluginConfigForm } from '@/components/restricted-plugin-config-form';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { pluginConfigPermissionPaths } from '@/lib/plugin-config-paths';
 import { resolveStudioAccess } from '@/lib/studio-access';
@@ -29,7 +29,7 @@ async function ModerationDetectionSettingsPage({
 
   const [plugin, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'moderation'),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
   if (!plugin) notFound();
   const configPaths = pluginConfigPermissionPaths(plugin.manifest.configSchema);

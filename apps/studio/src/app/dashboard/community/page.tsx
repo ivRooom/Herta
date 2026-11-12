@@ -29,7 +29,7 @@ import {
   normalizeActivityRulesConfig,
 } from '@herta/shared/activity-rules';
 import { resolveGuildMemberDisplays } from '@/lib/bot-guild-members';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import {
   COMMUNITY_METRICS as metrics,
   COMMUNITY_METRIC_LABELS as metricLabels,
@@ -190,7 +190,7 @@ export default async function CommunityDashboardPage({
       end,
       limit: CHANNEL_BREAKDOWN_LIMIT,
     }),
-    getGuildConfigurationOptions(guild.id),
+    getGuildConfigurationOptionsCached(guild.id),
     getCommunityGameBreakdown(prisma, { guildId: guild.id, start, end, limit: 10 }),
     getCommunityPointsLeaderboard(prisma, {
       guildId: guild.id,

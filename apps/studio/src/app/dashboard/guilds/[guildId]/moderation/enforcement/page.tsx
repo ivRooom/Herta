@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, LockKeyhole, ShieldAlert } from 'lucide-react';
 import { auth } from '@/auth';
 import { ModerationEnforcementForm } from '@/components/moderation-enforcement-form';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { pluginConfigPermissionPaths } from '@/lib/plugin-config-paths';
@@ -32,7 +32,7 @@ async function ModerationEnforcementPage({ params }: { params: Promise<{ guildId
 
   const [plugin, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'moderation'),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
   if (!plugin) notFound();
   const configPaths = pluginConfigPermissionPaths(plugin.manifest.configSchema);

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, LibraryBig, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
 import { auth } from '@/auth';
 import { AchievementBuilderManager } from '@/components/achievement-builder-manager';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -26,7 +26,7 @@ export default async function AchievementsBuilderPage({
 
   const [plugin, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'achievements'),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
   if (!plugin) notFound();
 

@@ -12,6 +12,7 @@ export function PluginConfigForm({
   schema,
   discordOptions,
   configAccess,
+  optionsRequired = true,
 }: {
   guildId: string;
   pluginId: string;
@@ -20,10 +21,12 @@ export function PluginConfigForm({
   schema: Record<string, unknown>;
   discordOptions?: GuildConfigurationOptions | null;
   configAccess: PluginConfigStudioAccess;
+  /** false のときは候補 picker を使わないスキーマなので、未取得でも警告を出さない。 */
+  optionsRequired?: boolean;
 }) {
   return (
     <>
-      {!discordOptions ? (
+      {optionsRequired && !discordOptions ? (
         <div
           className="mb-4 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-200"
           role="status"

@@ -11,7 +11,7 @@ import { LfgManager, type LfgPostItem } from '@/components/lfg-manager';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +28,7 @@ export default async function LfgPage({ params }: { params: Promise<{ guildId: s
 
   const [plugin, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'lfg'),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
   if (!plugin) notFound();
   const config = normalizeLfgConfig(plugin.config);
