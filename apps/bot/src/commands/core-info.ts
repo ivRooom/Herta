@@ -7,6 +7,7 @@ import {
 } from 'discord.js';
 import { coreFunUtilityCommands } from './fun-utility.js';
 import type { SlashCommand } from './registry.js';
+import { formatUptimeJa, getBuildInfo } from '../build-info.js';
 
 const EMBED_FIELD_VALUE_LIMIT = 1_024;
 
@@ -215,7 +216,10 @@ export const botInfoCommand: SlashCommand = {
     const days = Math.floor(uptimeSeconds / 86_400);
     const hours = Math.floor((uptimeSeconds % 86_400) / 3_600);
     const minutes = Math.floor((uptimeSeconds % 3_600) / 60);
-    const version = process.env['HERTA_VERSION']?.trim() || '0.1.0';
+    const build = getBuildInfo();
+    const version = build.shortSha
+      ? `build ${build.shortSha}`
+      : process.env['HERTA_VERSION']?.trim() || '0.1.0';
 
     const embed = new EmbedBuilder()
       .setTitle('Herta Bot')
@@ -231,6 +235,48 @@ export const botInfoCommand: SlashCommand = {
         },
         { name: '稼働時間', value: `${days}日 ${hours}時間 ${minutes}分`, inline: false },
         { name: 'Node.js', value: process.version, inline: true },
+      );
+
+    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  },
+};
+
+export const versionCommand: SlashCommand = {
+  definition: {
+    name: 'version',
+    description: 'Herta Botのビルド情報（バージョン）を表示します',
+  },
+  async execute(interaction) {
+    const build = getBuildInfo();
+    const uptimeSeconds = Math.floor(process.uptime());
+    const environment =
+      process.env['NODE_ENV'] === 'production'
+        ? '本番'
+        : process.env['NODE_ENV'] || '不明';
+
+    const embed = new EmbedBuilder()
+      .setTitle('Herta Bot バージョン')
+      .setColor(0x7c6df2)
+      .addFields(
+        {
+          name: 'ビルド',
+          value: build.shortSha ? `\`${build.shortSha}\`` : '不明',
+          inline: true,
+        },
+        { name: '環境', value: environment, inline: true },
+        {
+          name: 'コミット',
+          value: build.commitSha
+            ? `\`${build.commitSha}\``
+            : 'このビルドには記録されていません',
+          inline: false,
+        },
+        {
+          name: '起動時刻',
+          value: `${discordTimestamp(build.startedAt, 'F')}（${discordTimestamp(build.startedAt, 'R')}）`,
+          inline: false,
+        },
+        { name: '稼働時間', value: formatUptimeJa(uptimeSeconds), inline: false },
       );
 
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
@@ -353,6 +399,7 @@ export const coreInformationCommands: SlashCommand[] = [
   userInfoCommand,
   avatarCommand,
   botInfoCommand,
+  versionCommand,
   roleInfoCommand,
   channelInfoCommand,
   permissionsCommand,
