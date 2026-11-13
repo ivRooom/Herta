@@ -20,6 +20,7 @@ import {
 import { dailyBonusManifest } from '@herta/plugin-catalog';
 import { definePlugin, type PluginRuntimeContext } from '@herta/plugin-sdk';
 import {
+  dailyBonusCalendarDate,
   dailyBonusDate,
   dailyBonusAllowedMentions,
   rejectDailyBonus,
@@ -114,7 +115,9 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
     !ctx.config.channelId
   )
     return;
-  const date = dailyBonusDate(now);
+  // Announcements are created for the calendar day whose 09:00 JST opens
+  // the slot; admission (dailyBonusDate) is slot-based, creation is not.
+  const date = dailyBonusCalendarDate(now);
   const resultGeneration = generations.get(ctx.guildId) ?? 0;
   await scanParticipationResults(
     ctx,
@@ -216,7 +219,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
         .setColor(0xb9a2ff)
         .setTitle(`🎁 ${date} 本日のログインボーナス`)
         .setDescription(
-          `${ctx.config.messageTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：本日23:59 JST`,
+          `${ctx.config.messageTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
         )
         .setFooter({ text: '受取と今日の運勢は本人にだけ表示します' });
       if (events.length)
@@ -232,7 +235,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
       if (
         generation !== (generations.get(ctx.guildId) ?? 0) ||
         process.env.DAILY_BONUS_ENABLED !== 'true' ||
-        dailyBonusDate(new Date()) !== date
+        dailyBonusCalendarDate(new Date()) !== date
       ) {
         await setDailyAnnouncement(
           ctx.prisma,

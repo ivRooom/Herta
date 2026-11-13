@@ -14,7 +14,25 @@ export interface DailyBonusAdmission {
 
 export type DailyBonusRejection = 'disabled' | 'guild' | 'role' | 'message' | 'expired';
 
+/**
+ * The daily slot date: the acceptance window for a slot runs 09:00 JST to
+ * the next 09:00 JST, so before 09:00 JST the current slot is still the
+ * previous calendar day. Claims and answers are attributed to this date;
+ * it is the only "today" the admission checks below ever consult.
+ */
 export function dailyBonusDate(now: Date): string {
+  if (!Number.isFinite(now.getTime())) throw new Error('Invalid clock');
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  if (jst.getUTCHours() < 9) jst.setTime(jst.getTime() - 86400000);
+  return jst.toISOString().slice(0, 10);
+}
+
+/**
+ * The JST calendar date. Only the announcement scheduler uses this: a
+ * day's announcement is created for the calendar day whose 09:00 JST
+ * opens the slot, and a past slot's announcement is never created late.
+ */
+export function dailyBonusCalendarDate(now: Date): string {
   if (!Number.isFinite(now.getTime())) throw new Error('Invalid clock');
   return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
