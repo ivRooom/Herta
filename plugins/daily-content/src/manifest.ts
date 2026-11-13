@@ -169,7 +169,7 @@ export const dailyContentManifest: PluginManifest = {
   events: [],
   commands: [
     {
-      name: 'daily',
+      name: 'post',
       description: '保存済みMessage Studio投稿を管理します',
       subcommands: [
         {

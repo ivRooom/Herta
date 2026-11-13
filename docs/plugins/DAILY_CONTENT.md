@@ -4,7 +4,7 @@ Daily Content Pluginは、Guildごとに登録したテキストコンテンツ�
 
 ## 構成
 
-1. Studioまたは`/daily publish`がスケジュール・手動配信をDBへ登録する
+1. Studioまたは`/post publish`がスケジュール・手動配信をDBへ登録する
 2. Workerが`next_run_at <= now()`のスケジュールを走査する
 3. `daily_content_deliveries`へ配信予約を作成する
 4. Redisへ本文ではなく`deliveryId`、`scheduleId`、idempotency key、予定日時だけをenqueueする
@@ -182,7 +182,7 @@ pg_restore --clean --if-exists --dbname=herta_restore herta-before-daily-content
 ## Studioとコマンド
 
 - Studio: `/dashboard/guilds/[guildId]/daily-content`
-- `/daily preview schedule_id:<ID>`: 本人だけに本文をプレビュー
-- `/daily publish schedule_id:<ID>`: 手動配信を予約
+- `/post preview schedule_id:<ID>`: 本人だけに本文をプレビュー
+- `/post publish schedule_id:<ID>`: 手動配信を予約
 
 Studioではスケジュール作成・編集・停止・削除、次回配信、直近履歴、手動配信、失敗再実行を管理できます。削除はSoft Deleteとして扱い、過去の配信履歴とmessage IDを保持します。

@@ -152,8 +152,8 @@ async function executeMessageStudioCommand(
   }
 
   try {
-    if (commandName === 'daily') {
-      await executeLegacyDaily(context, interaction);
+    if (commandName === 'post') {
+      await executePost(context, interaction);
       return;
     }
     if (commandName === 'announce') {
@@ -178,7 +178,7 @@ async function executeMessageStudioCommand(
   }
 }
 
-async function executeLegacyDaily(
+async function executePost(
   context: DailyContentRuntimeContext,
   interaction: DailyContentCommandInteraction,
 ): Promise<void> {
