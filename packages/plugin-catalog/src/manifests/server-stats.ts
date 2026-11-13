@@ -31,7 +31,7 @@ export const serverStatsManifest: PluginManifest = {
         default: false,
         'x-herta-ui': {
           section: '表示設定',
-          help: 'ONにすると /server の結果を実行者だけに表示します。',
+          help: 'ONにすると /server-stats の結果を実行者だけに表示します。',
         },
       },
       adminOnly: {
@@ -57,7 +57,7 @@ export const serverStatsManifest: PluginManifest = {
         default: 7,
         'x-herta-ui': {
           section: '集計設定',
-          help: '/server activity で最近何日分を集計するか指定します。',
+          help: '/server-stats activity で最近何日分を集計するか指定します。',
         },
       },
       showZeroMetrics: {
@@ -103,7 +103,7 @@ export const serverStatsManifest: PluginManifest = {
   events: [],
   commands: [
     {
-      name: 'server',
+      name: 'server-stats',
       description: 'サーバーの統計・活動状況・Plugin状態を確認します',
       subcommands: [
         { name: 'stats', description: '現在のサーバー概要を表示します' },
