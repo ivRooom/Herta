@@ -52,7 +52,7 @@ const forumTitleOption: CommandOption = {
 
 export const dailyContentManifest: PluginManifest = {
   id: 'daily-content',
-  name: 'Announcement / Message Studio',
+  name: 'Message Studio',
   version: '2.0.0',
   description:
     'お知らせ・予約/定期投稿・Forum投稿・Bot発言・メッセージ返信を通常文/Embedで作成できます',

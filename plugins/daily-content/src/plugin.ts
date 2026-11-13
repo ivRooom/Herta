@@ -120,11 +120,11 @@ export const dailyContentPlugin = definePlugin<
 
   async onEnable(context) {
     normalizeDailyContentConfig(context.config);
-    context.logger.info('Announcement / Message Studio v2を有効化しました');
+    context.logger.info('Message Studio v2を有効化しました');
   },
 
   async onDisable(context) {
-    context.logger.info('Announcement / Message Studio v2を無効化しました');
+    context.logger.info('Message Studio v2を無効化しました');
   },
 
   provideCommands(context) {
