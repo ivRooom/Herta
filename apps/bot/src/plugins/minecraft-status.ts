@@ -96,6 +96,7 @@ export interface MinecraftMetricsHistory {
 interface MinecraftStatusOptions {
   getSubcommand(): string;
   getString(name: string): string | null;
+  getBoolean(name: string): boolean | null;
 }
 
 interface MinecraftStatusInteraction {
@@ -810,7 +811,13 @@ const REGENERATE_POLL_ATTEMPTS = 30;
 const lastControlRequest = new Map<string, number>();
 
 type MinecraftControlResult =
-  | { kind: 'responded'; status: number; result: string; jobState?: string }
+  | {
+      kind: 'responded';
+      status: number;
+      result: string;
+      jobState?: string;
+      onlineCount?: number;
+    }
   | { kind: 'unconfigured' }
   | { kind: 'error' };
 
@@ -825,6 +832,7 @@ async function requestMinecraftControl(
   server: MinecraftControlServer,
   action: MinecraftControlAction | 'status',
   timeoutMs: number,
+  force = false,
 ): Promise<MinecraftControlResult> {
   const baseUrl = process.env.MINECRAFT_CONTROL_URL;
   const secret = process.env.MINECRAFT_CONTROL_SECRET;
@@ -832,13 +840,17 @@ async function requestMinecraftControl(
   const path = minecraftControlPath(server, action);
   const method = action === 'status' ? 'GET' : 'POST';
   const timestamp = String(Math.floor(Date.now() / 1000));
+  // force は署名対象のボディとして送る（サーバー側で検証される）
+  const body = force ? JSON.stringify({ force: true }) : '';
   try {
     const response = await fetch(`${baseUrl.replace(/\/$/, '')}${path}`, {
       method,
       headers: {
         'x-ivrm-timestamp': timestamp,
-        'x-ivrm-signature': buildMinecraftControlSignature(secret, method, path, timestamp, ''),
+        'x-ivrm-signature': buildMinecraftControlSignature(secret, method, path, timestamp, body),
+        ...(body ? { 'content-type': 'application/json' } : {}),
       },
+      body: body || undefined,
       signal: AbortSignal.timeout(timeoutMs),
     });
     const data: unknown = await response.json().catch(() => null);
@@ -849,6 +861,7 @@ async function requestMinecraftControl(
       status: response.status,
       result: typeof data.result === 'string' ? data.result : '',
       jobState: typeof job?.state === 'string' ? job.state : undefined,
+      onlineCount: typeof data.players_online === 'number' ? data.players_online : undefined,
     };
   } catch {
     return { kind: 'error' };
@@ -865,6 +878,14 @@ export function minecraftControlImmediateMessage(
     return '操作の受け口が未設定です。管理者に連絡してください。';
   if (outcome.kind === 'error') {
     return `${label}の操作リクエストに失敗しました。時間をおいて再度お試しください。`;
+  }
+  if (outcome.result === 'players_online') {
+    const count =
+      typeof outcome.onlineCount === 'number' ? `現在${outcome.onlineCount}人` : 'プレイヤー';
+    return `${label}には${count}が接続中です。停止・再起動すると全員切断されるため、実行しませんでした。強制する場合は force オプションを付けて再実行してください。`;
+  }
+  if (outcome.result === 'players_unknown') {
+    return `${label}の接続プレイヤー数を確認できなかったため、安全のため停止・再起動を実行しませんでした。強制する場合は force オプションを付けて再実行してください。`;
   }
   if (outcome.status === 409) {
     return '他の操作が実行中です。終わってからお試しください。';
@@ -949,7 +970,10 @@ async function executeMinecraftControl(
 
   // stop / restart はエンドポイント側でセーブと停止完了まで待つため、長めのタイムアウトにする
   const timeoutMs = action === 'stop' || action === 'restart' ? 300_000 : 30_000;
-  const outcome = await requestMinecraftControl(server, action, timeoutMs);
+  // force は stop / restart のプレイヤーチェックを明示的に迂回するためのオプション
+  const force =
+    (action === 'stop' || action === 'restart') && interaction.options.getBoolean('force') === true;
+  const outcome = await requestMinecraftControl(server, action, timeoutMs, force);
   if (outcome.kind !== 'responded' || outcome.status >= 400) {
     // 受け付けられなかった操作ではクールダウンを解除し、すぐ再試行できるようにする
     lastControlRequest.delete(cooldownKey);
