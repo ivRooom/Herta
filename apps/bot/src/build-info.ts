@@ -39,6 +39,14 @@ export function getBuildInfo(
   };
 }
 
+/** Bot のソースリポジトリ（コミットへのリンク生成に使う） */
+export const HERTA_REPOSITORY_URL = 'https://github.com/ivRooom/Herta';
+
+/** コミット SHA への GitHub URL。未記録なら null。 */
+export function commitUrl(commitSha: string | null): string | null {
+  return commitSha ? `${HERTA_REPOSITORY_URL}/commit/${commitSha}` : null;
+}
+
 export function formatUptimeJa(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
   const days = Math.floor(seconds / 86_400);

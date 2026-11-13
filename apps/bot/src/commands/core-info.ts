@@ -1,5 +1,8 @@
 import {
+  ActionRowBuilder,
   AttachmentBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
   EmbedBuilder,
   MessageFlags,
@@ -8,7 +11,7 @@ import {
 } from 'discord.js';
 import { coreFunUtilityCommands } from './fun-utility.js';
 import type { SlashCommand } from './registry.js';
-import { formatUptimeJa, getBuildInfo } from '../build-info.js';
+import { commitUrl, formatUptimeJa, getBuildInfo } from '../build-info.js';
 import { formatStartedAtJa, renderVersionCard } from './version-card.js';
 
 const EMBED_FIELD_VALUE_LIMIT = 1_024;
@@ -266,9 +269,21 @@ export const versionCommand: SlashCommand = {
       const imageEmbed = new EmbedBuilder()
         .setColor(0x7c6df2)
         .setImage('attachment://herta-version.png');
+      const url = commitUrl(build.commitSha);
+      const components = url
+        ? [
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              new ButtonBuilder()
+                .setLabel('GitHubでコミットを見る')
+                .setStyle(ButtonStyle.Link)
+                .setURL(url),
+            ),
+          ]
+        : [];
       await interaction.reply({
         embeds: [imageEmbed],
         files: [new AttachmentBuilder(card, { name: 'herta-version.png' })],
+        components,
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -288,7 +303,9 @@ export const versionCommand: SlashCommand = {
         { name: '環境', value: environment, inline: true },
         {
           name: 'コミット',
-          value: build.commitSha ? `\`${build.commitSha}\`` : 'このビルドには記録されていません',
+          value: build.commitSha
+            ? `[\`${build.commitSha}\`](${commitUrl(build.commitSha)})`
+            : 'このビルドには記録されていません',
           inline: false,
         },
         {
