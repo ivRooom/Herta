@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     def render(file, changes=None):
         entries = {**values, **(changes or {})}
         envfile.write_text('\n'.join(f'{k}={v}' for k, v in entries.items()), encoding='utf-8')
-        env = {k: v for k, v in os.environ.items() if k not in entries and k != 'HERTA_DATABASE_MODE'}
+        env = {k: v for k, v in os.environ.items() if k not in entries and k not in {'HERTA_DATABASE_MODE', 'HERTA_XP_EMITTER_ENABLED'}}
         result = subprocess.run(['docker', 'compose', '--project-directory', str(ROOT), '--project-name', 'herta', '--env-file', str(envfile), '-f', str(file), 'config', '--format', 'json'], env=env, capture_output=True, text=True)
         if result.returncode:
             raise AssertionError('Synthetic Compose render failed: ' + result.stderr)
