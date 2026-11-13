@@ -33,6 +33,10 @@ import { savedDailyFortune } from './daily-fortune.js';
 import { renderFortuneCard } from './fortune-card.js';
 import { handleDailyParticipation, isParticipationInteraction } from './daily-participation.js';
 import { scanParticipationResults } from './daily-participation-results.js';
+import {
+  dailyQuizParticipationEnabled,
+  loadDailyQuizStudioSettings,
+} from './daily-quiz-settings.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
 import { dailyBonusActionRow } from './daily-bonus-buttons.js';
@@ -76,8 +80,10 @@ export const dailyBonusPlugin = definePlugin<Config, Client, PrismaClient>({
             interaction &&
             (interaction.isButton() || interaction.isModalSubmit()) &&
             (interaction.customId.startsWith('daily-participation:') ||
-              (process.env.DAILY_PARTICIPATION_ENABLED === 'true' &&
-                isParticipationInteraction(interaction)))
+              (isParticipationInteraction(interaction) &&
+                dailyQuizParticipationEnabled(
+                  await loadDailyQuizStudioSettings(ctx.prisma, ctx.guildId),
+                )))
           ) {
             const activeGeneration = generations.get(ctx.guildId) ?? 0;
             await handleDailyParticipation(
@@ -243,7 +249,12 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
           content: `<@&${role.id}>`,
           embeds: [embed],
           components: [
-            dailyBonusActionRow(date, process.env.DAILY_PARTICIPATION_ENABLED === 'true'),
+            dailyBonusActionRow(
+              date,
+              dailyQuizParticipationEnabled(
+                await loadDailyQuizStudioSettings(ctx.prisma, ctx.guildId),
+              ),
+            ),
           ],
           allowedMentions: dailyBonusAllowedMentions(role.id),
           nonce: createHash('sha256').update(`${ctx.guildId}:${date}`).digest('hex').slice(0, 25),
@@ -394,7 +405,12 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       'confirmed',
       result.receipt,
     );
-    await replyDailyBonusResult(interaction, result);
+    await replyDailyBonusResult(
+      interaction,
+      result,
+      undefined,
+      await loadDailyQuizStudioSettings(ctx.prisma, ctx.guildId),
+    );
   } catch {
     await interaction.editReply(
       '処理結果を確認できませんでした。同じボタンから再確認してください。重複付与はされません。',

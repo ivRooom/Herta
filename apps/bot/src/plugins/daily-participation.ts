@@ -24,6 +24,11 @@ import { dailyBonusDate, rejectDailyBonus } from './daily-bonus-policy.js';
 import { dailyBonusFailureMessage } from './daily-bonus-presentation.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import {
+  dailyQuizParticipationEnabled,
+  loadDailyQuizStudioSettings,
+  type DailyQuizStudioSettings,
+} from './daily-quiz-settings.js';
+import {
   participationStatus,
   participationClaim,
   participationAnswer,
@@ -527,10 +532,16 @@ export async function handleDailyParticipation(
   interaction: Interaction,
   isCurrent: () => boolean = () => true,
 ) {
+  // Studio の daily-quiz 設定はハンドラ入口で1回だけ解決する (#887)。
+  // env の kill switch は各判定時点で従来どおり読み直す。
+  const studioSettings: DailyQuizStudioSettings = await loadDailyQuizStudioSettings(
+    ctx.prisma,
+    ctx.guildId,
+  );
   const ensureCurrent = () => {
     if (
       !isCurrent() ||
-      process.env.DAILY_PARTICIPATION_ENABLED !== 'true' ||
+      !dailyQuizParticipationEnabled(studioSettings) ||
       process.env.DAILY_BONUS_ENABLED !== 'true' ||
       !ctx.config.enabled
     )
@@ -540,7 +551,7 @@ export async function handleDailyParticipation(
   const opening = /^daily-participation:text:([0-9a-f-]{36})$/.exec(interaction.customId);
   if (opening && interaction.isButton()) {
     if (
-      process.env.DAILY_PARTICIPATION_ENABLED !== 'true' ||
+      !dailyQuizParticipationEnabled(studioSettings) ||
       process.env.DAILY_BONUS_ENABLED !== 'true' ||
       !ctx.config.enabled
     ) {
@@ -583,7 +594,7 @@ export async function handleDailyParticipation(
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   try {
     if (
-      process.env.DAILY_PARTICIPATION_ENABLED !== 'true' ||
+      !dailyQuizParticipationEnabled(studioSettings) ||
       process.env.DAILY_BONUS_ENABLED !== 'true'
     )
       throw new Error('disabled');
@@ -658,13 +669,18 @@ export async function handleDailyParticipation(
         'confirmed',
         receipt,
       );
-      await replyDailyBonusResult(interaction, {
-        status: 'confirmed',
-        alreadyClaimed: claimed.mode === 'already_claimed',
-        receipt: { ...receipt, streakReward: receipt.streakReward ?? undefined },
-        balance: claimed.balance,
-        message: `${claimed.mode === 'already_claimed' ? '本日は受取済みです。' : 'ボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (receipt.streakReward?.points ?? 0) + (receipt.firstClaimReward?.points ?? 0)}pt / 保有：${claimed.balance}pt / 連続：${receipt.streakDay}日`,
-      });
+      await replyDailyBonusResult(
+        interaction,
+        {
+          status: 'confirmed',
+          alreadyClaimed: claimed.mode === 'already_claimed',
+          receipt: { ...receipt, streakReward: receipt.streakReward ?? undefined },
+          balance: claimed.balance,
+          message: `${claimed.mode === 'already_claimed' ? '本日は受取済みです。' : 'ボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (receipt.streakReward?.points ?? 0) + (receipt.firstClaimReward?.points ?? 0)}pt / 保有：${claimed.balance}pt / 連続：${receipt.streakDay}日`,
+        },
+        undefined,
+        studioSettings,
+      );
       return;
     }
 

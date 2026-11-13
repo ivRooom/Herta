@@ -20,6 +20,8 @@ import { giveawayManifest } from './manifests/giveaway.js';
 import { fortuneManifest } from './manifests/fortune.js';
 import { dailyBonusManifest } from './manifests/daily-bonus.js';
 export { dailyBonusManifest } from './manifests/daily-bonus.js';
+import { dailyQuizManifest } from './manifests/daily-quiz.js';
+export { dailyQuizManifest } from './manifests/daily-quiz.js';
 import { mbtiManifest } from './manifests/mbti.js';
 import { miniGamesManifest } from './manifests/mini-games.js';
 import { minecraftStatusManifest } from './manifests/minecraft-status.js';
@@ -160,6 +162,7 @@ const rawPluginManifests: PluginManifest[] = [
   mbtiManifest,
   fortuneManifest,
   dailyBonusManifest,
+  dailyQuizManifest,
   miniGamesManifest,
   minecraftStatusManifest,
   moderationManifest,
