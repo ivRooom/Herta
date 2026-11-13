@@ -68,7 +68,7 @@ jobs:
     outputs:
       live_sha: ${{ steps.verify.outputs.live_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           persist-credentials: false
@@ -83,7 +83,7 @@ jobs:
           [[ "${SSH_HOST_FINGERPRINT}" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || { echo 'Invalid trusted SSH host fingerprint' >&2; exit 1; }
       - name: Independently read running four-service SHA and immutable image ID
         id: runtime
-        uses: appleboy/ssh-action@v1.2.5
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           EXPECTED_SHA: ${{ inputs.expected_live_sha }}
         with:
@@ -146,7 +146,7 @@ jobs:
       deploy_sha: ${{ steps.verify.outputs.deploy_sha }}
       should_deploy: ${{ steps.verify.outputs.should_deploy }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           persist-credentials: false
@@ -184,7 +184,7 @@ jobs:
       image_ref: ${{ steps.image.outputs.image_ref }}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.quality-gate.outputs.deploy_sha }}
           persist-credentials: false
@@ -199,17 +199,17 @@ jobs:
           echo "HERTA_IMAGE=${IMAGE_REF}" >> "${GITHUB_ENV}"
 
       - name: Docker Buildxを準備
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: GHCRへログイン
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
       - name: Production Docker imageをbuild
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           load: true
@@ -290,7 +290,7 @@ jobs:
       # Checkout the immutable workflow trigger SHA for provenance tooling.
       # A manual rollback's target may predate this script: never checkout the
       # historical rollback SHA for the runner-side record publisher.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -321,7 +321,7 @@ jobs:
             exit 1
           fi
       - name: AWS credentialsを設定
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: arn:aws:iam::911291529944:role/ivrm-web-github-deploy-role
           aws-region: ap-northeast-1
@@ -376,7 +376,7 @@ jobs:
           fetch_ssm_secret '/ivrm/runtime/herta/henrikdev-api-key' HENRIKDEV_API_KEY
 
       - name: LightsailへSSHデプロイ
-        uses: appleboy/ssh-action@v1.2.5
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
@@ -653,7 +653,7 @@ jobs:
       # external health. It never receives GHCR token or production app secrets.
       - name: Read back running API/Bot/Studio/Worker image SHA and config digest
         id: runtime-proof
-        uses: appleboy/ssh-action@v1.2.5
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           DEPLOY_REF: ${{ needs.quality-gate.outputs.deploy_sha }}
           HERTA_IMAGE: ${{ needs.build-image.outputs.image_ref }}

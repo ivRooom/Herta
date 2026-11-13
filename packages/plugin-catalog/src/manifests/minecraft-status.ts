@@ -165,6 +165,12 @@ export const minecraftStatusManifest: PluginManifest = {
                 { name: 'save（セーブ）', value: 'save' },
               ],
             },
+            {
+              name: 'force',
+              description: 'プレイヤー接続中でも強制実行します（stop / restart のみ）',
+              type: 'boolean',
+              required: false,
+            },
           ],
         },
         {
@@ -183,6 +189,12 @@ export const minecraftStatusManifest: PluginManifest = {
                 { name: 'save（セーブ）', value: 'save' },
                 { name: 'regenerate（ワールド再生成）', value: 'regenerate' },
               ],
+            },
+            {
+              name: 'force',
+              description: 'プレイヤー接続中でも強制実行します（stop / restart のみ）',
+              type: 'boolean',
+              required: false,
             },
           ],
         },
