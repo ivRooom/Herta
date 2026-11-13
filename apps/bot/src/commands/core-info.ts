@@ -1,4 +1,5 @@
 import {
+  AttachmentBuilder,
   ChannelType,
   EmbedBuilder,
   MessageFlags,
@@ -8,6 +9,7 @@ import {
 import { coreFunUtilityCommands } from './fun-utility.js';
 import type { SlashCommand } from './registry.js';
 import { formatUptimeJa, getBuildInfo } from '../build-info.js';
+import { formatStartedAtJa, renderVersionCard } from './version-card.js';
 
 const EMBED_FIELD_VALUE_LIMIT = 1_024;
 
@@ -251,6 +253,28 @@ export const versionCommand: SlashCommand = {
     const uptimeSeconds = Math.floor(process.uptime());
     const environment =
       process.env['NODE_ENV'] === 'production' ? '本番' : process.env['NODE_ENV'] || '不明';
+
+    try {
+      const card = await renderVersionCard({
+        shortSha: build.shortSha,
+        commitSha: build.commitSha,
+        environmentLabel: environment,
+        startedAtLabel: formatStartedAtJa(build.startedAt),
+        uptimeLabel: formatUptimeJa(uptimeSeconds),
+        nodeVersion: process.version,
+      });
+      const imageEmbed = new EmbedBuilder()
+        .setColor(0x7c6df2)
+        .setImage('attachment://herta-version.png');
+      await interaction.reply({
+        embeds: [imageEmbed],
+        files: [new AttachmentBuilder(card, { name: 'herta-version.png' })],
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    } catch {
+      // 画像描画に失敗した場合はフィールド形式の Embed にフォールバックする
+    }
 
     const embed = new EmbedBuilder()
       .setTitle('Herta Bot バージョン')
