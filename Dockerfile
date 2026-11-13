@@ -127,6 +127,10 @@ RUN rm -rf \
     /usr/local/bin/yarn \
     /usr/local/bin/yarnpkg
 
+# デプロイ対象イメージのタグ（コミットSHA）と同一の値をプロセス内からも参照できるようにする。
+# /version 表示用。build-args 未指定時は空となり、表示側で「不明」として扱う。
+ARG HERTA_BUILD_SHA=""
+ENV HERTA_BUILD_SHA=${HERTA_BUILD_SHA}
 ENV NODE_ENV=production
 WORKDIR /app
 

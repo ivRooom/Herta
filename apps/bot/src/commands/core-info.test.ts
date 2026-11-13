@@ -6,6 +6,7 @@ const expectedCommandNames = [
   'userinfo',
   'avatar',
   'botinfo',
+  'version',
   'roleinfo',
   'channelinfo',
   'permissions',
