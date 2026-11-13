@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatUptimeJa, getBuildInfo, parseBuildCommitSha } from './build-info.js';
+import {
+  commitUrl,
+  formatUptimeJa,
+  getBuildInfo,
+  HERTA_REPOSITORY_URL,
+  parseBuildCommitSha,
+} from './build-info.js';
 
 const VALID_SHA = '30ac936d7b68afeb238b7549806ac4bff06a41c9';
 
@@ -48,5 +54,15 @@ describe('formatUptimeJa', () => {
 
   it('負数は 0 として扱う', () => {
     expect(formatUptimeJa(-5)).toBe('0日 0時間 0分');
+  });
+});
+
+describe('commitUrl', () => {
+  it('コミットへの URL を組み立てる', () => {
+    expect(commitUrl(VALID_SHA)).toBe(`${HERTA_REPOSITORY_URL}/commit/${VALID_SHA}`);
+  });
+
+  it('未記録の場合は null', () => {
+    expect(commitUrl(null)).toBeNull();
   });
 });
