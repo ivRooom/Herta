@@ -257,6 +257,9 @@ export const versionCommand: SlashCommand = {
     const environment =
       process.env['NODE_ENV'] === 'production' ? '本番' : process.env['NODE_ENV'] || '不明';
 
+    // 画像描画が応答期限（約3秒）を超えないよう、先に defer する
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
     try {
       const card = await renderVersionCard({
         shortSha: build.shortSha,
@@ -280,11 +283,15 @@ export const versionCommand: SlashCommand = {
             ),
           ]
         : [];
-      await interaction.reply({
+      await interaction.editReply({
         embeds: [imageEmbed],
-        files: [new AttachmentBuilder(card, { name: 'herta-version.png' })],
+        files: [
+          new AttachmentBuilder(card, {
+            name: 'herta-version.png',
+            description: `Herta Bot バージョン情報カード（ビルド ${build.shortSha ?? '不明'}・${environment}）`,
+          }),
+        ],
         components,
-        flags: MessageFlags.Ephemeral,
       });
       return;
     } catch {
@@ -316,7 +323,7 @@ export const versionCommand: SlashCommand = {
         { name: '稼働時間', value: formatUptimeJa(uptimeSeconds), inline: false },
       );
 
-    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ embeds: [embed] });
   },
 };
 
