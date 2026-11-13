@@ -59,10 +59,7 @@ export async function POST(request: Request, { params }: RouteContext) {
   try {
     const plugin = await getGuildPlugin(guildId, 'daily-content');
     if (!plugin?.enabled) {
-      return NextResponse.json(
-        { error: 'Announcement / Message Studio Pluginが無効です' },
-        { status: 409 },
-      );
+      return NextResponse.json({ error: 'Message Studio Pluginが無効です' }, { status: 409 });
     }
     const config = normalizeDailyContentConfig(plugin.config);
     if (!/^\d+$/u.test(channelId)) {

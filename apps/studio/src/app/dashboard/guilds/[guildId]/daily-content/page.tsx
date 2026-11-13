@@ -111,7 +111,7 @@ async function DailyContentPage({ params }: { params: Promise<{ guildId: string 
         href={`/dashboard/guilds/${guildId}/plugins/daily-content`}
         className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground"
       >
-        <ArrowLeft className="h-4 w-4" /> Announcement / Message Studio Pluginへ戻る
+        <ArrowLeft className="h-4 w-4" /> Message Studio Pluginへ戻る
       </Link>
 
       <div className="mt-6 flex flex-wrap items-end justify-between gap-4">

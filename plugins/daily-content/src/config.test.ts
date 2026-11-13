@@ -8,7 +8,7 @@ import {
   normalizeMessageStudioEmbed,
 } from './config.js';
 
-describe('Announcement / Message Studio config', () => {
+describe('Message Studio config', () => {
   it('既定値を正規化する', () => {
     expect(normalizeDailyContentConfig({})).toEqual(DAILY_CONTENT_DEFAULTS);
   });
