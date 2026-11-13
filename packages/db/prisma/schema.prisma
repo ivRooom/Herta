@@ -1259,6 +1259,36 @@ model MemberActivityEvent {
   @@map("member_activity_events")
 }
 
+// ============================================================
+// Activity XP Emitter (ivrm-web Points v3, Herta #877)
+// ============================================================
+
+// member_activity_events の1時間窓集計を ivrm-web `POST /v1/xp/herta/events` へ
+// 送るための durable outbox。body は初回集計時の JSON をそのまま保持し、再送時は
+// 再集計せず byte 一致させる (ivrm-web 側の payload_hash 冪等と競合しないため)。
+// status: pending (未送信/再送待ち) / sent / dropped (409・422の恒久扱い) / failed (再送上限)
+// 行が書かれるのは HERTA_XP_EMITTER_ENABLED=true のときだけ。
+model ActivityXpEventOutbox {
+  id            String    @id @default(uuid())
+  sourceEventId String    @unique @map("source_event_id")
+  eventId       String    @map("event_id")
+  guildId       String    @map("guild_id")
+  userId        String    @map("user_id")
+  eventType     String    @map("event_type") @db.VarChar(32)
+  body          String
+  status        String    @default("pending") @db.VarChar(16)
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz(3)
+  lastStatus    Int?      @map("last_status")
+  lastError     String?   @map("last_error")
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, nextAttemptAt])
+  @@map("activity_xp_event_outbox")
+}
+
 model FortuneProfile {
   guildId   String   @map("guild_id")
   userId    String   @map("user_id")

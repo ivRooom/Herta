@@ -94,6 +94,21 @@ import {
   resolveActivityIvrmSyncConfig,
   type ActivityIvrmSyncConfig,
 } from './plugins/community-activity-ivrm-sync.js';
+import {
+  latestClosedActivityXpWindow,
+  resolveActivityXpEmitterConfig,
+  sendActivityXpOutboxPayload,
+  type ActivityXpEmitterConfig,
+} from './plugins/activity-xp-ivrm-emitter.js';
+import {
+  collectActivityXpPayloads,
+  enqueueActivityXpPayloads,
+  listDueActivityXpOutboxRows,
+  markActivityXpOutboxDropped,
+  markActivityXpOutboxRetry,
+  markActivityXpOutboxSent,
+  touchActivityXpOutboxAuthFailure,
+} from './plugins/activity-xp-outbox-repository.js';
 import { searchGuildMemberOptions, type GuildMemberOption } from './health/guild-members.js';
 import {
   getGuildBotProfile as getDiscordGuildBotProfile,
@@ -132,6 +147,7 @@ function presenceIntentEnabled(): boolean {
 
 const ACTIVITY_IVRM_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const ACTIVITY_IVRM_SYNC_EPOCH = new Date('1970-01-01T00:00:00.000Z');
+const ACTIVITY_XP_EMITTER_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Plugin由来の`onCommunityAction`metric名 -> Activity Rules判定関数。 */
 const COMMUNITY_ACTION_GUARDS: Record<
@@ -245,6 +261,12 @@ export class HertaBot {
   private gatewayObservationTimer?: NodeJS.Timeout;
   private activityIvrmSyncTimer?: NodeJS.Timeout;
   private activityIvrmSyncInFlight = false;
+  private activityXpEmitterTimer?: NodeJS.Timeout;
+  private activityXpEmitterInFlight = false;
+  /** 401/403 を受けたらプロセス再起動まで送信を止める (設定異常のため再送しても直らない)。 */
+  private activityXpEmitterAuthHalted = false;
+  /** 最後に集計済みの窓の開始時刻 (ISO)。起動直後は未設定で、その場合は集計せずに現在地だけ記録する。 */
+  private activityXpEmitterLastWindowStart?: string;
   private healthRedis?: Redis;
   private readonly activityMessageLastCountedAt = new Map<string, number>();
   private ruleRuntimeEvents?: RuleRuntimeEventSink;
@@ -1099,6 +1121,7 @@ export class HertaBot {
     this.gatewayObservationTimer.unref();
 
     this.startActivityIvrmSync();
+    this.startActivityXpEmitter();
 
     const redisUrl = process.env['REDIS_URL'];
     if (!redisUrl) {
@@ -1578,6 +1601,101 @@ export class HertaBot {
     }
   }
 
+  /**
+   * ivrm-web Points v3 Activity XP 取込 (#877) への送信を開始する。
+   * `HERTA_XP_EMITTER_ENABLED=true` かつ必須envが揃っている場合のみ開始する
+   * (既定OFF)。Guild XP・ランキング・Role・Community Points には一切触れない。
+   */
+  private startActivityXpEmitter(): void {
+    const config = resolveActivityXpEmitterConfig(process.env);
+    if (!config) return;
+
+    void this.runActivityXpEmitterTick(config);
+    this.activityXpEmitterTimer = setInterval(() => {
+      void this.runActivityXpEmitterTick(config);
+    }, ACTIVITY_XP_EMITTER_INTERVAL_MS);
+    this.activityXpEmitterTimer.unref();
+  }
+
+  private async runActivityXpEmitterTick(config: ActivityXpEmitterConfig): Promise<void> {
+    // setInterval は前回の完了を待たないため、single-flight ガードで多重実行を防ぐ。
+    // 401/403 を受けた後は設定異常として、プロセス再起動まで送信しない。
+    if (this.activityXpEmitterInFlight || this.activityXpEmitterAuthHalted) return;
+    this.activityXpEmitterInFlight = true;
+    try {
+      const now = new Date();
+      const counters = { enqueued: 0, sent: 0, dropped: 0, retried: 0, failed: 0 };
+
+      // 直近に閉じた1時間窓を集計して outbox に積む。起動直後の最初の tick では
+      // 集計せず窓位置だけを記録する。Bot が止まっていた時間分の窓は送信されず、
+      // 遡及付与はしない (XP は Bot 稼働中の活動からだけ貯まる)。
+      const { start, end } = latestClosedActivityXpWindow(now);
+      const windowStartIso = start.toISOString();
+      if (this.activityXpEmitterLastWindowStart === undefined) {
+        this.activityXpEmitterLastWindowStart = windowStartIso;
+      } else if (this.activityXpEmitterLastWindowStart !== windowStartIso) {
+        const payloads = await collectActivityXpPayloads(this.prisma, config.guildId, start, end);
+        counters.enqueued = await enqueueActivityXpPayloads(this.prisma, payloads);
+        this.activityXpEmitterLastWindowStart = windowStartIso;
+      }
+
+      const rows = await listDueActivityXpOutboxRows(this.prisma, now);
+      for (const row of rows) {
+        if (row.guildId !== config.guildId) continue;
+        const result = await sendActivityXpOutboxPayload(config, row, this.logger);
+        if (result.outcome === 'sent') {
+          await markActivityXpOutboxSent(this.prisma, row.id, result.status ?? 200, new Date());
+          counters.sent += 1;
+        } else if (result.outcome === 'dropped') {
+          // 409 (未連携/競合)・422 (ポリシー外/上限超過) は恒久扱い。再送しない。
+          await markActivityXpOutboxDropped(this.prisma, row.id, result.status ?? 0);
+          counters.dropped += 1;
+          this.logger.warn(
+            { sourceEventId: row.sourceEventId, status: result.status },
+            'Activity XPイベントがivrm-web側で恒久扱いとなり破棄されました (未連携またはポリシー外/上限超過)',
+          );
+        } else if (result.outcome === 'auth_failure') {
+          await touchActivityXpOutboxAuthFailure(this.prisma, row.id, result.status ?? 0);
+          this.activityXpEmitterAuthHalted = true;
+          this.logger.error(
+            { sourceEventId: row.sourceEventId, status: result.status },
+            'Activity XP送信が認証エラーとなったため送信を停止します。HERTA_POINTS_SECRET と IVRM_INTEGRATION_GUILD_ID の設定を確認してください (再開にはBotの再起動が必要です)',
+          );
+          break;
+        } else {
+          const failed = await markActivityXpOutboxRetry(
+            this.prisma,
+            row,
+            { status: result.status, error: result.error },
+            new Date(),
+          );
+          if (failed) {
+            counters.failed += 1;
+            this.logger.error(
+              { sourceEventId: row.sourceEventId },
+              'Activity XPイベントが再送上限に達したためfailedになりました',
+            );
+          } else {
+            counters.retried += 1;
+          }
+        }
+      }
+
+      if (
+        counters.enqueued > 0 ||
+        counters.sent > 0 ||
+        counters.dropped > 0 ||
+        counters.failed > 0
+      ) {
+        this.logger.info(counters, 'Activity XP送信tickの結果');
+      }
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Activity XP送信tickに失敗しました');
+    } finally {
+      this.activityXpEmitterInFlight = false;
+    }
+  }
+
   async probeDatabase(): Promise<void> {
     await this.prisma.$queryRaw`SELECT 1`;
   }
@@ -1601,6 +1719,10 @@ export class HertaBot {
     if (this.activityIvrmSyncTimer) {
       clearInterval(this.activityIvrmSyncTimer);
       this.activityIvrmSyncTimer = undefined;
+    }
+    if (this.activityXpEmitterTimer) {
+      clearInterval(this.activityXpEmitterTimer);
+      this.activityXpEmitterTimer = undefined;
     }
 
     await Promise.allSettled([
