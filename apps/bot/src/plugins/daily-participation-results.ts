@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { EmbedBuilder, PermissionFlagsBits, type Client } from 'discord.js';
 import { request } from './daily-bonus-wallet.js';
+import {
+  dailyQuizParticipationEnabled,
+  loadDailyQuizStudioSettings,
+} from './daily-quiz-settings.js';
 const bounded = z.number().int().min(0).max(1000000);
 export const anonymousDailyResult = z
   .object({
@@ -44,6 +48,8 @@ interface Context {
   client: Client;
   config: { enabled: boolean; channelId: string };
   logger: { warn: (message: string) => void };
+  /** Studio の daily-quiz 設定を読むために使う (未配線なら env のみで判定する)。 */
+  prisma?: unknown;
 }
 export function dailyResultEmbed(result: z.infer<typeof anonymousDailyResult>) {
   return new EmbedBuilder()
@@ -59,7 +65,7 @@ export async function scanParticipationResults(
   isCurrent: () => boolean = () => true,
 ) {
   if (
-    process.env.DAILY_PARTICIPATION_ENABLED !== 'true' ||
+    !dailyQuizParticipationEnabled(await loadDailyQuizStudioSettings(ctx.prisma, ctx.guildId)) ||
     process.env.DAILY_BONUS_ENABLED !== 'true' ||
     process.env.IVRM_INTEGRATION_GUILD_ID !== ctx.guildId ||
     !ctx.config.enabled ||
@@ -109,7 +115,7 @@ export async function scanParticipationResults(
       if (
         delivery.questionId !== delivery.result.questionId ||
         !isCurrent() ||
-        process.env.DAILY_PARTICIPATION_ENABLED !== 'true'
+        !dailyQuizParticipationEnabled(await loadDailyQuizStudioSettings(ctx.prisma, ctx.guildId))
       )
         return;
       let messageId: string | undefined;

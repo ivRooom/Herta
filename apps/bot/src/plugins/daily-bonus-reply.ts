@@ -1,5 +1,6 @@
 import { AttachmentBuilder, EmbedBuilder, type ButtonInteraction } from 'discord.js';
 import { renderDailyBonusCard } from './daily-bonus-card.js';
+import { dailyQuizResultCardEnabled, type DailyQuizStudioSettings } from './daily-quiz-settings.js';
 import {
   dailyBonusResultText,
   loginBonusEarned,
@@ -11,6 +12,7 @@ export async function replyDailyBonusResult(
   interaction: Pick<ButtonInteraction, 'editReply'>,
   result: ConfirmedDailyBonus,
   render = renderDailyBonusCard,
+  studioSettings: DailyQuizStudioSettings = {},
 ) {
   const loginTotal = loginBonusEarned(result);
   const fallback = {
@@ -66,7 +68,7 @@ export async function replyDailyBonusResult(
     components: [],
     allowedMentions: { parse: [] as never[] },
   };
-  if (process.env.DAILY_BONUS_RESULT_CARD_ENABLED === 'true') {
+  if (dailyQuizResultCardEnabled(studioSettings)) {
     try {
       const card = await render(result);
       await interaction.editReply({
