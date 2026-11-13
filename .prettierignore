@@ -8,3 +8,4 @@ packages/db/src/generated
 
 # Generated contract snapshot: preserve canonical ivrm-contracts bytes
 contracts/ivrm/herta-fortune-profile.v1.bundle.json
+contracts/ivrm/daily-participation.v2.bundle.json

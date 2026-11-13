@@ -2,7 +2,7 @@
   "bundleVersion": 1,
   "contract": {
     "id": "daily-participation",
-    "version": "2.1.0",
+    "version": "2.3.0",
     "sourceRepository": "ivRooom/ivrm-contracts"
   },
   "operations": {
@@ -11,7 +11,9 @@
       "path": "/v2/participation/herta/media",
       "request": "mediaRequest",
       "responseFormat": "binary",
-      "successStatusCodes": [200],
+      "successStatusCodes": [
+        200
+      ],
       "maxResponseBytes": 10485760,
       "requiredResponseHeaders": [
         "Content-Type",
@@ -19,42 +21,57 @@
         "X-IVRM-Media-Id",
         "Cache-Control"
       ],
-      "contentTypes": ["image/webp", "audio/wav"]
+      "contentTypes": [
+        "image/webp",
+        "audio/wav"
+      ]
     },
     "status": {
       "method": "POST",
       "path": "/v2/participation/herta/status",
       "request": "statusRequest",
       "response": "statusResponse",
-      "successStatusCodes": [200]
+      "successStatusCodes": [
+        200
+      ]
     },
     "claim": {
       "method": "POST",
       "path": "/v2/participation/herta/claim",
       "request": "claimRequest",
       "response": "claimResponse",
-      "successStatusCodes": [200, 201]
+      "successStatusCodes": [
+        200,
+        201
+      ]
     },
     "answer": {
       "method": "POST",
       "path": "/v2/participation/herta/answer",
       "request": "answerRequest",
       "response": "answerResponse",
-      "successStatusCodes": [200, 201]
+      "successStatusCodes": [
+        200,
+        201
+      ]
     },
     "results": {
       "method": "POST",
       "path": "/v2/participation/herta/results",
       "request": "resultsRequest",
       "response": "resultsResponse",
-      "successStatusCodes": [200]
+      "successStatusCodes": [
+        200
+      ]
     },
     "resultsAck": {
       "method": "POST",
       "path": "/v2/participation/herta/results/ack",
       "request": "resultsAckRequest",
       "response": "resultsAckResponse",
-      "successStatusCodes": [200]
+      "successStatusCodes": [
+        200
+      ]
     }
   },
   "signing": {
@@ -94,7 +111,10 @@
       "subject": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["guildId", "discordUserId"],
+        "required": [
+          "guildId",
+          "discordUserId"
+        ],
         "properties": {
           "guildId": {
             "$ref": "#/$defs/snowflake"
@@ -107,7 +127,11 @@
       "taxonomy": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "label", "enabled"],
+        "required": [
+          "id",
+          "label",
+          "enabled"
+        ],
         "properties": {
           "id": {
             "$ref": "#/$defs/id"
@@ -125,13 +149,24 @@
       "media": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "kind", "mimeType", "url", "byteSize", "durationMs", "rights"],
+        "required": [
+          "id",
+          "kind",
+          "mimeType",
+          "url",
+          "byteSize",
+          "durationMs",
+          "rights"
+        ],
         "properties": {
           "id": {
             "$ref": "#/$defs/id"
           },
           "kind": {
-            "enum": ["image", "audio"]
+            "enum": [
+              "image",
+              "audio"
+            ]
           },
           "mimeType": {
             "enum": [
@@ -167,14 +202,22 @@
             ]
           },
           "rights": {
-            "enum": ["original", "licensed", "public_domain"]
+            "enum": [
+              "original",
+              "licensed",
+              "public_domain"
+            ]
           }
         }
       },
       "option": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "label", "mediaId"],
+        "required": [
+          "id",
+          "label",
+          "mediaId"
+        ],
         "properties": {
           "id": {
             "$ref": "#/$defs/id"
@@ -222,7 +265,10 @@
             "$ref": "#/$defs/date"
           },
           "slot": {
-            "enum": ["daily", "bonus"]
+            "enum": [
+              "daily",
+              "bonus"
+            ]
           },
           "categoryId": {
             "$ref": "#/$defs/id"
@@ -231,10 +277,23 @@
             "$ref": "#/$defs/id"
           },
           "format": {
-            "enum": ["choice2", "choice3", "choice4", "image_choice", "audio_choice", "free_text"]
+            "enum": [
+              "choice2",
+              "choice3",
+              "choice4",
+              "image_choice",
+              "audio_choice",
+              "free_text"
+            ]
           },
           "scoring": {
-            "enum": ["instant", "poll", "majority", "minority", "human_review"]
+            "enum": [
+              "instant",
+              "poll",
+              "majority",
+              "minority",
+              "human_review"
+            ]
           },
           "prompt": {
             "type": "string",
@@ -371,7 +430,10 @@
                   "maxItems": 0
                 },
                 "scoring": {
-                  "enum": ["instant", "human_review"]
+                  "enum": [
+                    "instant",
+                    "human_review"
+                  ]
                 }
               }
             }
@@ -381,7 +443,11 @@
       "firstClaimReward": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["points", "rank", "scope"],
+        "required": [
+          "points",
+          "rank",
+          "scope"
+        ],
         "properties": {
           "points": {
             "$ref": "#/$defs/points"
@@ -434,14 +500,20 @@
             "maximum": 9007199254740991
           },
           "channel": {
-            "enum": ["web", "discord"]
+            "enum": [
+              "web",
+              "discord"
+            ]
           },
           "streakReward": {
             "oneOf": [
               {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["points", "streakDay"],
+                "required": [
+                  "points",
+                  "streakDay"
+                ],
                 "properties": {
                   "points": {
                     "$ref": "#/$defs/points"
@@ -510,7 +582,11 @@
             ]
           },
           "state": {
-            "enum": ["pending", "graded", "void"]
+            "enum": [
+              "pending",
+              "graded",
+              "void"
+            ]
           },
           "isCorrect": {
             "oneOf": [
@@ -529,7 +605,11 @@
             "$ref": "#/$defs/instant"
           },
           "origin": {
-            "enum": ["web", "discord", "legacy_v1"]
+            "enum": [
+              "web",
+              "discord",
+              "legacy_v1"
+            ]
           }
         }
       },
@@ -625,7 +705,14 @@
       "claimResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status", "guildId", "discordUserId", "mode", "receipt", "balance"],
+        "required": [
+          "status",
+          "guildId",
+          "discordUserId",
+          "mode",
+          "receipt",
+          "balance"
+        ],
         "properties": {
           "status": {
             "const": "ok"
@@ -637,7 +724,10 @@
             "$ref": "#/$defs/snowflake"
           },
           "mode": {
-            "enum": ["created", "already_claimed"]
+            "enum": [
+              "created",
+              "already_claimed"
+            ]
           },
           "receipt": {
             "$ref": "#/$defs/bonusReceipt"
@@ -725,7 +815,14 @@
       "answerResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status", "guildId", "discordUserId", "mode", "response", "balance"],
+        "required": [
+          "status",
+          "guildId",
+          "discordUserId",
+          "mode",
+          "response",
+          "balance"
+        ],
         "properties": {
           "status": {
             "const": "ok"
@@ -737,7 +834,10 @@
             "$ref": "#/$defs/snowflake"
           },
           "mode": {
-            "enum": ["created", "already_answered"]
+            "enum": [
+              "created",
+              "already_answered"
+            ]
           },
           "response": {
             "$ref": "#/$defs/answer"
@@ -766,7 +866,10 @@
             "maximum": 1000000
           },
           "tiePolicy": {
-            "enum": ["all_tied", "no_reward"]
+            "enum": [
+              "all_tied",
+              "no_reward"
+            ]
           },
           "zeroVotePolicy": {
             "const": "exclude"
@@ -782,7 +885,13 @@
       "aggregateOption": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["optionId", "label", "votes", "percentage", "winner"],
+        "required": [
+          "optionId",
+          "label",
+          "votes",
+          "percentage",
+          "winner"
+        ],
         "properties": {
           "optionId": {
             "$ref": "#/$defs/id"
@@ -833,10 +942,17 @@
             "maxLength": 1000
           },
           "scoring": {
-            "enum": ["poll", "majority", "minority"]
+            "enum": [
+              "poll",
+              "majority",
+              "minority"
+            ]
           },
           "state": {
-            "enum": ["finalized", "void"]
+            "enum": [
+              "finalized",
+              "void"
+            ]
           },
           "participantCount": {
             "type": "integer",
@@ -873,7 +989,12 @@
             "$ref": "#/$defs/publicQuestion"
           },
           "status": {
-            "enum": ["draft", "approved", "published", "archived"]
+            "enum": [
+              "draft",
+              "approved",
+              "published",
+              "archived"
+            ]
           },
           "correctOptionId": {
             "oneOf": [
@@ -894,6 +1015,12 @@
             },
             "minItems": 0,
             "maxItems": 20
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Admin-only explanation. Never disclosed before the next-day 09:00 JST reveal gate; never included in publicQuestion or status responses."
           },
           "rewardPoints": {
             "$ref": "#/$defs/points"
@@ -980,7 +1107,12 @@
       "resultDelivery": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["questionId", "result", "deliveryToken", "status"],
+        "required": [
+          "questionId",
+          "result",
+          "deliveryToken",
+          "status"
+        ],
         "properties": {
           "questionId": {
             "$ref": "#/$defs/id"
@@ -993,7 +1125,10 @@
             "pattern": "^[A-Za-z0-9_-]{16,128}$"
           },
           "status": {
-            "enum": ["sending", "uncertain"]
+            "enum": [
+              "sending",
+              "uncertain"
+            ]
           }
         }
       },
@@ -1003,7 +1138,12 @@
       "resultsResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status", "guildId", "discordUserId", "deliveries"],
+        "required": [
+          "status",
+          "guildId",
+          "discordUserId",
+          "deliveries"
+        ],
         "properties": {
           "status": {
             "const": "ok"
@@ -1027,7 +1167,13 @@
       "resultsAckRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["guildId", "discordUserId", "questionId", "deliveryToken", "messageId"],
+        "required": [
+          "guildId",
+          "discordUserId",
+          "questionId",
+          "deliveryToken",
+          "messageId"
+        ],
         "properties": {
           "guildId": {
             "$ref": "#/$defs/snowflake"
@@ -1050,7 +1196,13 @@
       "resultsAckResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status", "guildId", "discordUserId", "questionId", "messageId"],
+        "required": [
+          "status",
+          "guildId",
+          "discordUserId",
+          "questionId",
+          "messageId"
+        ],
         "properties": {
           "status": {
             "const": "ok"
@@ -1072,7 +1224,11 @@
       "mediaRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["guildId", "discordUserId", "mediaId"],
+        "required": [
+          "guildId",
+          "discordUserId",
+          "mediaId"
+        ],
         "properties": {
           "guildId": {
             "$ref": "#/$defs/snowflake"
