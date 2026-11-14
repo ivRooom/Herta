@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const minecraftStatusManifest: PluginManifest = {
   id: 'minecraft-status',
   name: 'Minecraft Status',
-  version: '1.5.0',
+  version: '1.6.0',
   description: 'Minecraftサーバーの稼働状態・プレイヤー・リソースを確認できます',
   author: { name: 'Herta' },
   category: 'utility',
@@ -18,6 +18,12 @@ export const minecraftStatusManifest: PluginManifest = {
       name: 'Minecraft サーバー操作',
       description:
         'Minecraftサーバーの起動・停止・再起動・セーブ・再生成を行います（運営ロール限定）',
+    },
+    {
+      id: 'minecraft-status.whitelist',
+      name: 'Minecraft ホワイトリスト審査',
+      description:
+        'Minecraftアカウント連携申請の承認・却下・再同期を行います（専用ロール必須）',
     },
   ],
   dependencies: [],
@@ -127,6 +133,16 @@ export const minecraftStatusManifest: PluginManifest = {
           help: '必須ロール（コードで指定）に加えて /mc main・/mc resource の操作を許可するロールIDを指定します。',
         },
       },
+      whitelistApproverRoleIds: {
+        type: 'array',
+        title: 'ホワイトリスト承認を許可するロールID（専用ロール）',
+        items: { type: 'string' },
+        default: [],
+        'x-herta-ui': {
+          section: 'ホワイトリスト承認',
+          help: '/mc whitelist の承認・却下・再同期を実行できる専用ロールのIDを指定します。未設定の場合は誰も実行できません。',
+        },
+      },
     },
     required: [
       'enabled',
@@ -169,6 +185,65 @@ export const minecraftStatusManifest: PluginManifest = {
               name: 'force',
               description: 'プレイヤー接続中でも強制実行します（stop / restart のみ）',
               type: 'boolean',
+              required: false,
+            },
+          ],
+        },
+        {
+          name: 'link',
+          description: 'Minecraftアカウント連携の申請・確認をします',
+          options: [
+            {
+              name: 'action',
+              description: '実行する操作',
+              type: 'string',
+              required: true,
+              choices: [
+                { name: 'apply（申請する）', value: 'apply' },
+                { name: 'status（状態を見る）', value: 'status' },
+                { name: 'cancel（申請を取り消す）', value: 'cancel' },
+              ],
+            },
+            {
+              name: 'username',
+              description: 'Minecraftユーザー名（applyのとき必須）',
+              type: 'string',
+              required: false,
+            },
+          ],
+        },
+        {
+          name: 'whitelist',
+          description: '連携申請の審査をします（専用ロール必須）',
+          options: [
+            {
+              name: 'action',
+              description: '実行する操作',
+              type: 'string',
+              required: true,
+              choices: [
+                { name: 'list（申請一覧）', value: 'list' },
+                { name: 'approve（承認）', value: 'approve' },
+                { name: 'reject（却下）', value: 'reject' },
+                { name: 'retry（再同期）', value: 'retry' },
+              ],
+            },
+            {
+              name: 'request',
+              description: '申請ID（approve / reject のとき必須）',
+              type: 'string',
+              required: false,
+            },
+            {
+              name: 'note',
+              description: '審査メモ（reject のとき必須）',
+              type: 'string',
+              required: false,
+            },
+            {
+              name: 'job',
+              description: '同期ジョブID（retry のとき必須）',
+              type: 'string',
               required: false,
             },
           ],

@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { createHmac } from 'node:crypto';
 import {
   bar,
+  buildMinecraftBotApiRequest,
   buildMinecraftControlSignature,
+  canApproveMinecraftWhitelist,
   canControlMinecraftServer,
+  formatMinecraftBotApiError,
+  formatMinecraftLinkStatus,
+  formatMinecraftPendingRequests,
+  resolveMinecraftBotApiConfig,
   minecraftControlImmediateMessage,
   minecraftControlPath,
   normalizeCpuPercent,
@@ -92,6 +99,7 @@ describe('Minecraft Status v1', () => {
       announceEvents: false,
       eventChannelId: '',
       operatorRoleIds: [],
+      whitelistApproverRoleIds: [],
     });
     expect(
       normalizeMinecraftStatusConfig({
@@ -606,5 +614,130 @@ describe('日次レポート通知', () => {
 
   it('JST の今日を返す', () => {
     expect(todayInTokyo(new Date('2026-11-10T16:30:00.000Z'))).toBe('2026-11-11');
+  });
+});
+
+describe('Minecraft ホワイトリスト連携 (#894)', () => {
+  it('承認ロール未設定なら全員拒否する (fail-closed)', () => {
+    const config = normalizeMinecraftStatusConfig({});
+    expect(
+      canApproveMinecraftWhitelist({ member: { roles: ['1114417432346501130'] } }, config),
+    ).toBe(false);
+    expect(canApproveMinecraftWhitelist({ member: { roles: [] } }, config)).toBe(false);
+  });
+
+  it('承認ロール設定時は保持者だけを許可する', () => {
+    const config = normalizeMinecraftStatusConfig({
+      whitelistApproverRoleIds: ['222222222222222222'],
+    });
+    expect(
+      canApproveMinecraftWhitelist({ member: { roles: ['222222222222222222'] } }, config),
+    ).toBe(true);
+    expect(
+      canApproveMinecraftWhitelist({ member: { roles: ['333333333333333333'] } }, config),
+    ).toBe(false);
+    // サーバー操作の必須ロールでは承認できない (別系統)
+    expect(
+      canApproveMinecraftWhitelist({ member: { roles: ['1114417432346501130'] } }, config),
+    ).toBe(false);
+  });
+
+  it('whitelistApproverRoleIds を正規化する', () => {
+    expect(
+      normalizeMinecraftStatusConfig({
+        whitelistApproverRoleIds: ['123456789012345678', 'abc', '123456789012345678', 42],
+      }),
+    ).toMatchObject({ whitelistApproverRoleIds: ['123456789012345678'] });
+  });
+
+  it('Bot API 設定は env が揃わないと無効になる', () => {
+    expect(resolveMinecraftBotApiConfig({})).toBeNull();
+    expect(
+      resolveMinecraftBotApiConfig({ IVRM_WEB_API_BASE_URL: 'https://api.ivrm.jp' }),
+    ).toBeNull();
+    expect(
+      resolveMinecraftBotApiConfig({ HERTA_MINECRAFT_SYNC_SECRET: 'secret' }),
+    ).toBeNull();
+    expect(
+      resolveMinecraftBotApiConfig({
+        IVRM_WEB_API_BASE_URL: 'http://example.com',
+        HERTA_MINECRAFT_SYNC_SECRET: 'secret',
+      }),
+    ).toBeNull();
+    expect(
+      resolveMinecraftBotApiConfig({
+        IVRM_WEB_API_BASE_URL: 'https://api.ivrm.jp/',
+        HERTA_MINECRAFT_SYNC_SECRET: 'secret',
+      }),
+    ).toEqual({ apiBaseUrl: 'https://api.ivrm.jp', secret: 'secret' });
+  });
+
+  it('Bot API リクエストは API 側と同じ署名形式で構築する', () => {
+    const config = { apiBaseUrl: 'https://api.ivrm.jp', secret: 'secret' };
+    const request = buildMinecraftBotApiRequest(
+      config,
+      '/minecraft/bot/link',
+      { discordUserId: '234567890123456789', guildId: '123456789012345678' },
+      { timestamp: '1760000000000', eventId: 'mc-test-event' },
+    );
+    const body =
+      '{"discordUserId":"234567890123456789","guildId":"123456789012345678"}';
+    const expected = createHmac('sha256', 'secret')
+      .update(`1760000000000.mc-test-event.POST./minecraft/bot/link.${body}`)
+      .digest('hex');
+    expect(request.url).toBe('https://api.ivrm.jp/minecraft/bot/link');
+    expect(request.init.headers['X-IVRM-Signature']).toBe(expected);
+    expect(request.init.headers['X-IVRM-Event-Id']).toBe('mc-test-event');
+    expect(request.init.body).toBe(body);
+  });
+
+  it('連携状態を整形する', () => {
+    expect(
+      formatMinecraftLinkStatus({
+        status: 'approved',
+        link: { minecraftUsername: 'Steve', minecraftUuid: 'x', linkedAt: null },
+        request: null,
+        whitelist: { status: 'synced', lastSyncedAt: null },
+      }),
+    ).toContain('連携済み');
+    expect(
+      formatMinecraftLinkStatus({
+        status: 'pending',
+        link: null,
+        request: {
+          id: 'mclr_1',
+          minecraftUsername: 'Steve',
+          status: 'pending',
+          requestedAt: '2026-11-14T00:00:00.000Z',
+          reviewNote: null,
+        },
+        whitelist: { status: 'not_requested', lastSyncedAt: null },
+      }),
+    ).toContain('mclr_1');
+    expect(
+      formatMinecraftLinkStatus({ status: 'none', link: null, request: null, whitelist: null }),
+    ).toContain('member.ivrm.jp/minecraft');
+  });
+
+  it('審査待ち一覧とエラーを整形する', () => {
+    expect(formatMinecraftPendingRequests({ requests: [] })).toContain('ありません');
+    const list = formatMinecraftPendingRequests({
+      requests: [
+        {
+          id: 'mclr_1',
+          minecraftUsername: 'Steve',
+          discordUsername: 'steve_d',
+          requestedAt: '2026-11-14T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(list).toContain('mclr_1');
+    expect(list).toContain('Steve');
+    expect(
+      formatMinecraftBotApiError({ ok: false, status: 404, data: { code: 'user_not_registered' } }),
+    ).toContain('member.ivrm.jp');
+    expect(formatMinecraftBotApiError({ ok: false, status: 0, data: null })).toContain(
+      '接続できませんでした',
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@herta/db';
 import { minecraftStatusManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
@@ -43,6 +43,7 @@ export interface MinecraftStatusConfig {
   announceEvents: boolean;
   eventChannelId: string;
   operatorRoleIds: string[];
+  whitelistApproverRoleIds: string[];
 }
 
 /** status.ivrm.jp/api/current.json の形（収集側の都合で欠ける場合があるため全て任意） */
@@ -193,6 +194,7 @@ export function normalizeMinecraftStatusConfig(value: unknown): MinecraftStatusC
         ? source.eventChannelId
         : '',
     operatorRoleIds: normalizeRoleIds(source.operatorRoleIds),
+    whitelistApproverRoleIds: normalizeRoleIds(source.whitelistApproverRoleIds),
   };
 }
 
@@ -709,6 +711,14 @@ async function executeMinecraftCommand(
   const subcommand = interaction.options.getSubcommand();
   if (subcommand === 'main' || subcommand === 'resource') {
     await executeMinecraftControl(context, interaction, config, subcommand);
+    return;
+  }
+  if (subcommand === 'link') {
+    await executeMinecraftLink(context, interaction);
+    return;
+  }
+  if (subcommand === 'whitelist') {
+    await executeMinecraftWhitelist(context, interaction, config);
     return;
   }
   if (subcommand !== 'status') {
@@ -1392,4 +1402,392 @@ async function runEventCycle(context: MinecraftStatusContext): Promise<void> {
       }, 0);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Minecraft ホワイトリスト連携 (/mc link・/mc whitelist)
+// ivrm-web #1075 / Herta #894。正式ルートは Web メンバーポータル
+// (member.ivrm.jp/minecraft) で、Bot は追加チャネルとして同じ API を使う。
+// 承認・却下・再同期は Studio 設定 whitelistApproverRoleIds の専用ロールが
+// 必須 (未設定なら全員不可の fail-closed。サーバー操作ロールのような
+// コード定数のフォールバックは付けない)。
+
+export function canApproveMinecraftWhitelist(
+  interaction: { member?: unknown },
+  config: MinecraftStatusConfig,
+): boolean {
+  if (config.whitelistApproverRoleIds.length === 0) return false;
+  const allowed = new Set(config.whitelistApproverRoleIds);
+  return memberRoleIds(interaction).some((role) => allowed.has(role));
+}
+
+export interface MinecraftBotApiConfig {
+  apiBaseUrl: string;
+  // ivrm-web の HERTA_MINECRAFT_SYNC_SECRET と対になる HMAC 共有鍵
+  secret: string;
+}
+
+/** IVRM_WEB_API_BASE_URL / HERTA_MINECRAFT_SYNC_SECRET が揃わない場合は null (機能は不活性) */
+export function resolveMinecraftBotApiConfig(
+  env: Partial<Record<string, string | undefined>>,
+): MinecraftBotApiConfig | null {
+  const rawUrl = env['IVRM_WEB_API_BASE_URL']?.trim();
+  const secret = env['HERTA_MINECRAFT_SYNC_SECRET']?.trim();
+  if (!rawUrl || !secret) return null;
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'https:' && url.hostname !== 'localhost') return null;
+    return { apiBaseUrl: rawUrl.replace(/\/+$/, ''), secret };
+  } catch {
+    return null;
+  }
+}
+
+export interface MinecraftBotApiRequest {
+  url: string;
+  init: { method: 'POST'; headers: Record<string, string>; body: string };
+}
+
+/**
+ * ivrm-web 側 herta-minecraft-service-auth.ts と同じ署名形式
+ * (`${timestamp}.${eventId}.POST.${pathname}.${body}` の HMAC-SHA256) で
+ * signed request を構築する。ネットワークI/Oを含まないため単体テストで検証できる。
+ */
+export function buildMinecraftBotApiRequest(
+  config: MinecraftBotApiConfig,
+  path: string,
+  fields: Record<string, unknown>,
+  options: { timestamp?: string; eventId?: string } = {},
+): MinecraftBotApiRequest {
+  const timestamp = options.timestamp ?? String(Date.now());
+  const eventId = options.eventId ?? `mc-${randomUUID()}`;
+  const body = JSON.stringify(fields);
+  const signature = createHmac('sha256', config.secret)
+    .update(`${timestamp}.${eventId}.POST.${path}.${body}`)
+    .digest('hex');
+  return {
+    url: `${config.apiBaseUrl}${path}`,
+    init: {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-IVRM-Timestamp': timestamp,
+        'X-IVRM-Event-Id': eventId,
+        'X-IVRM-Signature': signature,
+      },
+      body,
+    },
+  };
+}
+
+export interface MinecraftBotApiResult {
+  ok: boolean;
+  status: number;
+  data: Record<string, unknown> | null;
+}
+
+async function callMinecraftBotApi(
+  config: MinecraftBotApiConfig,
+  path: string,
+  fields: Record<string, unknown>,
+): Promise<MinecraftBotApiResult> {
+  const request = buildMinecraftBotApiRequest(config, path, fields);
+  try {
+    const response = await fetch(request.url, {
+      ...request.init,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    const data = (await response.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
+    return { ok: response.ok, status: response.status, data };
+  } catch {
+    return { ok: false, status: 0, data: null };
+  }
+}
+
+function botApiString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function whitelistStatusLabel(status: string | null): string {
+  switch (status) {
+    case 'synced':
+      return '反映済み';
+    case 'pending':
+    case 'syncing':
+    case 'retrying':
+      return '反映待ち';
+    case 'failed':
+      return '反映に失敗しています（運営が再同期します）';
+    case 'not_requested':
+      return '未申請';
+    default:
+      return '不明';
+  }
+}
+
+/** /minecraft/bot/link の応答を Discord 向けの文面にする */
+export function formatMinecraftLinkStatus(data: Record<string, unknown>): string {
+  const status = botApiString(data['status']) ?? 'none';
+  const link = isRecord(data['link']) ? data['link'] : null;
+  const request = isRecord(data['request']) ? data['request'] : null;
+  const whitelist = isRecord(data['whitelist']) ? data['whitelist'] : null;
+  const whitelistLabel = whitelistStatusLabel(
+    whitelist ? botApiString(whitelist['status']) : null,
+  );
+
+  if (status === 'approved' && link) {
+    return [
+      '✅ Minecraftアカウントと連携済みです。',
+      `Minecraft: ${botApiString(link['minecraftUsername']) ?? '?'}`,
+      `ホワイトリスト: ${whitelistLabel}`,
+    ].join('\n');
+  }
+  if (status === 'pending' && request) {
+    return [
+      '🕓 連携申請中です（審査待ち）。',
+      `Minecraft: ${botApiString(request['minecraftUsername']) ?? '?'}`,
+      `申請ID: ${botApiString(request['id']) ?? '?'}`,
+      '取り消す場合は /mc link の cancel を実行してください。',
+    ].join('\n');
+  }
+  if (status === 'rejected' && request) {
+    const note = botApiString(request['reviewNote']);
+    return [
+      '❌ 前回の連携申請は却下されました。',
+      `Minecraft: ${botApiString(request['minecraftUsername']) ?? '?'}`,
+      ...(note ? [`理由: ${note}`] : []),
+      '再申請は /mc link の apply、または Web ポータルからできます: https://member.ivrm.jp/minecraft',
+    ].join('\n');
+  }
+  if (status === 'cancelled') {
+    return '前回の連携申請は取り消されています。再申請は /mc link の apply、または Web ポータルからできます: https://member.ivrm.jp/minecraft';
+  }
+  return 'Minecraftアカウントはまだ連携されていません。申請は /mc link の apply、または Web ポータルからできます: https://member.ivrm.jp/minecraft';
+}
+
+/** /minecraft/bot/requests/pending の応答を Discord 向けの文面にする */
+export function formatMinecraftPendingRequests(data: Record<string, unknown>): string {
+  const requests = Array.isArray(data['requests']) ? data['requests'] : [];
+  if (requests.length === 0) {
+    return '審査待ちの連携申請はありません。';
+  }
+  const shown = requests.slice(0, 10);
+  const lines = shown.map((entry) => {
+    const item = isRecord(entry) ? entry : {};
+    const id = botApiString(item['id']) ?? '?';
+    const mc = botApiString(item['minecraftUsername']) ?? '?';
+    const discord = botApiString(item['discordUsername']) ?? '?';
+    const at = botApiString(item['requestedAt']) ?? '';
+    return `・${id} — ${mc}（Discord: ${discord}） ${at}`;
+  });
+  const rest = requests.length - shown.length;
+  return [
+    `審査待ちの連携申請: ${requests.length}件`,
+    ...lines,
+    ...(rest > 0 ? [`…他 ${rest} 件`] : []),
+    '承認: /mc whitelist の approve（request に申請ID） / 却下: reject（note 必須）',
+  ].join('\n');
+}
+
+/** Bot API のエラーコードを Discord 向けの文面にする */
+export function formatMinecraftBotApiError(result: MinecraftBotApiResult): string {
+  const code = result.data ? botApiString(result.data['code']) : null;
+  switch (code) {
+    case 'user_not_registered':
+      return 'ivRooomアカウントが見つかりませんでした。先に Web ポータルで登録してください: https://member.ivrm.jp';
+    case 'bot_api_disabled':
+      return 'Bot連携は現在有効化されていません（運営側の設定待ちです）。Web ポータルから申請できます: https://member.ivrm.jp/minecraft';
+    case 'approved_user_link_exists':
+      return 'すでにMinecraftアカウントと連携済みです。';
+    case 'pending_user_request_exists':
+    case 'pending_request_exists':
+      return 'すでに連携申請中です。状態は /mc link の status で確認できます。';
+    case 'approved_uuid_link_exists':
+      return 'そのMinecraftアカウントは別のユーザーに連携済みです。';
+    case 'pending_uuid_request_exists':
+      return 'そのMinecraftアカウントは別の申請で審査中です。';
+    case 'minecraft_profile_not_found':
+      return 'Minecraftユーザーが見つかりませんでした。ユーザー名を確認してください。';
+    case 'minecraft_profile_unavailable':
+      return 'Minecraftプロフィールの確認に失敗しました。時間を置いて再度お試しください。';
+    case 'request_not_pending':
+      return 'その申請はすでに処理済みです。';
+    case 'pending_request_not_found':
+      return '取り消せる申請がありません。';
+    case 'open_job_exists':
+      return '同内容の同期ジョブが進行中です。少し待ってから確認してください。';
+    case 'job_not_retryable':
+      return 'そのジョブは再試行できる状態ではありません。';
+    case 'approver_role_required':
+      return 'ホワイトリスト承認の専用ロールが必要です。';
+    default:
+      break;
+  }
+  if (result.status === 0) {
+    return '連携APIへ接続できませんでした。時間を置いて再度お試しください。';
+  }
+  return `エラーが発生しました（${code ?? `HTTP ${result.status}`}）。時間を置いて再度お試しください。`;
+}
+
+const MINECRAFT_LINK_UNAVAILABLE_MESSAGE =
+  'Minecraft連携機能は現在利用できません（運営側の設定待ちです）。Web ポータルから申請できます: https://member.ivrm.jp/minecraft';
+
+async function ephemeralReply(
+  interaction: MinecraftStatusInteraction,
+  content: string,
+): Promise<void> {
+  await interaction.reply({
+    content,
+    flags: EPHEMERAL_FLAG,
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function executeMinecraftLink(
+  context: MinecraftStatusContext,
+  interaction: MinecraftStatusInteraction,
+): Promise<void> {
+  void context;
+  const api = resolveMinecraftBotApiConfig(process.env);
+  if (!api) {
+    await ephemeralReply(interaction, MINECRAFT_LINK_UNAVAILABLE_MESSAGE);
+    return;
+  }
+  const discordUserId = interaction.user?.id;
+  if (!discordUserId || !interaction.guildId) {
+    await ephemeralReply(interaction, 'ユーザー情報を取得できませんでした。');
+    return;
+  }
+  const base = { discordUserId, guildId: interaction.guildId };
+  const action = interaction.options.getString('action') ?? 'status';
+
+  if (action === 'apply') {
+    const username = interaction.options.getString('username');
+    if (!username) {
+      await ephemeralReply(
+        interaction,
+        'apply のときは username（Minecraftユーザー名）を指定してください。',
+      );
+      return;
+    }
+    const result = await callMinecraftBotApi(api, '/minecraft/bot/link/request', {
+      ...base,
+      minecraftUsername: username,
+    });
+    await ephemeralReply(
+      interaction,
+      result.ok
+        ? '連携申請を受け付けました。審査が終わると自動でホワイトリストへ反映されます。状態は /mc link の status で確認できます。'
+        : formatMinecraftBotApiError(result),
+    );
+    return;
+  }
+
+  if (action === 'cancel') {
+    const result = await callMinecraftBotApi(api, '/minecraft/bot/link/cancel', base);
+    await ephemeralReply(
+      interaction,
+      result.ok ? '連携申請を取り消しました。' : formatMinecraftBotApiError(result),
+    );
+    return;
+  }
+
+  const result = await callMinecraftBotApi(api, '/minecraft/bot/link', base);
+  await ephemeralReply(
+    interaction,
+    result.ok && result.data
+      ? formatMinecraftLinkStatus(result.data)
+      : formatMinecraftBotApiError(result),
+  );
+}
+
+async function executeMinecraftWhitelist(
+  context: MinecraftStatusContext,
+  interaction: MinecraftStatusInteraction,
+  config: MinecraftStatusConfig,
+): Promise<void> {
+  void context;
+  if (!canApproveMinecraftWhitelist(interaction, config)) {
+    await ephemeralReply(
+      interaction,
+      'この操作にはホワイトリスト承認の専用ロールが必要です。ロールが未設定の場合は、運営が Studio で設定するまで使えません。',
+    );
+    return;
+  }
+  const api = resolveMinecraftBotApiConfig(process.env);
+  if (!api) {
+    await ephemeralReply(interaction, MINECRAFT_LINK_UNAVAILABLE_MESSAGE);
+    return;
+  }
+  const discordUserId = interaction.user?.id;
+  if (!discordUserId || !interaction.guildId) {
+    await ephemeralReply(interaction, 'ユーザー情報を取得できませんでした。');
+    return;
+  }
+  const base = {
+    discordUserId,
+    guildId: interaction.guildId,
+    approverRoleVerified: true,
+  };
+  const action = interaction.options.getString('action') ?? 'list';
+
+  if (action === 'approve' || action === 'reject') {
+    const requestId = interaction.options.getString('request');
+    if (!requestId) {
+      await ephemeralReply(
+        interaction,
+        `${action} のときは request（申請ID）を指定してください。一覧は /mc whitelist の list で確認できます。`,
+      );
+      return;
+    }
+    const note = interaction.options.getString('note');
+    if (action === 'reject' && !note) {
+      await ephemeralReply(interaction, 'reject のときは note（却下理由）が必須です。');
+      return;
+    }
+    const result = await callMinecraftBotApi(
+      api,
+      `/minecraft/bot/requests/${action}`,
+      { ...base, requestId, ...(note ? { reviewNote: note } : {}) },
+    );
+    await ephemeralReply(
+      interaction,
+      result.ok
+        ? action === 'approve'
+          ? `申請 ${requestId} を承認しました。ホワイトリストへの反映が始まります。`
+          : `申請 ${requestId} を却下しました。`
+        : formatMinecraftBotApiError(result),
+    );
+    return;
+  }
+
+  if (action === 'retry') {
+    const jobId = interaction.options.getString('job');
+    if (!jobId) {
+      await ephemeralReply(interaction, 'retry のときは job（同期ジョブID）を指定してください。');
+      return;
+    }
+    const result = await callMinecraftBotApi(api, '/minecraft/bot/whitelist/retry', {
+      ...base,
+      jobId,
+    });
+    await ephemeralReply(
+      interaction,
+      result.ok
+        ? `同期ジョブ ${jobId} の再試行を受け付けました。`
+        : formatMinecraftBotApiError(result),
+    );
+    return;
+  }
+
+  const result = await callMinecraftBotApi(api, '/minecraft/bot/requests/pending', base);
+  await ephemeralReply(
+    interaction,
+    result.ok && result.data
+      ? formatMinecraftPendingRequests(result.data)
+      : formatMinecraftBotApiError(result),
+  );
 }
