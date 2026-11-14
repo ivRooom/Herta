@@ -22,8 +22,7 @@ export const minecraftStatusManifest: PluginManifest = {
     {
       id: 'minecraft-status.whitelist',
       name: 'Minecraft ホワイトリスト審査',
-      description:
-        'Minecraftアカウント連携申請の承認・却下・再同期を行います（専用ロール必須）',
+      description: 'Minecraftアカウント連携申請の承認・却下・再同期を行います（専用ロール必須）',
     },
   ],
   dependencies: [],

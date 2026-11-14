@@ -1497,10 +1497,7 @@ async function callMinecraftBotApi(
       ...request.init,
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
-    const data = (await response.json().catch(() => null)) as Record<
-      string,
-      unknown
-    > | null;
+    const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     return { ok: response.ok, status: response.status, data };
   } catch {
     return { ok: false, status: 0, data: null };
@@ -1534,9 +1531,7 @@ export function formatMinecraftLinkStatus(data: Record<string, unknown>): string
   const link = isRecord(data['link']) ? data['link'] : null;
   const request = isRecord(data['request']) ? data['request'] : null;
   const whitelist = isRecord(data['whitelist']) ? data['whitelist'] : null;
-  const whitelistLabel = whitelistStatusLabel(
-    whitelist ? botApiString(whitelist['status']) : null,
-  );
+  const whitelistLabel = whitelistStatusLabel(whitelist ? botApiString(whitelist['status']) : null);
 
   if (status === 'approved' && link) {
     return [
@@ -1748,11 +1743,11 @@ async function executeMinecraftWhitelist(
       await ephemeralReply(interaction, 'reject のときは note（却下理由）が必須です。');
       return;
     }
-    const result = await callMinecraftBotApi(
-      api,
-      `/minecraft/bot/requests/${action}`,
-      { ...base, requestId, ...(note ? { reviewNote: note } : {}) },
-    );
+    const result = await callMinecraftBotApi(api, `/minecraft/bot/requests/${action}`, {
+      ...base,
+      requestId,
+      ...(note ? { reviewNote: note } : {}),
+    });
     await ephemeralReply(
       interaction,
       result.ok

@@ -655,9 +655,7 @@ describe('Minecraft ホワイトリスト連携 (#894)', () => {
     expect(
       resolveMinecraftBotApiConfig({ IVRM_WEB_API_BASE_URL: 'https://api.ivrm.jp' }),
     ).toBeNull();
-    expect(
-      resolveMinecraftBotApiConfig({ HERTA_MINECRAFT_SYNC_SECRET: 'secret' }),
-    ).toBeNull();
+    expect(resolveMinecraftBotApiConfig({ HERTA_MINECRAFT_SYNC_SECRET: 'secret' })).toBeNull();
     expect(
       resolveMinecraftBotApiConfig({
         IVRM_WEB_API_BASE_URL: 'http://example.com',
@@ -680,8 +678,7 @@ describe('Minecraft ホワイトリスト連携 (#894)', () => {
       { discordUserId: '234567890123456789', guildId: '123456789012345678' },
       { timestamp: '1760000000000', eventId: 'mc-test-event' },
     );
-    const body =
-      '{"discordUserId":"234567890123456789","guildId":"123456789012345678"}';
+    const body = '{"discordUserId":"234567890123456789","guildId":"123456789012345678"}';
     const expected = createHmac('sha256', 'secret')
       .update(`1760000000000.mc-test-event.POST./minecraft/bot/link.${body}`)
       .digest('hex');
