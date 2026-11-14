@@ -105,6 +105,8 @@ interface MinecraftStatusInteraction {
   options: MinecraftStatusOptions;
   user?: { id?: string };
   member?: unknown;
+  deferred?: boolean;
+  replied?: boolean;
   reply(options: ReplyOptions): Promise<unknown>;
   deferReply(options?: { flags?: number }): Promise<unknown>;
   editReply(options: EditReplyOptions): Promise<unknown>;
@@ -1634,6 +1636,13 @@ async function ephemeralReply(
   interaction: MinecraftStatusInteraction,
   content: string,
 ): Promise<void> {
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({
+      content,
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
   await interaction.reply({
     content,
     flags: EPHEMERAL_FLAG,
@@ -1657,6 +1666,8 @@ async function executeMinecraftLink(
     return;
   }
   const base = { discordUserId, guildId: interaction.guildId };
+  // Bot API の応答待ちで応答期限（約3秒）を切らないよう、先に defer する
+  await interaction.deferReply({ flags: EPHEMERAL_FLAG });
   const action = interaction.options.getString('action') ?? 'status';
 
   if (action === 'apply') {
@@ -1727,6 +1738,8 @@ async function executeMinecraftWhitelist(
     guildId: interaction.guildId,
     approverRoleVerified: true,
   };
+  // Bot API の応答待ちで応答期限（約3秒）を切らないよう、先に defer する
+  await interaction.deferReply({ flags: EPHEMERAL_FLAG });
   const action = interaction.options.getString('action') ?? 'list';
 
   if (action === 'approve' || action === 'reject') {
