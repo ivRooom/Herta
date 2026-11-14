@@ -52,6 +52,10 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     assert local['services']['bot']['environment'].pop('MINECRAFT_CONTROL_SECRET') == values.get('MINECRAFT_CONTROL_SECRET', '')
     # Minecraft whitelist bot API secret is not a database topology change.
     assert local['services']['bot']['environment'].pop('HERTA_MINECRAFT_SYNC_SECRET') == values.get('HERTA_MINECRAFT_SYNC_SECRET', '')
+    # Release notification settings are not a database topology change.
+    # The sender stays off by default; only an explicit env-file value enables it.
+    assert local['services']['bot']['environment'].pop('HERTA_RELEASE_NOTIFY_ENABLED') == 'false'
+    assert local['services']['bot']['environment'].pop('HERTA_RELEASE_NOTIFY_SECRET') == values.get('HERTA_RELEASE_NOTIFY_SECRET', '')
     # Voice provider configuration is not a database topology change.
     # It must remain fail-closed in every default/local deployment.
     assert local['services']['bot']['environment'].pop('VC_RECAP_TRANSCRIPTION_PROVIDER') == 'aws'
