@@ -39,12 +39,19 @@ import {
 } from './daily-participation-client.js';
 import { renderDailyQuestionCard, type DailyQuestionCardResult } from './daily-question-card.js';
 import { replyDailyParticipationAnswer } from './daily-result-card-reply.js';
+import { dailySupportActionRow, type DailySupportReference } from './daily-support.js';
 
 interface Context {
   guildId: string;
   prisma: PrismaClient;
   client: Client;
-  config: { enabled: boolean; notificationRoleId: string; fortuneEnabled?: boolean };
+  config: {
+    enabled: boolean;
+    notificationRoleId: string;
+    fortuneEnabled?: boolean;
+    supportChannelId?: string;
+    supportRoleId?: string;
+  };
 }
 type Interaction = ButtonInteraction | ModalSubmitInteraction;
 const sessionPattern = /^daily-participation:(answer|text|submit):([0-9a-f-]{36})(?::([0-3]))?$/;
@@ -592,6 +599,14 @@ export async function handleDailyParticipation(
     return;
   }
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  // The operation a failure reply should escalate (#896). Updated as the
+  // flow identifies what the member was doing; empty target = no context
+  // yet, and the catch block then keeps the plain reply.
+  let supportRef: DailySupportReference = {
+    kind: 'answer',
+    failureClass: 'service_unavailable',
+    target: '',
+  };
   try {
     if (
       !dailyQuizParticipationEnabled(studioSettings) ||
@@ -599,7 +614,13 @@ export async function handleDailyParticipation(
     )
       throw new Error('disabled');
     const { date, messageId, session, sessionMatch } = await admission(ctx, interaction);
+    supportRef = { kind: 'answer', failureClass: 'service_unavailable', target: date };
     if (session) {
+      supportRef = {
+        kind: 'answer',
+        failureClass: 'service_unavailable',
+        target: session.quiz_id,
+      };
       const state = await participationStatus(ctx.guildId, interaction.user.id);
       ensureCurrent();
       const question = state.questions.find((q) => q.id === session.quiz_id && q.dateJst === date);
@@ -657,6 +678,7 @@ export async function handleDailyParticipation(
     // rendering is an implicit side effect of accepting a login bonus.
     const wantsClaim = /^daily-bonus:\d{4}-\d\d-\d\d$/.test(interaction.customId);
     if (wantsClaim) {
+      supportRef = { kind: 'claim', failureClass: 'service_unavailable', target: date };
       ensureCurrent();
       const claimed = await participationClaim(ctx.guildId, interaction.user.id, date, messageId);
       if (claimed.receipt.claimDateJst !== date) throw new Error('expired');
@@ -695,21 +717,34 @@ export async function handleDailyParticipation(
     await showParticipationQuestions(ctx, interaction, state, messageId);
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
+    const content =
+      code === 'expired'
+        ? '対象ロール・当日の通知・回答期限を確認してください。'
+        : code === 'invalid_answer'
+          ? '回答の文字数や選択肢を確認してください。'
+          : dailyBonusFailureMessage(
+              code === 'profile_required'
+                ? 'profile_required'
+                : code === 'account_initialization_required'
+                  ? 'account_initialization_required'
+                  : 'unavailable',
+            );
+    // Only service-side failures (the unavailable fallback above) gain
+    // the support escalation row (#896). Normal rejections, input issues
+    // and setup states keep the plain reply.
+    const escalates =
+      supportRef.target !== '' &&
+      ![
+        'expired',
+        'invalid_answer',
+        'disabled',
+        'profile_required',
+        'account_initialization_required',
+      ].includes(code);
     await interaction.editReply({
-      content:
-        code === 'expired'
-          ? '対象ロール・当日の通知・回答期限を確認してください。'
-          : code === 'invalid_answer'
-            ? '回答の文字数や選択肢を確認してください。'
-            : dailyBonusFailureMessage(
-                code === 'profile_required'
-                  ? 'profile_required'
-                  : code === 'account_initialization_required'
-                    ? 'account_initialization_required'
-                    : 'unavailable',
-              ),
+      content,
       allowedMentions: { parse: [] },
-      components: [],
+      components: escalates ? [dailySupportActionRow(supportRef, ctx.config)] : [],
     });
   }
 }

@@ -29,7 +29,7 @@ import { captureDailyBonusPopulation } from './daily-bonus-population.js';
 import { selectAnniversaries } from './daily-bonus-content.js';
 import { EMPTY_FORTUNE_PROFILE } from './fortune-core.js';
 import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
-import { claimDailyBonus, dailyBonusStatus } from './daily-bonus-wallet.js';
+import { claimDailyBonus, dailyBonusStatus, type DailyWalletResult } from './daily-bonus-wallet.js';
 import { savedDailyFortune } from './daily-fortune.js';
 import { renderFortuneCard } from './fortune-card.js';
 import { handleDailyParticipation, isParticipationInteraction } from './daily-participation.js';
@@ -41,11 +41,20 @@ import {
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
 import { dailyBonusActionRow } from './daily-bonus-buttons.js';
+import {
+  dailySupportActionRow,
+  dailySupportFailureClass,
+  handleDailySupportNotify,
+  isDailySupportInteraction,
+  type DailySupportFailureClass,
+} from './daily-support.js';
 
 interface Config {
   enabled: boolean;
   channelId: string;
   notificationRoleId: string;
+  supportChannelId: string;
+  supportRoleId: string;
   fortuneEnabled: boolean;
   anniversaryLimit: number;
   anniversaryCategories: string[];
@@ -77,6 +86,10 @@ export const dailyBonusPlugin = definePlugin<Config, Client, PrismaClient>({
         event: 'interactionCreate',
         async handler(ctx, ...args) {
           const interaction = args[0] as ButtonInteraction | ModalSubmitInteraction | undefined;
+          if (interaction?.isButton() && isDailySupportInteraction(interaction.customId)) {
+            await handleDailySupportNotify(ctx, interaction);
+            return;
+          }
           if (
             interaction &&
             (interaction.isButton() || interaction.isModalSubmit()) &&
@@ -288,6 +301,29 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
     running.delete(ctx.guildId);
   }
 }
+/**
+ * Claim failure replies gain the support escalation row (#896) when the
+ * failure is a service-side one the member cannot resolve alone. Setup
+ * states keep their plain self-service guidance.
+ */
+async function replyClaimFailure(
+  ctx: Context,
+  interaction: ButtonInteraction,
+  status: DailyWalletResult['status'],
+  date: string,
+  failureClass: DailySupportFailureClass | null = dailySupportFailureClass(status),
+) {
+  const content = dailyBonusFailureMessage(status);
+  if (!failureClass) {
+    await interaction.editReply(content);
+    return;
+  }
+  await interaction.editReply({
+    content,
+    components: [dailySupportActionRow({ kind: 'claim', failureClass, target: date }, ctx.config)],
+  });
+}
+
 async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
   const generation = generations.get(ctx.guildId) ?? 0;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -370,7 +406,7 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
     }
     const status = await dailyBonusStatus(ctx.guildId, interaction.user.id);
     if (status.status !== 'quiz' && status.status !== 'ready' && status.status !== 'confirmed') {
-      await interaction.editReply(dailyBonusFailureMessage(status.status));
+      await replyClaimFailure(ctx, interaction, status.status, date);
       return;
     }
     await recordDailyClaim(ctx.prisma, ctx.guildId, interaction.user.id, date, 'pending');
@@ -397,7 +433,7 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
           ? 'unlinked'
           : 'unavailable',
       );
-      await interaction.editReply(dailyBonusFailureMessage(result.status));
+      await replyClaimFailure(ctx, interaction, result.status, date);
       return;
     }
     await recordDailyClaim(
@@ -415,9 +451,22 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       await loadDailyQuizStudioSettings(ctx.prisma, ctx.guildId),
     );
   } catch {
-    await interaction.editReply(
-      '処理結果を確認できませんでした。同じボタンから再確認してください。重複付与はされません。',
-    );
+    const content =
+      '処理結果を確認できませんでした。同じボタンから再確認してください。重複付与はされません。';
+    const failedDate = /(\d{4}-\d{2}-\d{2})/.exec(interaction.customId)?.[1];
+    if (!failedDate) {
+      await interaction.editReply(content);
+      return;
+    }
+    await interaction.editReply({
+      content,
+      components: [
+        dailySupportActionRow(
+          { kind: 'claim', failureClass: 'unexpected', target: failedDate },
+          ctx.config,
+        ),
+      ],
+    });
   }
 }
 
