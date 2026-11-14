@@ -27,6 +27,18 @@ export const dailyBonusManifest: PluginManifest = {
         default: '1565130164386398403',
         title: '通知・受取対象ロール',
       },
+      supportChannelId: {
+        type: 'string',
+        pattern: '^$|^[0-9]{17,20}$',
+        default: '',
+        title: '運営通知チャンネル（失敗報告の送信先、空なら無効）',
+      },
+      supportRoleId: {
+        type: 'string',
+        pattern: '^$|^[0-9]{17,20}$',
+        default: '',
+        title: '運営通知ロール（失敗報告でメンション、空ならメンションなし）',
+      },
       scheduleTime: { type: 'string', enum: ['09:00'], default: '09:00', title: '配信時刻（JST）' },
       timezone: { type: 'string', enum: ['Asia/Tokyo'], default: 'Asia/Tokyo' },
       fortuneEnabled: { type: 'boolean', default: true, title: '受取後に運勢を表示' },
