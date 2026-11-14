@@ -50,6 +50,8 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     # Minecraft control settings are not a database topology change.
     assert local['services']['bot']['environment'].pop('MINECRAFT_CONTROL_URL') == values.get('MINECRAFT_CONTROL_URL', '')
     assert local['services']['bot']['environment'].pop('MINECRAFT_CONTROL_SECRET') == values.get('MINECRAFT_CONTROL_SECRET', '')
+    # Minecraft whitelist bot API secret is not a database topology change.
+    assert local['services']['bot']['environment'].pop('HERTA_MINECRAFT_SYNC_SECRET') == values.get('HERTA_MINECRAFT_SYNC_SECRET', '')
     # Voice provider configuration is not a database topology change.
     # It must remain fail-closed in every default/local deployment.
     assert local['services']['bot']['environment'].pop('VC_RECAP_TRANSCRIPTION_PROVIDER') == 'aws'
