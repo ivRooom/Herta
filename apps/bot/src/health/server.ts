@@ -28,6 +28,11 @@ import {
   parseGuildMessageStudioSendInput,
   sendGuildMessageStudioMessage,
 } from './message-studio-send.js';
+import {
+  ReleaseNotificationSendError,
+  parseReleaseNotificationSendInput,
+  sendReleaseNotification,
+} from './release-notifications-send.js';
 import { createUnknownHealthResponse } from './service.js';
 import type { HertaHealthResponse, PublicServiceStatus } from './types.js';
 
@@ -52,6 +57,8 @@ export interface HealthHttpServerOptions {
     input: { discordUserId: string; resultType: string },
   ) => Promise<MbtiRoleReconciliationResult | null>;
   internalApiSecret?: string;
+  releaseNotifyEnabled?: boolean;
+  releaseNotifySecret?: string;
   now?: () => Date;
   uptimeSeconds?: () => number;
 }
@@ -204,6 +211,11 @@ export class HealthHttpServer {
         method,
         guildMessageStudioMatch[1]!,
       );
+      return;
+    }
+
+    if (pathname === '/internal/release-notifications/send') {
+      await this.handleReleaseNotificationSendRequest(request, response, method);
       return;
     }
 
@@ -600,6 +612,72 @@ export class HealthHttpServer {
       this.options.logger.error(
         { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
         'Message Studio内部送信で予期しないエラーが発生しました',
+      );
+      this.sendJson(response, 503, { status: 'unavailable' });
+    }
+  }
+
+  private async handleReleaseNotificationSendRequest(
+    request: IncomingMessage,
+    response: import('node:http').ServerResponse,
+    method: string,
+  ): Promise<void> {
+    if (!this.options.releaseNotifyEnabled) {
+      this.sendJson(response, 503, { status: 'release_notify_disabled' });
+      return;
+    }
+    const releaseNotifySecret = this.options.releaseNotifySecret;
+    if (!isConfiguredInternalApiSecret(releaseNotifySecret)) {
+      this.sendJson(response, 503, { status: 'release_notify_not_configured' });
+      return;
+    }
+    if (!isAuthorizedInternalApiRequest(request.headers.authorization, releaseNotifySecret)) {
+      this.sendJson(response, 401, { status: 'unauthorized' });
+      return;
+    }
+    if (method !== 'POST') {
+      response.setHeader('Allow', 'POST');
+      this.sendJson(response, 405, { status: 'method_not_allowed' });
+      return;
+    }
+
+    const token = process.env['DISCORD_BOT_TOKEN']?.trim();
+    if (!token) {
+      this.sendJson(response, 503, { status: 'discord_bot_not_configured' });
+      return;
+    }
+
+    let rawBody: unknown;
+    try {
+      rawBody = await readJsonBody(request, MAX_INTERNAL_JSON_BODY_BYTES);
+    } catch (error) {
+      this.sendJson(response, error instanceof RequestBodyTooLargeError ? 413 : 400, {
+        status: error instanceof RequestBodyTooLargeError ? 'payload_too_large' : 'invalid_json',
+      });
+      return;
+    }
+
+    const input = parseReleaseNotificationSendInput(rawBody);
+    if (!input) {
+      this.sendJson(response, 400, { status: 'invalid_message_input' });
+      return;
+    }
+
+    try {
+      const result = await sendReleaseNotification(token, input);
+      this.sendJson(response, 201, { result });
+    } catch (error) {
+      if (error instanceof ReleaseNotificationSendError) {
+        this.options.logger.warn(
+          { channelId: input.channelId, status: error.status, errorName: error.name },
+          'Release通知の内部送信に失敗しました',
+        );
+        this.sendJson(response, error.status, { status: 'discord_publish_failed' });
+        return;
+      }
+      this.options.logger.error(
+        { errorName: error instanceof Error ? error.name : 'UnknownError' },
+        'Release通知の内部送信で予期しないエラーが発生しました',
       );
       this.sendJson(response, 503, { status: 'unavailable' });
     }

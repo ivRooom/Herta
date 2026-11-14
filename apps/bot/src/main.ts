@@ -94,6 +94,9 @@ const healthServer = healthConfig.enabled
       reconcileMbtiRole: (guildId, input) =>
         bot.reconcileMbtiRoleForWebQuiz(guildId, input.discordUserId, input.resultType),
       internalApiSecret: process.env['BOT_INTERNAL_API_SECRET']?.trim(),
+      releaseNotifyEnabled:
+        process.env['HERTA_RELEASE_NOTIFY_ENABLED']?.trim().toLowerCase() === 'true',
+      releaseNotifySecret: process.env['HERTA_RELEASE_NOTIFY_SECRET']?.trim(),
     })
   : undefined;
 
