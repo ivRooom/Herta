@@ -53,8 +53,7 @@ interface Config {
   enabled: boolean;
   channelId: string;
   notificationRoleId: string;
-  supportChannelId: string;
-  supportRoleId: string;
+  supportMentionId: string;
   fortuneEnabled: boolean;
   anniversaryLimit: number;
   anniversaryCategories: string[];

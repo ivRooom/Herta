@@ -28,7 +28,7 @@ const answerRef: DailySupportReference = {
   failureClass: 'unexpected',
   target: 'quiz_abc-123',
 };
-const configured = { supportChannelId: '123456789012345678', supportRoleId: '234567890123456789' };
+const configured = { supportMentionId: '234567890123456789' };
 
 describe('daily support failure classification', () => {
   it.each([
@@ -93,8 +93,8 @@ describe('daily support action row', () => {
 
   it.each([
     [{}, 'unconfigured'],
-    [{ supportChannelId: '' }, 'empty channel'],
-    [{ supportChannelId: 'not-a-channel' }, 'invalid channel'],
+    [{ supportMentionId: '' }, 'empty mention target'],
+    [{ supportMentionId: 'not-an-id' }, 'invalid mention target'],
   ] as [DailySupportConfig, string][])('shows only the portal link when %s (%s)', (config) => {
     expect(dailySupportConfigured(config)).toBe(false);
     const row = dailySupportActionRow(claimRef, config).toJSON();
@@ -151,6 +151,7 @@ describe('daily support notification content', () => {
     expect(content).toContain('テスト太郎');
     expect(content).toContain('345678901234567890');
     expect(content).toContain('2026-11-14 05:54 JST');
+    expect(content).toContain('https://member.ivrm.jp/login-bonus');
     // The member is identified by id text only, never pinged.
     expect(content).not.toContain('<@');
     expect(content).not.toMatch(/error|stack|token|secret/i);
@@ -158,7 +159,7 @@ describe('daily support notification content', () => {
 });
 
 describe('daily support notification sending', () => {
-  function fakeClient(send: ReturnType<typeof vi.fn>, fetchable = true) {
+  function fakeClient(send: ReturnType<typeof vi.fn>, fetchable = true, mentionIsRole = true) {
     return {
       channels: {
         fetch: vi.fn(async () =>
@@ -167,6 +168,11 @@ describe('daily support notification sending', () => {
             : { isTextBased: () => false, isThread: () => false, send },
         ),
       },
+      guilds: {
+        fetch: vi.fn(async () => ({
+          roles: { fetch: vi.fn(async () => (mentionIsRole ? { id: 'role' } : null)) },
+        })),
+      },
     } as unknown as Client;
   }
 
@@ -174,13 +180,35 @@ describe('daily support notification sending', () => {
     const send = vi.fn();
     const sent = await sendDailySupportNotification(
       { guildId: 'guild', client: fakeClient(send), config: {} },
-      { userId: 'u', userDisplayName: 'n', ref: claimRef },
+      { userId: 'u', userDisplayName: 'n', ref: claimRef, channelId: 'channel-1' },
     );
     expect(sent).toBe(false);
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('mentions only the support role', async () => {
+  it('posts to the channel where the failure happened', async () => {
+    const send = vi.fn(async (_payload: unknown) => ({}));
+    const fetchChannel = vi.fn(async (_id: string) => ({
+      isTextBased: () => true,
+      isThread: () => false,
+      send,
+    }));
+    const client = {
+      channels: { fetch: fetchChannel },
+      guilds: {
+        fetch: vi.fn(async () => ({ roles: { fetch: vi.fn(async () => ({ id: 'role' })) } })),
+      },
+    } as unknown as Client;
+    const sent = await sendDailySupportNotification(
+      { guildId: 'guild', client, config: configured },
+      { userId: 'u', userDisplayName: 'n', ref: claimRef, channelId: 'channel-42' },
+    );
+    expect(sent).toBe(true);
+    expect(fetchChannel).toHaveBeenCalledWith('channel-42');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('mentions only the support role when the target is a role', async () => {
     const send = vi.fn(async (_payload: unknown) => ({}));
     const sent = await sendDailySupportNotification(
       { guildId: 'guild', client: fakeClient(send), config: configured },
@@ -188,6 +216,7 @@ describe('daily support notification sending', () => {
         userId: 'u',
         userDisplayName: 'n',
         ref: claimRef,
+        channelId: 'channel-1',
         now: new Date('2026-11-14T05:54:00+09:00'),
       },
     );
@@ -202,26 +231,28 @@ describe('daily support notification sending', () => {
     expect(payload.allowedMentions.users).toEqual([]);
   });
 
-  it('posts without a mention when no role is configured', async () => {
+  it('mentions the user when the target is not a role', async () => {
     const send = vi.fn(async (_payload: unknown) => ({}));
     const sent = await sendDailySupportNotification(
-      {
-        guildId: 'guild',
-        client: fakeClient(send),
-        config: { supportChannelId: configured.supportChannelId },
-      },
-      { userId: 'u', userDisplayName: 'n', ref: claimRef },
+      { guildId: 'guild', client: fakeClient(send, true, false), config: configured },
+      { userId: 'u', userDisplayName: 'n', ref: claimRef, channelId: 'channel-1' },
     );
     expect(sent).toBe(true);
-    const payload = send.mock.calls[0]![0] as { content: string };
-    expect(payload.content).not.toContain('<@&');
+    const payload = send.mock.calls[0]![0] as {
+      content: string;
+      allowedMentions: { parse: string[]; roles?: string[]; users?: string[] };
+    };
+    expect(payload.content.startsWith('<@234567890123456789> ')).toBe(true);
+    expect(payload.allowedMentions.parse).toEqual([]);
+    expect(payload.allowedMentions.roles).toEqual([]);
+    expect(payload.allowedMentions.users).toEqual(['234567890123456789']);
   });
 
   it('fails safe when the channel cannot be used', async () => {
     const send = vi.fn();
     const sent = await sendDailySupportNotification(
       { guildId: 'guild', client: fakeClient(send, false), config: configured },
-      { userId: 'u', userDisplayName: 'n', ref: claimRef },
+      { userId: 'u', userDisplayName: 'n', ref: claimRef, channelId: 'channel-1' },
     );
     expect(sent).toBe(false);
     expect(send).not.toHaveBeenCalled();
