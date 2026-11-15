@@ -167,6 +167,18 @@ export async function participationClaim(
   return parsed;
 }
 const reviewResponseSchema = responseSchema.omit({ questionId: true }).strict();
+const reviewStatsSchema = z
+  .object({
+    totalResponses: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    correctResponses: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    correctRate: z.number().int().min(0).max(100).nullable(),
+  })
+  .strict()
+  .refine(
+    (s) =>
+      s.correctResponses <= s.totalResponses &&
+      (s.totalResponses === 0) === (s.correctRate === null),
+  );
 export const yesterdayReviewSchema = z
   .object({
     status: z.literal('ok'),
@@ -182,6 +194,11 @@ export const yesterdayReviewSchema = z
             userResponse: reviewResponseSchema.nullable(),
             correctOptionId: id.nullable(),
             explanation: text(10000).nullable(),
+            // Community stats (#903): aggregate answer counts behind the
+            // same reveal gate as the correct option. Optional so a
+            // pre-stats API payload (deploy order) still validates; the
+            // API sends null until the review is revealed.
+            stats: reviewStatsSchema.nullable().optional(),
           })
           .strict(),
       )

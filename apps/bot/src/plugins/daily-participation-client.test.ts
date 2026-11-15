@@ -108,6 +108,54 @@ it('fetches the yesterday review with the canonical body and validates it (#820)
   expect(review.entries[0]!.correctOptionId).toBe('a');
   expect(review.entries[0]!.userResponse?.optionId).toBe('b');
 });
+it('accepts yesterday stats and rejects malformed aggregates (#903)', async () => {
+  configure();
+  const withStats = {
+    ...yesterdayPayload,
+    entries: [
+      {
+        ...yesterdayEntry,
+        stats: { totalResponses: 13, correctResponses: 8, correctRate: 62 },
+      },
+    ],
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json(withStats)),
+  );
+  const review = await yesterdayReview(guild, user);
+  expect(review.entries[0]!.stats).toEqual({
+    totalResponses: 13,
+    correctResponses: 8,
+    correctRate: 62,
+  });
+  // Not yet revealed: the API sends stats as null, which must validate.
+  expect(
+    yesterdayReviewSchema.safeParse({
+      ...yesterdayPayload,
+      revealed: false,
+      entries: [{ ...yesterdayEntry, stats: null }],
+    }).success,
+  ).toBe(true);
+  for (const stats of [
+    { totalResponses: 13, correctResponses: 14, correctRate: 100 },
+    { totalResponses: 13, correctResponses: 8, correctRate: 101 },
+    { totalResponses: 0, correctResponses: 0, correctRate: 0 },
+    { totalResponses: 3, correctResponses: 1, correctRate: null },
+    { totalResponses: -1, correctResponses: 0, correctRate: null },
+  ]) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          ...yesterdayPayload,
+          entries: [{ ...yesterdayEntry, stats }],
+        }),
+      ),
+    );
+    await expect(yesterdayReview(guild, user)).rejects.toThrow();
+  }
+});
 it('rejects malformed yesterday payloads and any date other than yesterday JST (#820)', async () => {
   configure();
   expect(yesterdayReviewSchema.safeParse(yesterdayPayload).success).toBe(true);
