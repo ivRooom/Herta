@@ -16,9 +16,12 @@ it('does not open a legacy quiz when receiving a login claim', () => {
   );
 });
 
-it('fails closed on old quiz buttons instead of awarding login points', () => {
-  expect(handler).toContain("auxiliary?.[1] === 'questions'");
-  expect(handler).toContain('旧方式の回答は終了しました');
+it('has no legacy quiz button handling that could award login points', () => {
+  // The V1 answer/questions stubs were removed with the V1 quiz retirement
+  // (ivrm-web#770): old buttons fall through to the generic rejection and
+  // never reach the claim call.
+  expect(handler).not.toContain('daily-bonus:answer');
+  expect(handler).not.toContain("'questions'");
   expect(handler).not.toContain('answer ? Number(answer[2])');
 });
 
