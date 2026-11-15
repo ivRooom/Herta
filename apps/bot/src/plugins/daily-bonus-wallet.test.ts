@@ -36,8 +36,9 @@ describe('daily bonus canonical wallet client', () => {
           claimDateJst: '2026-10-30',
           announcementMessageId: '323456789012345678',
           idempotencyKey: `daily-login:${guild}:${user}:2026-10-30`,
-          quizId: 'quiz',
-          choiceIndex: 1,
+          // Deprecated contract fields: claims never carry a V1 quiz answer.
+          quizId: null,
+          choiceIndex: null,
         });
         return Response.json({
           status: 'ok',
@@ -56,9 +57,9 @@ describe('daily bonus canonical wallet client', () => {
         });
       }),
     );
-    expect(
-      (await claimDailyBonus(guild, user, '2026-10-30', '323456789012345678', 'quiz', 1)).status,
-    ).toBe('confirmed');
+    expect((await claimDailyBonus(guild, user, '2026-10-30', '323456789012345678')).status).toBe(
+      'confirmed',
+    );
   });
   it('rejects wrong response subject and does not claim uncertain credit succeeded', async () => {
     configure();
@@ -87,7 +88,7 @@ describe('daily bonus canonical wallet client', () => {
       'unavailable',
     );
   });
-  it('handles approved quiz, no-question day and unresolved identity explicitly', async () => {
+  it('handles no-question day, retired quiz payload and unresolved identity explicitly', async () => {
     configure();
     vi.stubGlobal(
       'fetch',
@@ -114,7 +115,9 @@ describe('daily bonus canonical wallet client', () => {
         }),
       ),
     );
-    expect((await dailyBonusStatus(guild, user)).status).toBe('quiz');
+    // A quiz-bearing status response is no longer conformant after the V1
+    // quiz retirement (ivrm-web#770) and must not surface a quiz.
+    expect((await dailyBonusStatus(guild, user)).status).toBe('unavailable');
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
