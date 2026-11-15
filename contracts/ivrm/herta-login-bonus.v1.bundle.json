@@ -2,7 +2,7 @@
   "bundleVersion": 1,
   "contract": {
     "id": "herta-login-bonus",
-    "version": "1.2.0",
+    "version": "1.4.0",
     "sourceRepository": "ivRooom/ivrm-contracts"
   },
   "operations": {
@@ -30,7 +30,7 @@
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://ivrm.jp/contracts/points/v1/login-bonus.schema.json",
-    "description": "Herta Discord button for the shared JST daily login bonus (daily quiz). Producer ivrm-web, consumer Herta. Same HMAC headers as points/v1/herta.schema.json. See docs/LOGIN-BONUS-V1.md. Not enabled in production by this schema.",
+    "description": "Herta Discord button for the shared JST daily login bonus (daily quiz). Producer ivrm-web, consumer Herta. Same HMAC headers as points/v1/herta.schema.json. See docs/LOGIN-BONUS-V1.md. Not enabled in production by this schema. The V1 daily quiz was retired on 2026-11-15 (ivrm-web#770) in favour of Daily Participation V2; quiz-related fields are deprecated as of bundle 1.4.0 and retained only so historic receipts remain interpretable.",
     "$defs": {
       "snowflake": {
         "type": "string",
@@ -85,13 +85,15 @@
           "quizId": {
             "type": ["string", "null"],
             "pattern": "^[A-Za-z0-9_-]{1,64}$",
-            "description": "Quiz served by status for this date. null only when status returned quiz=null."
+            "deprecated": true,
+            "description": "Deprecated since bundle 1.4.0: the V1 daily quiz was retired (ivrm-web#770), so new claims must send null. Historically: quiz served by status for this date; null only when status returned quiz=null."
           },
           "choiceIndex": {
             "type": ["integer", "null"],
             "minimum": 0,
             "maximum": 3,
-            "description": "0-3 when quizId is set, otherwise null."
+            "deprecated": true,
+            "description": "Deprecated since bundle 1.4.0: the V1 daily quiz was retired (ivrm-web#770), so new claims must send null. Historically: 0-3 when quizId is set, otherwise null."
           },
           "announcementMessageId": {
             "$ref": "#/$defs/snowflake",
@@ -124,6 +126,8 @@
       "quiz": {
         "type": "object",
         "additionalProperties": false,
+        "deprecated": true,
+        "description": "Deprecated since bundle 1.4.0: the V1 daily quiz was retired (ivrm-web#770) and status no longer serves a quiz. Retained so historic payloads remain interpretable.",
         "required": ["quizId", "kind", "question", "choices"],
         "properties": {
           "quizId": {
@@ -179,7 +183,9 @@
           "quizBonusPoints": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 9007199254740991
+            "maximum": 9007199254740991,
+            "deprecated": true,
+            "description": "Deprecated since bundle 1.4.0: always 0 for claims after the V1 daily quiz retirement (ivrm-web#770); historic receipts keep their recorded value."
           },
           "rewardPoints": {
             "type": "integer",
@@ -192,7 +198,9 @@
           "quiz": {
             "type": ["object", "null"],
             "additionalProperties": false,
-            "required": ["quizId", "choiceIndex", "correct", "correctIndex"],
+            "deprecated": true,
+            "description": "Deprecated since bundle 1.4.0: null for claims after the V1 daily quiz retirement (ivrm-web#770). Retained so historic receipts, including the post-reveal correctIndex/explanation, remain interpretable.",
+            "required": ["quizId", "choiceIndex", "correct"],
             "properties": {
               "quizId": {
                 "type": "string",
@@ -209,11 +217,13 @@
               "correctIndex": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 3
+                "maximum": 3,
+                "description": "Omit until 09:00 JST on the calendar day following the claim. When present, read from immutable daily publication."
               },
               "explanation": {
                 "type": "string",
-                "maxLength": 300
+                "maxLength": 300,
+                "description": "Omit until the next-day 09:00 JST reveal gate; optional published explanation."
               }
             }
           }
@@ -278,7 +288,8 @@
                 "type": "null"
               }
             ],
-            "description": "Never includes the correct answer. null after claim or when no approved quiz exists."
+            "deprecated": true,
+            "description": "Deprecated since bundle 1.4.0: always null after the V1 daily quiz retirement (ivrm-web#770). Historically: never includes the correct answer; null after claim or when no approved quiz exists."
           },
           "claim": {
             "oneOf": [

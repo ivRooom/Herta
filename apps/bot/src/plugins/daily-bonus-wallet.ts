@@ -1,11 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
-export interface DailyQuiz {
-  quizId: string;
-  question: string;
-  choices: string[];
-  kind: 'quiz' | 'riddle';
-}
 export interface DailyWalletReceipt {
   claimDateJst: string;
   rewardPoints: number;
@@ -30,7 +24,6 @@ export type DailyWalletResult =
       message: string;
       alreadyClaimed: boolean;
     }
-  | { status: 'quiz'; quiz: DailyQuiz }
   | { status: 'ready' }
   | { status: 'profile_required' | 'account_initialization_required' | 'unlinked' | 'unavailable' };
 
@@ -196,17 +189,8 @@ export async function dailyBonusStatus(guild: string, user: string): Promise<Dai
       return typeof value.todayJst === 'string'
         ? confirmed(value, value.todayJst)
         : { status: 'unavailable' };
-    const quiz = value?.quiz as DailyQuiz | undefined;
-    if (
-      quiz &&
-      /^[A-Za-z0-9_-]{1,64}$/.test(quiz.quizId) &&
-      typeof quiz.question === 'string' &&
-      quiz.question.length <= 300 &&
-      Array.isArray(quiz.choices) &&
-      quiz.choices.length === 4 &&
-      quiz.choices.every((choice) => typeof choice === 'string' && choice.length <= 80)
-    )
-      return { status: 'quiz', quiz };
+    // The V1 daily quiz was retired (ivrm-web#770): status always reports
+    // quiz=null, and a quiz-bearing response is no longer conformant.
     return value?.quiz === null ? { status: 'ready' } : { status: 'unavailable' };
   } catch {
     return { status: 'unavailable' };
@@ -217,8 +201,6 @@ export async function claimDailyBonus(
   user: string,
   date: string,
   message: string,
-  quizId: string | null = null,
-  choiceIndex: number | null = null,
 ): Promise<DailyWalletResult> {
   try {
     return confirmed(
@@ -226,8 +208,10 @@ export async function claimDailyBonus(
         claimDateJst: date,
         announcementMessageId: message,
         idempotencyKey: `daily-login:${guild}:${user}:${date}`,
-        quizId,
-        choiceIndex,
+        // Contract fields deprecated in bundle 1.4.0: claims never carry a
+        // V1 quiz answer after the retirement (ivrm-web#770).
+        quizId: null,
+        choiceIndex: null,
       }),
       date,
     );

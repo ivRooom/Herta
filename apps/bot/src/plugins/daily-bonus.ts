@@ -332,17 +332,10 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       await interaction.editReply('デイリーボーナスは現在準備中です。');
       return;
     }
-    // Legacy V1 quiz answers used to claim login points as a side effect.
-    // Never revive this combined flow on old ephemeral messages.
-    if (/^daily-bonus:answer:[0-9a-f-]{36}:[0-3]$/.test(interaction.customId)) {
-      await interaction.editReply(
-        '旧方式の回答は終了しました。新しい「今日の問題に挑戦」から回答してください。',
-      );
-      return;
-    }
-    const auxiliary = /^daily-bonus:(questions|fortune):(\d{4}-\d{2}-\d{2})$/.exec(
-      interaction.customId,
-    );
+    // Legacy V1 quiz buttons on old announcements have no handler here any
+    // more: they fall through to the generic rejection below and can never
+    // claim points. The quiz entrypoint lives in Daily Participation V2 only.
+    const auxiliary = /^daily-bonus:(fortune):(\d{4}-\d{2}-\d{2})$/.exec(interaction.customId);
     const date = auxiliary?.[2] ?? interaction.customId.slice('daily-bonus:'.length);
     const originalMessage = interaction.message.id;
     const announcement = await getDailyAnnouncement(ctx.prisma, ctx.guildId, date);
@@ -396,16 +389,8 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       }
       return;
     }
-    if (auxiliary?.[1] === 'questions') {
-      // V1 answer calls still award a combined login+quiz transaction.
-      // The independent quiz entrypoint is participation v2 only.
-      await interaction.editReply(
-        'この通知の旧方式クイズは利用できません。新しい日次参加が有効になるまで回答は受け付けません。',
-      );
-      return;
-    }
     const status = await dailyBonusStatus(ctx.guildId, interaction.user.id);
-    if (status.status !== 'quiz' && status.status !== 'ready' && status.status !== 'confirmed') {
+    if (status.status !== 'ready' && status.status !== 'confirmed') {
       await replyClaimFailure(ctx, interaction, status.status, date);
       return;
     }
