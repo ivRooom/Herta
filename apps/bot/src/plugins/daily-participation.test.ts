@@ -388,6 +388,37 @@ it('renders the yesterday review card with answer markers when revealed (#820)',
   expect(sent.files).toHaveLength(1);
   expect(sent.files![0]!.name).toBe('daily-question-yesterday.png');
 });
+it('shows the community stats line in the yesterday review text (#903)', async () => {
+  mocks.yesterday.mockResolvedValue({
+    ...yesterdayReviewFixture,
+    entries: [
+      {
+        ...yesterdayReviewFixture.entries[0]!,
+        stats: { totalResponses: 13, correctResponses: 8, correctRate: 62 },
+      },
+    ],
+  });
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as { content: string };
+  expect(sent.content).toContain('📊 回答 13人 ・ 正答率 62%');
+});
+it('shows the answer count without a rate when nobody answered (#903)', async () => {
+  mocks.yesterday.mockResolvedValue({
+    ...yesterdayReviewFixture,
+    entries: [
+      {
+        ...yesterdayReviewFixture.entries[0]!,
+        stats: { totalResponses: 0, correctResponses: 0, correctRate: null },
+      },
+    ],
+  });
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as { content: string };
+  expect(sent.content).toContain('📊 回答 0人');
+  expect(sent.content).not.toContain('正答率');
+});
 it('falls back to a marked embed for the yesterday review when the card flag is off (#820)', async () => {
   const i = interaction('daily-participation:yesterday:2026-10-31');
   await handleDailyParticipation(context(), i);

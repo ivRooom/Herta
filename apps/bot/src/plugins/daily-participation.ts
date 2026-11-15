@@ -465,10 +465,18 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
             : userResponse.isCorrect === false
               ? `不正解でした。 / 獲得 ${userResponse.rewardPoints}pt`
               : `回答済み / 獲得 ${userResponse.rewardPoints}pt`;
+    // Community stats (#903) ride in the text next to the verdict: the
+    // card image uses the shared fixed-layout renderer, and the review's
+    // aggregate counts do not belong in that shared component.
+    const stats = entry.stats
+      ? `\n📊 回答 ${entry.stats.totalResponses}人${
+          entry.stats.correctRate !== null ? ` ・ 正答率 ${entry.stats.correctRate}%` : ''
+        }`
+      : '';
     const explanation = entry.explanation
       ? `\n💡 解説：${Array.from(entry.explanation).slice(0, 500).join('')}`
       : '';
-    const content = verdict + explanation;
+    const content = verdict + stats + explanation;
     if (process.env.DAILY_QUESTION_CARD_ENABLED === 'true') {
       try {
         const card = await renderDailyQuestionCard({
