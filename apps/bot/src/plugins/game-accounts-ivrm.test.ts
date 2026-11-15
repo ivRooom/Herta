@@ -55,7 +55,11 @@ describe('private ivrm-web game accounts client', () => {
       'https://api.ivrm.jp/foo',
     ])
       expect(
-        resolveGameAccountsConfig({ IVRM_WEB_API_BASE_URL: value, HERTA_MBTI_SYNC_SECRET: 'x' }),
+        resolveGameAccountsConfig({
+          IVRM_WEB_API_BASE_URL: value,
+          HERTA_MBTI_SYNC_SECRET: 'x',
+          IVRM_INTEGRATION_GUILD_ID: guild,
+        }),
       ).toBeNull();
     expect(
       resolveGameAccountsConfig({
