@@ -18,6 +18,7 @@ import { communityChallengeManifest } from './manifests/community-challenge.js';
 import { eventRsvpManifest } from './manifests/event-rsvp.js';
 import { giveawayManifest } from './manifests/giveaway.js';
 import { fortuneManifest } from './manifests/fortune.js';
+import { gameAccountsManifest } from './manifests/game-accounts.js';
 import { dailyBonusManifest } from './manifests/daily-bonus.js';
 export { dailyBonusManifest } from './manifests/daily-bonus.js';
 import { dailyQuizManifest } from './manifests/daily-quiz.js';
@@ -47,6 +48,7 @@ export { communityChallengeManifest } from './manifests/community-challenge.js';
 export { eventRsvpManifest } from './manifests/event-rsvp.js';
 export { giveawayManifest } from './manifests/giveaway.js';
 export { fortuneManifest } from './manifests/fortune.js';
+export { gameAccountsManifest } from './manifests/game-accounts.js';
 export { mbtiManifest, MBTI_TYPE_KEYS, mbtiRoleConfigKey } from './manifests/mbti.js';
 export { miniGamesManifest } from './manifests/mini-games.js';
 export { minecraftStatusManifest } from './manifests/minecraft-status.js';
@@ -161,6 +163,7 @@ const rawPluginManifests: PluginManifest[] = [
   lfgManifest,
   mbtiManifest,
   fortuneManifest,
+  gameAccountsManifest,
   dailyBonusManifest,
   dailyQuizManifest,
   miniGamesManifest,
