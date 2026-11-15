@@ -1,0 +1,69 @@
+{
+  "canonical": "METHOD\nPATH\nTIMESTAMP\nREQUEST_ID\nBODY",
+  "contract": {
+    "consumer": "ivRooom/Herta",
+    "name": "herta-game-accounts",
+    "producer": "ivRooom/ivrm-web",
+    "sourceRepository": "ivRooom/ivrm-contracts",
+    "version": "2.0.0"
+  },
+  "description": "Signed private game-account operations for the invoking Discord guild member: link/unlink a game UID in the member's ivrm-web game accounts (the same store the Web portal edits) and read the stored Enka showcase summary including per-character artifact scores. Actions: link, unlink, list, score. No browser CORS; no-store on every response.",
+  "errors": {
+    "400": "invalid_request",
+    "401": "invalid_signature",
+    "403": "guild_not_allowed",
+    "404": ["member_not_linked", "game_not_found", "game_account_not_found"],
+    "422": "invalid_input",
+    "502": "game_accounts_upstream_error",
+    "503": "game_accounts_unavailable"
+  },
+  "hmac": {
+    "canonical": "METHOD\nPATH\nTIMESTAMP\nREQUEST_ID\nBODY",
+    "derivedKey": "HMAC-SHA256(UTF8(rootSecret), UTF8(purpose)) raw 32 bytes",
+    "maxTimestampSkewMs": 300000,
+    "pathExcludesQuery": true,
+    "purpose": "herta-game-accounts-v2",
+    "replay": "link/unlink mutate only the invoking member's own game accounts; request ids are bound into the signature",
+    "requestIdMatchesHeader": "X-IVRM-Event-Id",
+    "rootSecret": "HERTA_MBTI_SYNC_SECRET",
+    "signatureEncoding": "lowercase hex"
+  },
+  "hmacPurpose": "herta-game-accounts-v2",
+  "maxBodyBytes": 4096,
+  "maxTimestampSkewMs": 300000,
+  "method": "POST",
+  "operationId": "hertaGameAccounts",
+  "path": "/v2/herta/game-accounts",
+  "request": {
+    "actions": {
+      "link": { "optional": ["region"], "required": ["gameCode", "uid"] },
+      "list": { "optional": [], "required": [] },
+      "score": { "optional": [], "required": ["gameCode"] },
+      "unlink": { "optional": [], "required": ["gameCode"] }
+    },
+    "additionalProperties": false,
+    "required": ["schemaVersion", "requestId", "guildId", "discordUserId", "action"],
+    "type": "object"
+  },
+  "requestMediaTypes": ["application/json"],
+  "responseMediaTypes": {
+    "200": ["application/json"],
+    "400": [],
+    "401": [],
+    "403": [],
+    "404": [],
+    "422": [],
+    "502": [],
+    "503": []
+  },
+  "responseStatusCodes": ["200", "400", "401", "403", "404", "422", "502", "503"],
+  "security": [{ "hertaGameAccountsHmac": [] }],
+  "securitySchemes": {
+    "hertaGameAccountsHmac": {
+      "description": "See operation x-ivrm-hmac for key derivation, canonical text and other signed headers.",
+      "in": "header",
+      "name": "X-IVRM-Signature",
+      "type": "apiKey"
+    }
+  }
+}

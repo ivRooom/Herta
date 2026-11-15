@@ -21,6 +21,7 @@ import { communityChallengePlugin } from './community-challenge.js';
 import { eventRsvpPlugin } from './event-rsvp.js';
 import { giveawayPlugin } from './giveaway.js';
 import { fortunePlugin } from './fortune.js';
+import { gameAccountsPlugin } from './game-accounts.js';
 import { dailyBonusPlugin } from './daily-bonus.js';
 import { dailyQuizPlugin } from './daily-quiz.js';
 import { mbtiPlugin } from './mbti.js';
@@ -258,6 +259,7 @@ const officialPluginIds = [
   'lfg',
   'mbti',
   'fortune',
+  'game-accounts',
   'mini-games',
   'minecraft-status',
   'moderation',
@@ -528,6 +530,23 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
               ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
               : undefined,
           }) as Parameters<NonNullable<typeof fortunePlugin.onEnable>>[0],
+      )
+    : undefined;
+  const gameAccountsEntry = deps
+    ? toRuntimePluginEntry(
+        gameAccountsPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
+          }) as Parameters<NonNullable<typeof gameAccountsPlugin.onEnable>>[0],
       )
     : undefined;
   const dailyBonusEntry = deps
@@ -814,6 +833,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'giveaway' && giveawayEntry) return [giveawayEntry];
     if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
     if (pluginId === 'fortune' && fortuneEntry) return [fortuneEntry];
+    if (pluginId === 'game-accounts' && gameAccountsEntry) return [gameAccountsEntry];
     if (pluginId === 'daily-bonus' && dailyBonusEntry) return [dailyBonusEntry];
     if (pluginId === 'daily-quiz' && dailyQuizEntry) return [dailyQuizEntry];
     if (pluginId === 'mbti' && mbtiEntry) return [mbtiEntry];
