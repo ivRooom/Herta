@@ -30,9 +30,9 @@ interface FakeInteraction {
     customId?: string;
     isButton(): boolean;
     reply(options: { content: string; flags: number }): Promise<unknown>;
-    update(options: { content: string; components: never[] }): Promise<unknown>;
+    update(options: { embeds?: unknown; components?: unknown }): Promise<unknown>;
     deferUpdate(): Promise<unknown>;
-    editReply(options: { content?: string; components?: unknown }): Promise<unknown>;
+    editReply(options: { embeds?: unknown; components?: unknown }): Promise<unknown>;
   };
 }
 
@@ -95,11 +95,11 @@ describe('game accounts unlink buttons', () => {
     expect(calls.some((call) => call.method === 'update')).toBe(false);
     expect(calls.some((call) => call.method === 'reply')).toBe(false);
     const disable = calls.find(
-      (call) => call.method === 'editReply' && call.options?.content === undefined,
+      (call) => call.method === 'editReply' && call.options?.embeds === undefined,
     );
     expect(JSON.stringify(disable?.options?.components)).toContain('"disabled":true');
     const result = calls.filter((call) => call.method === 'editReply').at(-1);
-    expect(result?.options?.content).toContain('解除しました');
+    expect(JSON.stringify(result?.options?.embeds)).toContain('解除しました');
     expect(result?.options?.components).toEqual([]);
   });
 
@@ -129,7 +129,7 @@ describe('game accounts unlink buttons', () => {
     await confirmPromise;
 
     const result = confirm.calls.filter((call) => call.method === 'editReply').at(-1);
-    expect(result?.options?.content).toContain('解除しました');
+    expect(JSON.stringify(result?.options?.embeds)).toContain('解除しました');
   });
 
   it('cancels normally when nothing is pending', async () => {
@@ -142,7 +142,7 @@ describe('game accounts unlink buttons', () => {
     expect(api).not.toHaveBeenCalled();
     expect(calls).toHaveLength(1);
     expect(calls[0]?.method).toBe('update');
-    expect(calls[0]?.options?.content).toContain('キャンセルしました');
+    expect(JSON.stringify(calls[0]?.options?.embeds)).toContain('キャンセルしました');
     expect(calls[0]?.options?.components).toEqual([]);
   });
 
@@ -183,7 +183,7 @@ describe('game accounts unlink buttons', () => {
     expect(calls.some((call) => call.method === 'update')).toBe(false);
     expect(calls.some((call) => call.method === 'reply')).toBe(false);
     const result = calls.filter((call) => call.method === 'editReply').at(-1);
-    expect(result?.options?.content).toContain('解除できませんでした');
+    expect(JSON.stringify(result?.options?.embeds)).toContain('解除できませんでした');
     expect(context.logger.error).toHaveBeenCalled();
   });
 
