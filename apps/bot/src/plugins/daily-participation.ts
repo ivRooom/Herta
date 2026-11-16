@@ -236,7 +236,7 @@ export async function showParticipationQuestions(
           );
     if (!buttons.length) continue;
     shown = true;
-    const header = `${question.slot === 'bonus' ? '🎭 ボーナス問題' : '🧠 今日の問題'}
+    const header = `${question.slot === 'bonus' ? '🎭 ボーナス問題' : question.slot === 'rescue' ? '🆘 追加問題' : '🧠 今日の問題'}
 締切：<t:${Math.floor(Date.parse(question.closesAt) / 1000)}:f>
 最初の回答で確定します。${question.format === 'free_text' ? `最大${question.maxTextLength}文字。` : ''}${question.scoring === 'instant' ? '即時採点します。' : '確定後に結果を確認できます。'}`;
     const components = [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)];
@@ -389,7 +389,12 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
   });
   for (const entry of review.entries) {
     const { question, userResponse } = entry;
-    const heading = question.slot === 'bonus' ? '昨日のボーナス問題' : '昨日の問題';
+    const heading =
+      question.slot === 'bonus'
+        ? '昨日のボーナス問題'
+        : question.slot === 'rescue'
+          ? '昨日の追加問題'
+          : '昨日の問題';
     // Question media rides along in the review payload, and the media route
     // is keyed by media ID alone (contract mediaRequest carries no date or
     // question ID), so the same authenticated fetch as today's flow serves

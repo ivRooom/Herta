@@ -191,6 +191,28 @@ it('unclaimed subject can open standalone question without invoking the login cl
     }),
   );
 });
+it('shows a rescue question under its own 追加問題 header (#917)', async () => {
+  mocks.status.mockResolvedValue({
+    ...f.status,
+    bonusClaimed: false,
+    questions: [
+      { ...f.publicQuestion, id: 'q_rescue_today', slot: 'rescue', requiresClaim: false },
+    ],
+    responses: [],
+  });
+  const i = interaction('daily-participation:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.claim).not.toHaveBeenCalled();
+  expect(i.followUp).toHaveBeenCalledWith(
+    expect.objectContaining({
+      content: expect.stringContaining('🆘 追加問題'),
+      components: expect.any(Array),
+    }),
+  );
+  expect(i.followUp).not.toHaveBeenCalledWith(
+    expect.objectContaining({ content: expect.stringContaining('🧠 今日の問題') }),
+  );
+});
 it('explains the claim prerequisite without awarding login points', async () => {
   mocks.status.mockResolvedValue({
     ...f.status,
@@ -387,6 +409,23 @@ it('renders the yesterday review card with answer markers when revealed (#820)',
   expect(sent.content).toContain('💡 解説：A が正解です。');
   expect(sent.files).toHaveLength(1);
   expect(sent.files![0]!.name).toBe('daily-question-yesterday.png');
+});
+it('labels a rescue entry in the yesterday review as 昨日の追加問題 (#917)', async () => {
+  vi.stubEnv('DAILY_QUESTION_CARD_ENABLED', 'true');
+  mocks.yesterday.mockResolvedValue({
+    ...yesterdayReviewFixture,
+    entries: [
+      {
+        ...yesterdayReviewFixture.entries[0]!,
+        question: { ...f.publicQuestion, dateJst: '2026-10-30', slot: 'rescue' },
+      },
+    ],
+  });
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.renderCard).toHaveBeenCalledWith(
+    expect.objectContaining({ heading: '昨日の追加問題', slot: 'rescue' }),
+  );
 });
 it('shows the community stats line in the yesterday review text (#903)', async () => {
   mocks.yesterday.mockResolvedValue({
