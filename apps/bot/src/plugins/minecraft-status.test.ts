@@ -11,13 +11,19 @@ import {
   buildMinecraftPendingRequestsEmbed,
   buildMinecraftRejectModal,
   buildMinecraftReviewNoticeEmbed,
+  buildMinecraftWhitelistReminderEmbed,
+  collectRecentlyRemindedRequestIds,
   formatMinecraftBotApiError,
   formatMinecraftLinkStatus,
   formatMinecraftPendingRequests,
   handleMinecraftWhitelistComponent,
+  minecraftPendingElapsedHours,
   parseMinecraftPendingRequests,
   parseMinecraftWhitelistComponentId,
+  rememberMinecraftWhitelistOperator,
   resolveMinecraftBotApiConfig,
+  runMinecraftWhitelistReminderCycle,
+  selectOverdueMinecraftRequests,
   minecraftControlImmediateMessage,
   minecraftControlPath,
   normalizeCpuPercent,
@@ -27,6 +33,7 @@ import {
   memberRoleIds,
   MINECRAFT_STATUS_CURRENT_URL_DEFAULT,
   MINECRAFT_STATUS_RUNTIME_URL_DEFAULT,
+  MINECRAFT_WHITELIST_REMINDER_THRESHOLD_MS,
   normalizeMinecraftStatusConfig,
   buildReportAnnouncement,
   pickReportToAnnounce,
@@ -108,6 +115,7 @@ describe('Minecraft Status v1', () => {
       eventChannelId: '',
       operatorRoleIds: [],
       whitelistApproverRoleIds: [],
+      whitelistOpsChannelId: '',
     });
     expect(
       normalizeMinecraftStatusConfig({
@@ -990,5 +998,269 @@ describe('handleMinecraftWhitelistComponent', () => {
     });
     expect(dmSend).toHaveBeenCalledTimes(1);
     expect(interaction.reply).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Minecraft ホワイトリスト審査リマインド (#916)', () => {
+  const opsChannelId = '123456789012345678';
+  const approverRoleId = '222222222222222222';
+  const operatorId = '333333333333333333';
+  const botUserId = '999999999999999999';
+  const guildId = 'guild-reminder';
+  const nowMs = Date.parse('2026-11-16T12:00:00.000Z');
+  const hoursAgo = (hours: number) => new Date(nowMs - hours * 60 * 60 * 1000).toISOString();
+
+  const overdueEntry = {
+    id: 'mclr_old',
+    minecraftUsername: 'Steve',
+    discordUsername: 'steve_d',
+    discordUserId: '111111111111111111',
+    requestedAt: hoursAgo(25),
+  };
+  const freshEntry = {
+    id: 'mclr_new',
+    minecraftUsername: 'Alex',
+    discordUsername: 'alex_d',
+    discordUserId: '444444444444444444',
+    requestedAt: hoursAgo(2),
+  };
+
+  it('whitelistOpsChannelId を正規化する (未設定・不正値は無効)', () => {
+    expect(normalizeMinecraftStatusConfig({}).whitelistOpsChannelId).toBe('');
+    expect(
+      normalizeMinecraftStatusConfig({ whitelistOpsChannelId: opsChannelId }).whitelistOpsChannelId,
+    ).toBe(opsChannelId);
+    expect(
+      normalizeMinecraftStatusConfig({ whitelistOpsChannelId: 'abc' }).whitelistOpsChannelId,
+    ).toBe('');
+    expect(
+      normalizeMinecraftStatusConfig({ whitelistOpsChannelId: 42 }).whitelistOpsChannelId,
+    ).toBe('');
+    expect(
+      normalizeMinecraftStatusConfig({ whitelistOpsChannelId: '1234' }).whitelistOpsChannelId,
+    ).toBe('');
+  });
+
+  it('24時間を超えた申請だけを対象にする (境界ちょうどは対象外)', () => {
+    const requests = parseMinecraftPendingRequests({
+      requests: [
+        overdueEntry,
+        {
+          id: 'mclr_edge',
+          minecraftUsername: 'Edge',
+          discordUsername: 'edge_d',
+          requestedAt: hoursAgo(24),
+        },
+        {
+          id: 'mclr_just',
+          minecraftUsername: 'Just',
+          discordUsername: 'just_d',
+          requestedAt: new Date(
+            nowMs - MINECRAFT_WHITELIST_REMINDER_THRESHOLD_MS - 1000,
+          ).toISOString(),
+        },
+        freshEntry,
+        {
+          id: 'mclr_none',
+          minecraftUsername: 'None',
+          discordUsername: 'none_d',
+          requestedAt: null,
+        },
+        {
+          id: 'mclr_bad',
+          minecraftUsername: 'Bad',
+          discordUsername: 'bad_d',
+          requestedAt: 'not-a-date',
+        },
+      ],
+    });
+    expect(selectOverdueMinecraftRequests(requests, nowMs).map((request) => request.id)).toEqual([
+      'mclr_old',
+      'mclr_just',
+    ]);
+  });
+
+  it('リマインド Embed に経過時間・申請者メンション・申請IDが入る', () => {
+    const [request] = parseMinecraftPendingRequests({ requests: [overdueEntry] });
+    expect(request).toBeDefined();
+    expect(minecraftPendingElapsedHours(request!, nowMs)).toBe(25);
+    const embed = buildMinecraftWhitelistReminderEmbed([request!], nowMs);
+    expect(embed.title).toContain('リマインド');
+    expect(embed.description).toContain('1 件');
+    expect(embed.fields?.[0]?.name).toContain('Steve');
+    expect(embed.fields?.[0]?.value).toContain('約25時間');
+    expect(embed.fields?.[0]?.value).toContain('<@111111111111111111>');
+    expect(embed.fields?.[0]?.value).toContain('申請ID: mclr_old');
+  });
+
+  it('直近24時間の Bot 自身のリマインドから申請IDを集める', () => {
+    const messages = [
+      {
+        author: { id: botUserId },
+        createdTimestamp: nowMs - 60 * 60 * 1000,
+        embeds: [{ fields: [{ name: '🎮 Steve', value: '申請ID: mclr_old' }] }],
+      },
+      {
+        // 他人の投稿に含まれる申請IDは対象外
+        author: { id: '555555555555555555' },
+        createdTimestamp: nowMs - 60 * 1000,
+        content: '申請ID: mclr_other',
+      },
+      {
+        // 24時間より前のリマインドは対象外 (再通知してよい)
+        author: { id: botUserId },
+        createdTimestamp: nowMs - 25 * 60 * 60 * 1000,
+        content: '申請ID: mclr_ancient',
+      },
+    ];
+    expect([...collectRecentlyRemindedRequestIds(messages, botUserId, nowMs)]).toEqual([
+      'mclr_old',
+    ]);
+  });
+
+  describe('runMinecraftWhitelistReminderCycle', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete process.env['IVRM_WEB_API_BASE_URL'];
+      delete process.env['HERTA_MINECRAFT_SYNC_SECRET'];
+    });
+
+    function setupFetch(requests: unknown[]) {
+      process.env['IVRM_WEB_API_BASE_URL'] = 'https://api.example.test';
+      process.env['HERTA_MINECRAFT_SYNC_SECRET'] = 'test-secret';
+      const calls: { url: string; body: Record<string, unknown> }[] = [];
+      const fetchMock = vi.fn(async (url: string, init?: { body?: string }) => {
+        const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+        calls.push({ url, body });
+        if (url.endsWith('/minecraft/bot/requests/pending')) {
+          return { ok: true, status: 200, json: async () => ({ requests }) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      return calls;
+    }
+
+    function makeContext(options: {
+      config?: Record<string, unknown>;
+      history?: unknown[];
+      send: ReturnType<typeof vi.fn>;
+    }) {
+      const channel = {
+        guildId,
+        isTextBased: () => true,
+        send: options.send,
+        messages: {
+          fetch: async () => ({ values: () => (options.history ?? []).values() }),
+        },
+      };
+      return {
+        guildId,
+        config: options.config ?? {
+          enabled: true,
+          whitelistApproverRoleIds: [approverRoleId],
+          whitelistOpsChannelId: opsChannelId,
+        },
+        client: {
+          user: { id: botUserId },
+          channels: { fetch: async () => channel },
+          users: { fetch: async () => null },
+          guilds: {
+            fetch: async () => ({
+              roles: {
+                fetch: async (roleId: string) =>
+                  roleId === approverRoleId ? { members: new Map([[operatorId, {}]]) } : null,
+              },
+            }),
+          },
+        },
+      } as unknown as Parameters<typeof runMinecraftWhitelistReminderCycle>[0];
+    }
+
+    it('24時間超の審査待ちを運営チャンネルへメンション付きで通知する', async () => {
+      const calls = setupFetch([overdueEntry, freshEntry]);
+      let sentPayload:
+        | {
+            content?: string;
+            embeds: { fields?: { value: string }[] }[];
+            allowedMentions: { roles: string[] };
+          }
+        | undefined;
+      const send = vi.fn(async (options: unknown) => {
+        sentPayload = options as typeof sentPayload;
+      });
+      await runMinecraftWhitelistReminderCycle(makeContext({ send }), nowMs);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(sentPayload?.content).toContain(`<@&${approverRoleId}>`);
+      expect(sentPayload?.allowedMentions.roles).toEqual([approverRoleId]);
+      expect(sentPayload?.embeds[0]?.fields).toHaveLength(1);
+      expect(sentPayload?.embeds[0]?.fields?.[0]?.value).toContain('mclr_old');
+      // 実行者は承認ロールの保持者で、ロール確認済みとして API を呼ぶ
+      expect(calls[0]?.body).toMatchObject({
+        discordUserId: operatorId,
+        guildId,
+        approverRoleVerified: true,
+      });
+    });
+
+    it('直近24時間に通知済みの申請は再通知しない', async () => {
+      setupFetch([overdueEntry]);
+      const send = vi.fn(async () => {});
+      const history = [
+        {
+          author: { id: botUserId },
+          createdTimestamp: nowMs - 60 * 60 * 1000,
+          embeds: [{ fields: [{ name: '🎮 Steve', value: '申請ID: mclr_old' }] }],
+        },
+      ];
+      await runMinecraftWhitelistReminderCycle(makeContext({ send, history }), nowMs);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('運営チャンネル未設定なら API も呼ばず無効のまま動く', async () => {
+      const calls = setupFetch([overdueEntry]);
+      const send = vi.fn(async () => {});
+      await runMinecraftWhitelistReminderCycle(
+        makeContext({
+          send,
+          config: { enabled: true, whitelistApproverRoleIds: [approverRoleId] },
+        }),
+        nowMs,
+      );
+      expect(calls).toHaveLength(0);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('24時間超の審査待ちが無ければ通知しない', async () => {
+      setupFetch([freshEntry]);
+      const send = vi.fn(async () => {});
+      await runMinecraftWhitelistReminderCycle(makeContext({ send }), nowMs);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('API が失敗しても例外にならず通知しない', async () => {
+      process.env['IVRM_WEB_API_BASE_URL'] = 'https://api.example.test';
+      process.env['HERTA_MINECRAFT_SYNC_SECRET'] = 'test-secret';
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })),
+      );
+      const send = vi.fn(async () => {});
+      await expect(
+        runMinecraftWhitelistReminderCycle(makeContext({ send }), nowMs),
+      ).resolves.toBeUndefined();
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('探索できなくても、操作で検証済みの運営者の記憶で取得できる', async () => {
+      const calls = setupFetch([overdueEntry]);
+      const send = vi.fn(async () => {});
+      rememberMinecraftWhitelistOperator(guildId, operatorId);
+      const context = makeContext({ send });
+      (context.client as { guilds?: unknown }).guilds = undefined;
+      await runMinecraftWhitelistReminderCycle(context, nowMs);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(calls[0]?.body).toMatchObject({ discordUserId: operatorId });
+    });
   });
 });
