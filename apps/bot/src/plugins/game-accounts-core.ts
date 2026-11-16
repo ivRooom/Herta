@@ -100,8 +100,8 @@ const ROLL_STAT_LABELS: Record<string, string> = {
 /** 表示順の優先度: 会心系を先頭に固定し、同順位はロール数の多い順にする。 */
 const ROLL_STAT_PRIORITY: Record<string, number> = { critRate: 0, critDmg: 1 };
 
-export function formatRolls(rolls: Record<string, number>): string {
-  const entries = Object.entries(rolls)
+function sortedRollEntries(rolls: Record<string, number>): [string, number][] {
+  return Object.entries(rolls)
     .filter(([, count]) => count > 0)
     .sort(
       (a, b) =>
@@ -109,8 +109,88 @@ export function formatRolls(rolls: Record<string, number>): string {
         (ROLL_STAT_PRIORITY[a[0]] ?? 2) - (ROLL_STAT_PRIORITY[b[0]] ?? 2) ||
         a[0].localeCompare(b[0]),
     );
+}
+
+export function formatRolls(rolls: Record<string, number>): string {
+  const entries = sortedRollEntries(rolls);
   if (entries.length === 0) return '有効ロールなし';
   return entries.map(([stat, count]) => `${ROLL_STAT_LABELS[stat] ?? stat}×${count}`).join('・');
+}
+
+/**
+ * スコア表示用の短縮ラベル。Embed のフィールドは文字数制限が厳しいため、
+ * 部位別内訳ではこちらを使う。情報 (有効ロールの種類と回数) は落とさない。
+ */
+const ROLL_STAT_SHORT_LABELS: Record<string, string> = {
+  critRate: '率',
+  critDmg: 'ダメ',
+  atkPercent: '攻撃%',
+  atk: '攻撃',
+  hpPercent: 'HP%',
+  hp: 'HP',
+  defPercent: '防御%',
+  def: '防御',
+  energyRecharge: 'チャージ',
+  elementalMastery: '熟知',
+  spd: '速度',
+  effectHitRate: '命中',
+  effectRes: '抵抗',
+  breakEffect: '撃破',
+  healingBoost: '治癒',
+};
+
+export function formatRollsShort(rolls: Record<string, number>): string {
+  const entries = sortedRollEntries(rolls);
+  if (entries.length === 0) return '有効ロールなし';
+  return entries
+    .map(([stat, count]) => `${ROLL_STAT_SHORT_LABELS[stat] ?? stat}×${count}`)
+    .join('・');
+}
+
+/**
+ * スコア凡例 (短縮ラベルのうち自明でないものだけ)。Embed ごとに1回だけ
+ * フッターへ入れる。原神は元素系の短縮が多いので専用の凡例を持つ。
+ */
+export function scoreRollLegend(gameCode: string): string {
+  return gameCode === 'genshin'
+    ? '率=会心率・ダメ=会心ダメージ・チャージ=元素チャージ効率・熟知=元素熟知'
+    : '率=会心率・ダメ=会心ダメージ';
+}
+
+/**
+ * 部位名。API の artifactScore.perPiece はスロット情報を持たず、ゲーム内の
+ * 部位順 (Enka の並び) で返るため、並び順から部位名を割り当てる。
+ * 原神・スタレは固定順、ZZZ はディスク番号、エンドフィールドは装備番号。
+ */
+const SCORE_PIECE_LABELS: Record<string, readonly string[]> = {
+  genshin: ['花', '羽', '砂', '杯', '冠'],
+  starrail: ['頭', '腕', '胴', '脚', '球', '縄'],
+};
+
+export function scorePieceLabel(gameCode: string, index: number): string {
+  const labels = SCORE_PIECE_LABELS[gameCode];
+  if (labels) return labels[index] ?? `部位${index + 1}`;
+  if (gameCode === 'zzz') return `ディスク${index + 1}`;
+  if (gameCode === 'endfield') return `装備${index + 1}`;
+  return `部位${index + 1}`;
+}
+
+/** スコアバーの満点 (合計 CV の現実的な上限)。原神は5部位、他は6部位相当。 */
+export const SCORE_BAR_MAX: Record<string, number> = {
+  genshin: 250,
+  starrail: 300,
+  zzz: 300,
+  endfield: 200,
+};
+export const SCORE_BAR_DEFAULT_MAX = 250;
+export const SCORE_BAR_SEGMENTS = 10;
+
+/** 合計スコアをブロック文字のバーにする (例: ▰▰▰▰▰▰▱▱▱▱)。 */
+export function formatScoreBar(total: number, gameCode: string): string {
+  const max = SCORE_BAR_MAX[gameCode] ?? SCORE_BAR_DEFAULT_MAX;
+  const ratio = Math.min(1, Math.max(0, total / max));
+  const filled = Math.round(ratio * SCORE_BAR_SEGMENTS);
+  return '▰'.repeat(filled) + '▱'.repeat(SCORE_BAR_SEGMENTS - filled);
 }
 
 /** ivrm-web 連携の失敗状態を、本人向けの案内文へ変換する。 */
@@ -319,21 +399,26 @@ export function buildListEmbed(
   return { title, description, color: EMBED_COLOR_PRIMARY, fields };
 }
 
-function buildCharacterScoreField(character: ShowcaseCharacterScore): GameEmbedField {
+function buildCharacterScoreField(
+  gameCode: string,
+  character: ShowcaseCharacterScore,
+): GameEmbedField {
   const label = character.name ?? `キャラクターID ${character.id}`;
   if (!character.artifactScore)
     return {
       name: truncate(`${label} Lv.${character.level}`, MAX_EMBED_FIELD_NAME_CHARS),
       value: 'スコアなし',
     };
-  const lines =
-    character.artifactScore.perPiece.length === 0
-      ? ['部位別の内訳はありません']
-      : character.artifactScore.perPiece.map(
-          // API の perPiece は部位 (スロット) 情報を持たないため番号表記にする。
-          (piece, index) =>
-            `${index + 1}. CV ${piece.cv.toFixed(1)}（${formatRolls(piece.rolls)}）`,
-        );
+  const lines = [formatScoreBar(character.artifactScore.total, gameCode)];
+  if (character.artifactScore.perPiece.length === 0) {
+    lines.push('部位別の内訳はありません');
+  } else {
+    character.artifactScore.perPiece.forEach((piece, index) => {
+      lines.push(
+        `${scorePieceLabel(gameCode, index)} CV ${piece.cv.toFixed(1)}（${formatRollsShort(piece.rolls)}）`,
+      );
+    });
+  }
   return {
     name: truncate(
       `${label} Lv.${character.level} ・ スコア ${character.artifactScore.total.toFixed(1)}`,
@@ -357,15 +442,19 @@ export function buildScoreEmbed(
       ),
       color: EMBED_COLOR_NEUTRAL,
     };
+  // スコアがあるキャラが1人でもいれば、短縮ラベルの凡例をフッターに1回だけ入れる。
+  const hasAnyScore = result.characters.some((character) => character.artifactScore);
   const footerText = truncate(
-    `UID ${result.uid} ・ 取得：${formatJstDateTime(result.fetchedAt)}`,
+    hasAnyScore
+      ? `UID ${result.uid} ・ 取得：${formatJstDateTime(result.fetchedAt)} ・ 凡例：${scoreRollLegend(result.gameCode)}`
+      : `UID ${result.uid} ・ 取得：${formatJstDateTime(result.fetchedAt)}`,
     MAX_EMBED_FOOTER_CHARS,
   );
   const fields: GameEmbedField[] = [];
   let usedChars = title.length + footerText.length;
   let omitted = 0;
   for (let index = 0; index < result.characters.length; index += 1) {
-    const field = buildCharacterScoreField(result.characters[index]!);
+    const field = buildCharacterScoreField(result.gameCode, result.characters[index]!);
     const remainingAfter = result.characters.length - index - 1;
     // 最後の1枠は「ほか N 件」フィールドのために空けておく。
     const fillsLastSlot = fields.length + 1 >= MAX_EMBED_FIELDS && remainingAfter > 0;
