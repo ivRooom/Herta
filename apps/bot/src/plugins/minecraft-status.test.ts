@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
 import {
   bar,
@@ -6,9 +6,17 @@ import {
   buildMinecraftControlSignature,
   canApproveMinecraftWhitelist,
   canControlMinecraftServer,
+  buildMinecraftLinkStatusEmbed,
+  buildMinecraftPendingRequestRows,
+  buildMinecraftPendingRequestsEmbed,
+  buildMinecraftRejectModal,
+  buildMinecraftReviewNoticeEmbed,
   formatMinecraftBotApiError,
   formatMinecraftLinkStatus,
   formatMinecraftPendingRequests,
+  handleMinecraftWhitelistComponent,
+  parseMinecraftPendingRequests,
+  parseMinecraftWhitelistComponentId,
   resolveMinecraftBotApiConfig,
   minecraftControlImmediateMessage,
   minecraftControlPath,
@@ -736,5 +744,251 @@ describe('Minecraft ホワイトリスト連携 (#894)', () => {
     expect(formatMinecraftBotApiError({ ok: false, status: 0, data: null })).toContain(
       '接続できませんでした',
     );
+  });
+});
+
+describe('Minecraft ホワイトリスト審査 UX (Embed / ボタン / モーダル)', () => {
+  const pendingData = {
+    requests: [
+      {
+        id: 'mclr_1',
+        minecraftUsername: 'Steve',
+        discordUsername: 'steve_d',
+        discordUserId: '111',
+        requestedAt: '2026-11-16T07:06:05.444Z',
+      },
+      {
+        id: 'mclr_2',
+        minecraftUsername: 'Alex',
+        discordUsername: 'alex_d',
+        discordUserId: '222',
+        requestedAt: '2026-11-16T08:00:00.000Z',
+      },
+    ],
+  };
+
+  it('pending 応答をサマリーに変換する (DM 用の discordUserId を含む)', () => {
+    const parsed = parseMinecraftPendingRequests(pendingData);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({
+      id: 'mclr_1',
+      minecraftUsername: 'Steve',
+      discordUserId: '111',
+    });
+    expect(parseMinecraftPendingRequests({})).toEqual([]);
+  });
+
+  it('申請ごとに承認・却下ボタンの行を作り、5件で打ち切る', () => {
+    const rows = buildMinecraftPendingRequestRows(parseMinecraftPendingRequests(pendingData));
+    expect(rows).toHaveLength(2);
+    const firstButtons = rows[0]!.components;
+    expect(
+      firstButtons.map((button) => ('custom_id' in button ? button.custom_id : undefined)),
+    ).toEqual(['mcw:approve:mclr_1', 'mcw:reject:mclr_1']);
+    const many = {
+      requests: Array.from({ length: 7 }, (_, index) => ({
+        id: `mclr_${index}`,
+        minecraftUsername: `User${index}`,
+        discordUsername: `user${index}`,
+        requestedAt: '2026-11-16T07:06:05.444Z',
+      })),
+    };
+    expect(buildMinecraftPendingRequestRows(parseMinecraftPendingRequests(many))).toHaveLength(5);
+    const embed = buildMinecraftPendingRequestsEmbed(parseMinecraftPendingRequests(many));
+    expect(embed.footer?.text).toContain('先頭5件まで');
+  });
+
+  it('pending Embed は空ならその旨、あれば申請者ごとのフィールドになる', () => {
+    const empty = buildMinecraftPendingRequestsEmbed([]);
+    expect(empty.description).toContain('審査待ちの連携申請はありません');
+    const embed = buildMinecraftPendingRequestsEmbed(parseMinecraftPendingRequests(pendingData));
+    expect(embed.fields).toHaveLength(2);
+    expect(embed.fields?.[0]?.name).toContain('Steve');
+    expect(embed.fields?.[0]?.value).toContain('mclr_1');
+  });
+
+  it('customId を解析し、対象外や不正な形式は null にする', () => {
+    expect(parseMinecraftWhitelistComponentId('mcw:approve:mclr_1')).toEqual({
+      action: 'approve',
+      requestId: 'mclr_1',
+    });
+    expect(parseMinecraftWhitelistComponentId('mcw:reject-submit:mclr_2')).toEqual({
+      action: 'reject-submit',
+      requestId: 'mclr_2',
+    });
+    expect(parseMinecraftWhitelistComponentId('daily-bonus:2026-11-16')).toBeNull();
+    expect(parseMinecraftWhitelistComponentId('mcw:approve:')).toBeNull();
+    expect(parseMinecraftWhitelistComponentId('mcw:unknown:mclr_1')).toBeNull();
+  });
+
+  it('却下モーダルは reject-submit の customId と必須の理由入力を持つ', () => {
+    const modal = buildMinecraftRejectModal('mclr_9');
+    expect(modal.custom_id).toBe('mcw:reject-submit:mclr_9');
+    const row = modal.components[0] as unknown as {
+      components: { custom_id: string; required?: boolean }[];
+    };
+    const input = row.components[0]!;
+    expect(input.custom_id).toBe('note');
+    expect(input.required).toBe(true);
+  });
+
+  it('連携状態 Embed は状態ごとに色と項目が変わる', () => {
+    const approved = buildMinecraftLinkStatusEmbed({
+      status: 'approved',
+      link: { minecraftUsername: 'Steve' },
+      whitelist: { status: 'synced' },
+    });
+    expect(approved.color).toBe(0x57f287);
+    expect(approved.fields?.map((field) => field.name)).toEqual(['Minecraft', 'ホワイトリスト']);
+    const pending = buildMinecraftLinkStatusEmbed({
+      status: 'pending',
+      request: { id: 'mclr_1', minecraftUsername: 'Steve' },
+      whitelist: { status: 'not_requested' },
+    });
+    expect(pending.color).toBe(0xfee75c);
+    expect(pending.fields?.map((field) => field.name)).toEqual(['Minecraft', '申請ID']);
+  });
+
+  it('審査結果 DM の Embed に却下理由が入る', () => {
+    const embed = buildMinecraftReviewNoticeEmbed('reject', {
+      minecraftUsername: 'Steve',
+      note: '名前が一致しません',
+    });
+    expect(embed.title).toContain('却下されました');
+    expect(embed.fields?.map((field) => field.name)).toEqual(['Minecraft', '却下理由']);
+  });
+});
+
+describe('handleMinecraftWhitelistComponent', () => {
+  const approverRoleId = '222222222222222222';
+  const pendingEntry = {
+    id: 'mclr_1',
+    minecraftUsername: 'Steve',
+    discordUsername: 'steve_d',
+    discordUserId: '111',
+    requestedAt: '2026-11-16T07:06:05.444Z',
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env['IVRM_WEB_API_BASE_URL'];
+    delete process.env['HERTA_MINECRAFT_SYNC_SECRET'];
+  });
+
+  function setupFetch() {
+    process.env['IVRM_WEB_API_BASE_URL'] = 'https://api.example.test';
+    process.env['HERTA_MINECRAFT_SYNC_SECRET'] = 'test-secret';
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    let pendingCount = 0;
+    const fetchMock = vi.fn(async (url: string, init?: { body?: string }) => {
+      const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+      calls.push({ url, body });
+      if (url.endsWith('/minecraft/bot/requests/pending')) {
+        pendingCount += 1;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ requests: pendingCount === 1 ? [pendingEntry] : [] }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return calls;
+  }
+
+  function makeContext(dmSend: ReturnType<typeof vi.fn>) {
+    return {
+      guildId: 'guild-1',
+      config: normalizeMinecraftStatusConfig({
+        enabled: true,
+        ephemeralResponses: true,
+        whitelistApproverRoleIds: [approverRoleId],
+      }),
+      client: {
+        channels: { fetch: async () => null },
+        users: {
+          fetch: async (userId: string) => (userId === '111' ? { send: dmSend } : null),
+        },
+      },
+    } as unknown as Parameters<typeof handleMinecraftWhitelistComponent>[0];
+  }
+
+  function makeInteraction(overrides: Record<string, unknown>) {
+    return {
+      guildId: 'guild-1',
+      user: { id: 'approver-1' },
+      member: { roles: [approverRoleId] },
+      isButton: () => true,
+      isModalSubmit: () => false,
+      reply: vi.fn(async () => {}),
+      update: vi.fn(async () => {}),
+      showModal: vi.fn(async () => {}),
+      ...overrides,
+    } as unknown as Parameters<typeof handleMinecraftWhitelistComponent>[1] & {
+      reply: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+      showModal: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  it('承認ロールが無いと API を呼ばずに拒否する', async () => {
+    const calls = setupFetch();
+    const interaction = makeInteraction({
+      customId: 'mcw:approve:mclr_1',
+      member: { roles: [] },
+    });
+    await handleMinecraftWhitelistComponent(makeContext(vi.fn(async () => {})), interaction);
+    expect(interaction.reply).toHaveBeenCalledTimes(1);
+    expect(String(interaction.reply.mock.calls[0]?.[0]?.content)).toContain('専用ロールが必要');
+    expect(calls.filter((call) => call.url.includes('/requests/approve'))).toHaveLength(0);
+    expect(interaction.update).not.toHaveBeenCalled();
+  });
+
+  it('承認ボタンで API を呼び、一覧を更新し、申請者へ DM する', async () => {
+    const calls = setupFetch();
+    const dmSend = vi.fn(async () => {});
+    const interaction = makeInteraction({ customId: 'mcw:approve:mclr_1' });
+    await handleMinecraftWhitelistComponent(makeContext(dmSend), interaction);
+    const approveCalls = calls.filter((call) => call.url.includes('/requests/approve'));
+    expect(approveCalls).toHaveLength(1);
+    expect(approveCalls[0]?.body).toMatchObject({
+      requestId: 'mclr_1',
+      approverRoleVerified: true,
+    });
+    expect(dmSend).toHaveBeenCalledTimes(1);
+    expect(interaction.update).toHaveBeenCalledTimes(1);
+    const updated = interaction.update.mock.calls[0]?.[0] as {
+      embeds: { description?: string }[];
+    };
+    expect(updated.embeds[0]?.description).toContain('審査待ちの連携申請はありません');
+  });
+
+  it('却下ボタンはモーダルを開くだけで API を呼ばない', async () => {
+    const calls = setupFetch();
+    const interaction = makeInteraction({ customId: 'mcw:reject:mclr_1' });
+    await handleMinecraftWhitelistComponent(makeContext(vi.fn(async () => {})), interaction);
+    expect(interaction.showModal).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('却下モーダルの送信で理由つきで却下し、DM して新しい一覧を返す', async () => {
+    const calls = setupFetch();
+    const dmSend = vi.fn(async () => {});
+    const interaction = makeInteraction({
+      customId: 'mcw:reject-submit:mclr_1',
+      isButton: () => false,
+      isModalSubmit: () => true,
+      fields: { getTextInputValue: () => '名前が一致しません' },
+    });
+    await handleMinecraftWhitelistComponent(makeContext(dmSend), interaction);
+    const rejectCalls = calls.filter((call) => call.url.includes('/requests/reject'));
+    expect(rejectCalls).toHaveLength(1);
+    expect(rejectCalls[0]?.body).toMatchObject({
+      requestId: 'mclr_1',
+      reviewNote: '名前が一致しません',
+    });
+    expect(dmSend).toHaveBeenCalledTimes(1);
+    expect(interaction.reply).toHaveBeenCalledTimes(1);
   });
 });
