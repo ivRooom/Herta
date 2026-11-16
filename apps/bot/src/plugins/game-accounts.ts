@@ -14,15 +14,19 @@ import {
 } from '@herta/plugin-sdk';
 import { callIvrmGameAccounts } from './game-accounts-ivrm.js';
 import {
-  formatGameAccountsError,
-  formatLinkSuccess,
-  formatListMessage,
-  formatScoreMessage,
-  formatUnlinkSuccess,
-  formatUnsupportedScoreMessage,
+  buildGameAccountsErrorEmbed,
+  buildLinkSuccessEmbed,
+  buildListEmbed,
+  buildNoticeEmbed,
+  buildScoreEmbed,
+  buildUnlinkCancelledEmbed,
+  buildUnlinkConfirmEmbed,
+  buildUnlinkSuccessEmbed,
+  buildUnsupportedScoreEmbed,
   gameDefinition,
   gameName,
   isShowcaseSupported,
+  type GameEmbed,
 } from './game-accounts-core.js';
 
 const UNLINK_CUSTOM_ID_PREFIX = 'game-accounts:unlink:';
@@ -47,10 +51,13 @@ interface GameButtonInteraction {
   customId?: string;
   isButton?(): boolean;
   reply(options: { content: string; flags: number }): Promise<unknown>;
-  update(options: { content: string; components: never[] }): Promise<unknown>;
+  update(options: {
+    embeds?: GameEmbed[];
+    components: ActionRowBuilder<ButtonBuilder>[] | never[];
+  }): Promise<unknown>;
   deferUpdate(): Promise<unknown>;
   editReply(options: {
-    content?: string;
+    embeds?: GameEmbed[];
     components?: ActionRowBuilder<ButtonBuilder>[] | never[];
   }): Promise<unknown>;
 }
@@ -152,7 +159,7 @@ export async function handleGameAccountsUnlinkButton(
       return;
     }
     await interaction.update({
-      content: `${gameName(parsed.gameCode)} のUID登録の解除をキャンセルしました。`,
+      embeds: [buildUnlinkCancelledEmbed(parsed.gameCode)],
       components: [],
     });
     return;
@@ -177,10 +184,11 @@ export async function handleGameAccountsUnlinkButton(
       gameCode: parsed.gameCode,
     });
     await interaction.editReply({
-      content:
+      embeds: [
         result.status === 'ok'
-          ? formatUnlinkSuccess(parsed.gameCode)
-          : formatGameAccountsError(result),
+          ? buildUnlinkSuccessEmbed(parsed.gameCode)
+          : buildGameAccountsErrorEmbed(result),
+      ],
       components: [],
     });
   } catch (error) {
@@ -189,7 +197,7 @@ export async function handleGameAccountsUnlinkButton(
       'Game accounts unlink failed',
     );
     await interaction.editReply({
-      content: '解除できませんでした。少し待ってからお試しください。',
+      embeds: [buildNoticeEmbed('解除できませんでした。少し待ってからお試しください。', 'error')],
       components: [],
     });
   } finally {
@@ -220,7 +228,7 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
           if (subcommand === 'unlink') {
             const gameCode = interaction.options.getString('game', true);
             await interaction.reply({
-              content: `${gameName(gameCode)} のUID登録を解除します。Webのマイページからも消えます。よろしいですか？`,
+              embeds: [buildUnlinkConfirmEmbed(gameCode)],
               components: [unlinkConfirmRow(userId, gameCode)],
               flags: MessageFlags.Ephemeral,
             });
@@ -246,43 +254,58 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
                 gameCode,
                 uid,
               });
-              await interaction.editReply(
-                result.status !== 'ok'
-                  ? formatGameAccountsError(result)
-                  : result.action === 'link'
-                    ? formatLinkSuccess(result)
-                    : '処理できませんでした。少し待ってからお試しください。',
-              );
+              await interaction.editReply({
+                embeds: [
+                  result.status !== 'ok'
+                    ? buildGameAccountsErrorEmbed(result)
+                    : result.action === 'link'
+                      ? buildLinkSuccessEmbed(result)
+                      : buildNoticeEmbed(
+                          '処理できませんでした。少し待ってからお試しください。',
+                          'error',
+                        ),
+                ],
+              });
               return;
             }
             if (subcommand === 'list') {
               const result = await callIvrmGameAccounts(guildId, userId, { action: 'list' });
-              await interaction.editReply(
-                result.status !== 'ok'
-                  ? formatGameAccountsError(result)
-                  : result.action === 'list'
-                    ? formatListMessage(result)
-                    : '処理できませんでした。少し待ってからお試しください。',
-              );
+              await interaction.editReply({
+                embeds: [
+                  result.status !== 'ok'
+                    ? buildGameAccountsErrorEmbed(result)
+                    : result.action === 'list'
+                      ? buildListEmbed(result)
+                      : buildNoticeEmbed(
+                          '処理できませんでした。少し待ってからお試しください。',
+                          'error',
+                        ),
+                ],
+              });
               return;
             }
             if (subcommand === 'score') {
               const gameCode = interaction.options.getString('game', true);
               if (!isShowcaseSupported(gameCode)) {
-                await interaction.editReply(formatUnsupportedScoreMessage(gameCode));
+                await interaction.editReply({ embeds: [buildUnsupportedScoreEmbed(gameCode)] });
                 return;
               }
               const result = await callIvrmGameAccounts(guildId, userId, {
                 action: 'score',
                 gameCode,
               });
-              await interaction.editReply(
-                result.status !== 'ok'
-                  ? formatGameAccountsError(result)
-                  : result.action === 'score'
-                    ? formatScoreMessage(result)
-                    : '処理できませんでした。少し待ってからお試しください。',
-              );
+              await interaction.editReply({
+                embeds: [
+                  result.status !== 'ok'
+                    ? buildGameAccountsErrorEmbed(result)
+                    : result.action === 'score'
+                      ? buildScoreEmbed(result)
+                      : buildNoticeEmbed(
+                          '処理できませんでした。少し待ってからお試しください。',
+                          'error',
+                        ),
+                ],
+              });
               return;
             }
             await interaction.editReply('不明な操作です。');

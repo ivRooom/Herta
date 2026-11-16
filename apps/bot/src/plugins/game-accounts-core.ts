@@ -10,17 +10,34 @@ export const MEMBER_GAME_ACCOUNTS_URL = 'https://member.ivrm.jp/profile';
 export interface GameDefinition {
   code: string;
   name: string;
+  /** スコアの呼称 (原神=聖遺物、スタレ=遺物、ZZZ=ドライブディスク)。 */
+  scoreLabel: string;
   /** Enka ショーケース取得に対応しているか (鳴潮・NTE は UID 登録のみ)。 */
   showcaseSupported: boolean;
 }
 
 export const GAME_DEFINITIONS: readonly GameDefinition[] = [
-  { code: 'genshin', name: '原神', showcaseSupported: true },
-  { code: 'starrail', name: '崩壊：スターレイル', showcaseSupported: true },
-  { code: 'zzz', name: 'ゼンレスゾーンゼロ', showcaseSupported: true },
-  { code: 'endfield', name: 'アークナイツ：エンドフィールド', showcaseSupported: true },
-  { code: 'wuthering', name: '鳴潮', showcaseSupported: false },
-  { code: 'nte', name: 'NTE', showcaseSupported: false },
+  { code: 'genshin', name: '原神', scoreLabel: '聖遺物スコア', showcaseSupported: true },
+  {
+    code: 'starrail',
+    name: '崩壊：スターレイル',
+    scoreLabel: '遺物スコア',
+    showcaseSupported: true,
+  },
+  {
+    code: 'zzz',
+    name: 'ゼンレスゾーンゼロ',
+    scoreLabel: 'ドライブディスクスコア',
+    showcaseSupported: true,
+  },
+  {
+    code: 'endfield',
+    name: 'アークナイツ：エンドフィールド',
+    scoreLabel: '装備スコア',
+    showcaseSupported: true,
+  },
+  { code: 'wuthering', name: '鳴潮', scoreLabel: 'スコア', showcaseSupported: false },
+  { code: 'nte', name: 'NTE', scoreLabel: 'スコア', showcaseSupported: false },
 ];
 
 export const GAME_CHOICES = GAME_DEFINITIONS.map((game) => ({
@@ -34,6 +51,10 @@ export function gameDefinition(gameCode: string): GameDefinition | undefined {
 
 export function gameName(gameCode: string): string {
   return gameDefinition(gameCode)?.name ?? gameCode;
+}
+
+export function scoreLabel(gameCode: string): string {
+  return gameDefinition(gameCode)?.scoreLabel ?? 'スコア';
 }
 
 export function isShowcaseSupported(gameCode: string): boolean {
@@ -116,13 +137,90 @@ export function formatGameAccountsError(
   }
 }
 
-export function formatLinkSuccess(
+// ---------------------------------------------------------------------------
+// Embed ペイロード生成 (#909)。平文の羅列では分かりにくいという Owner
+// フィードバックを受け、/game の結果表示を Discord Embed に寄せる。
+// core は discord.js に依存しない純粋層なので、EmbedBuilder ではなく
+// APIEmbed 互換のプレーンオブジェクトを返し、プラグイン側がそのまま
+// `embeds` に渡す (fortune は EmbedBuilder 利用だが、結果は同形)。
+// ---------------------------------------------------------------------------
+
+export interface GameEmbedField {
+  name: string;
+  value: string;
+  inline?: boolean;
+}
+
+export interface GameEmbed {
+  title?: string;
+  description?: string;
+  color: number;
+  fields?: GameEmbedField[];
+  footer?: { text: string };
+}
+
+/** ポータル (member.ivrm.jp) のミント系アクセントに寄せた基調色。 */
+export const EMBED_COLOR_PRIMARY = 0x34d399;
+/** 成功 (登録・解除の完了など) は基調のミントで示す。 */
+export const EMBED_COLOR_SUCCESS = EMBED_COLOR_PRIMARY;
+/** エラーは赤系で明確に分ける。 */
+export const EMBED_COLOR_ERROR = 0xed4245;
+/** 解除確認など、注意を促す場面はアンバー。 */
+export const EMBED_COLOR_WARNING = 0xf0b232;
+/** キャンセルなど中立的な通知はグレー。 */
+export const EMBED_COLOR_NEUTRAL = 0x9aa5b1;
+
+// Discord の Embed 制限。純粋関数側で必ずこの範囲に収める。
+export const MAX_EMBED_TITLE_CHARS = 256;
+export const MAX_EMBED_DESCRIPTION_CHARS = 4096;
+export const MAX_EMBED_FIELD_NAME_CHARS = 256;
+export const MAX_EMBED_FIELD_VALUE_CHARS = 1024;
+export const MAX_EMBED_FOOTER_CHARS = 2048;
+export const MAX_EMBED_FIELDS = 25;
+export const MAX_EMBED_TOTAL_CHARS = 6000;
+
+function truncate(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars - 1)}…`;
+}
+
+/** Embed 全体の文字数 (Discord の 6000 字制限の数え方に合わせた合計)。 */
+export function embedCharacterCount(embed: GameEmbed): number {
+  let total = (embed.title?.length ?? 0) + (embed.description?.length ?? 0);
+  total += embed.footer?.text.length ?? 0;
+  for (const field of embed.fields ?? []) total += field.name.length + field.value.length;
+  return total;
+}
+
+export type NoticeTone = 'success' | 'error' | 'warning' | 'neutral';
+
+const NOTICE_COLORS: Record<NoticeTone, number> = {
+  success: EMBED_COLOR_SUCCESS,
+  error: EMBED_COLOR_ERROR,
+  warning: EMBED_COLOR_WARNING,
+  neutral: EMBED_COLOR_NEUTRAL,
+};
+
+/** 短い通知文を色分けした小さな Embed にする。 */
+export function buildNoticeEmbed(description: string, tone: NoticeTone): GameEmbed {
+  return {
+    description: truncate(description, MAX_EMBED_DESCRIPTION_CHARS),
+    color: NOTICE_COLORS[tone],
+  };
+}
+
+/** 連携エラーは現行の文言そのままを赤い Embed で出す。 */
+export function buildGameAccountsErrorEmbed(
+  result: Exclude<IvrmGameAccountsResult, { status: 'ok' }>,
+): GameEmbed {
+  return buildNoticeEmbed(formatGameAccountsError(result), 'error');
+}
+
+export function buildLinkSuccessEmbed(
   result: Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'link' }>,
-): string {
+): GameEmbed {
   const name = gameName(result.account.gameCode);
-  const lines = [
-    `✅ ${name} のUID（${result.account.uid}）を登録しました。Webのマイページにも反映されます。`,
-  ];
+  const lines = ['Webのマイページにも反映されます。'];
   if (!isShowcaseSupported(result.account.gameCode)) {
     lines.push('このタイトルはショーケース取得に未対応のため、UIDの登録のみ行いました。');
   } else if (result.showcase.status === 'ok' && result.showcase.fetchedAt) {
@@ -132,70 +230,173 @@ export function formatLinkSuccess(
       `ショーケースはまだ取得できていません（状態：${result.showcase.status}）。時間をおいて /game score で確認してください。`,
     );
   }
-  return lines.join('\n');
+  return {
+    title: truncate(
+      `✅ ${name} のUID（${result.account.uid}）を登録しました`,
+      MAX_EMBED_TITLE_CHARS,
+    ),
+    description: truncate(lines.join('\n'), MAX_EMBED_DESCRIPTION_CHARS),
+    color: EMBED_COLOR_SUCCESS,
+  };
 }
 
-export function formatUnlinkSuccess(gameCode: string): string {
-  return `🗑️ ${gameName(gameCode)} のUID登録を解除しました。Webのマイページにも反映されます。`;
+export function buildUnlinkSuccessEmbed(gameCode: string): GameEmbed {
+  return {
+    title: truncate(`🗑️ ${gameName(gameCode)} のUID登録を解除しました`, MAX_EMBED_TITLE_CHARS),
+    description: 'Webのマイページにも反映されます。',
+    color: EMBED_COLOR_SUCCESS,
+  };
 }
 
-function formatListEntry(account: GameAccountListEntry): string {
-  const name = gameName(account.gameCode);
-  if (!isShowcaseSupported(account.gameCode))
-    return `・${name}：UID ${account.uid}（ショーケース未対応）`;
-  if (account.showcaseFetchedAt)
-    return `・${name}：UID ${account.uid}（最終同期：${formatJstDateTime(account.showcaseFetchedAt)}）`;
-  return `・${name}：UID ${account.uid}（最終同期：未取得）`;
+export function buildUnlinkConfirmEmbed(gameCode: string): GameEmbed {
+  const name = gameName(gameCode);
+  return {
+    title: truncate(`⚠️ ${name} のUID登録の解除`, MAX_EMBED_TITLE_CHARS),
+    description: `${name} のUID登録を解除します。Webのマイページからも消えます。よろしいですか？`,
+    color: EMBED_COLOR_WARNING,
+  };
 }
 
-export function formatListMessage(
+export function buildUnlinkCancelledEmbed(gameCode: string): GameEmbed {
+  return buildNoticeEmbed(`${gameName(gameCode)} のUID登録の解除をキャンセルしました。`, 'neutral');
+}
+
+function buildListField(account: GameAccountListEntry): GameEmbedField {
+  const lines = [`UID ${account.uid}`];
+  if (!isShowcaseSupported(account.gameCode)) lines.push('ショーケース未対応（UID登録のみ）');
+  else if (account.showcaseFetchedAt)
+    lines.push(`最終同期：${formatJstDateTime(account.showcaseFetchedAt)}`);
+  else lines.push('最終同期：未取得');
+  return {
+    name: truncate(gameName(account.gameCode), MAX_EMBED_FIELD_NAME_CHARS),
+    value: truncate(lines.join('\n'), MAX_EMBED_FIELD_VALUE_CHARS),
+  };
+}
+
+export function buildListEmbed(
   result: Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'list' }>,
-): string {
+): GameEmbed {
+  const title = '🎮 登録済みのゲームアカウント';
   if (result.accounts.length === 0)
-    return `登録済みのゲームアカウントはありません。/game link で登録するか、${MEMBER_GAME_ACCOUNTS_URL} のマイページから登録してください。`;
-  return [
-    '🎮 登録済みのゲームアカウント（Webと同期）',
-    ...result.accounts.map(formatListEntry),
-  ].join('\n');
-}
-
-function formatCharacterScore(character: ShowcaseCharacterScore): string[] {
-  const label = character.name ?? `キャラクターID ${character.id}`;
-  if (!character.artifactScore) return [`${label} Lv.${character.level} — スコアなし`];
-  const lines = [
-    `${label} Lv.${character.level} — スコア ${character.artifactScore.total.toFixed(1)}`,
-  ];
-  character.artifactScore.perPiece.forEach((piece, index) => {
-    lines.push(`　${index + 1}. CV ${piece.cv.toFixed(1)}（${formatRolls(piece.rolls)}）`);
-  });
-  return lines;
-}
-
-const MAX_MESSAGE_CHARS = 1900;
-
-export function formatScoreMessage(
-  result: Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'score' }>,
-): string {
-  const name = gameName(result.gameCode);
-  if (!result.hasSnapshot || result.characters.length === 0)
-    return `${name} のショーケースはまだ取得できていません（状態：${result.showcaseStatus ?? '未取得'}）。/game link で登録し直すか、${MEMBER_GAME_ACCOUNTS_URL} のマイページで同期してください。`;
-  const lines = [
-    `🎮 ${name} の聖遺物スコア（UID ${result.uid}）`,
-    `取得：${formatJstDateTime(result.fetchedAt)}`,
-  ];
+    return {
+      title,
+      description: `登録済みのゲームアカウントはありません。/game link で登録するか、${MEMBER_GAME_ACCOUNTS_URL} のマイページから登録してください。`,
+      color: EMBED_COLOR_PRIMARY,
+    };
+  const description = '登録内容はWebのマイページと同期しています。';
+  // スコア用と同じく、Embed 全体の文字数予算 (6000) を追跡する。
+  // UID が極端に長い場合でも Discord に拒否されないようにするため。
+  const fields: GameEmbedField[] = [];
+  let usedChars = title.length + description.length;
   let omitted = 0;
-  for (const character of result.characters) {
-    const characterLines = formatCharacterScore(character);
-    if (lines.join('\n').length + characterLines.join('\n').length + 1 > MAX_MESSAGE_CHARS) {
-      omitted += 1;
-      continue;
+  for (let index = 0; index < result.accounts.length; index += 1) {
+    const field = buildListField(result.accounts[index]!);
+    const remainingAfter = result.accounts.length - index - 1;
+    // 最後の1枠は「ほか N 件」フィールドのために空けておく。
+    const fillsLastSlot = fields.length + 1 >= MAX_EMBED_FIELDS && remainingAfter > 0;
+    if (
+      fillsLastSlot ||
+      usedChars + field.name.length + field.value.length > MAX_EMBED_TOTAL_CHARS
+    ) {
+      omitted = result.accounts.length - index;
+      break;
     }
-    lines.push(...characterLines);
+    fields.push(field);
+    usedChars += field.name.length + field.value.length;
   }
-  if (omitted > 0) lines.push(`…ほか ${omitted} 件は省略しました。`);
-  return lines.join('\n');
+  if (omitted > 0) {
+    const omissionField: GameEmbedField = {
+      name: `…ほか ${omitted} 件のアカウント`,
+      value: '表示しきれない分はWebのマイページで確認してください。',
+    };
+    if (
+      fields.length < MAX_EMBED_FIELDS &&
+      usedChars + omissionField.name.length + omissionField.value.length <= MAX_EMBED_TOTAL_CHARS
+    ) {
+      fields.push(omissionField);
+    }
+  }
+  return { title, description, color: EMBED_COLOR_PRIMARY, fields };
 }
 
-export function formatUnsupportedScoreMessage(gameCode: string): string {
-  return `${gameName(gameCode)} はショーケース取得に未対応のため、スコアを表示できません。UIDの登録・確認は /game list を使ってください。`;
+function buildCharacterScoreField(character: ShowcaseCharacterScore): GameEmbedField {
+  const label = character.name ?? `キャラクターID ${character.id}`;
+  if (!character.artifactScore)
+    return {
+      name: truncate(`${label} Lv.${character.level}`, MAX_EMBED_FIELD_NAME_CHARS),
+      value: 'スコアなし',
+    };
+  const lines =
+    character.artifactScore.perPiece.length === 0
+      ? ['部位別の内訳はありません']
+      : character.artifactScore.perPiece.map(
+          // API の perPiece は部位 (スロット) 情報を持たないため番号表記にする。
+          (piece, index) =>
+            `${index + 1}. CV ${piece.cv.toFixed(1)}（${formatRolls(piece.rolls)}）`,
+        );
+  return {
+    name: truncate(
+      `${label} Lv.${character.level} ・ スコア ${character.artifactScore.total.toFixed(1)}`,
+      MAX_EMBED_FIELD_NAME_CHARS,
+    ),
+    value: truncate(lines.join('\n'), MAX_EMBED_FIELD_VALUE_CHARS),
+  };
+}
+
+export function buildScoreEmbed(
+  result: Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'score' }>,
+): GameEmbed {
+  const name = gameName(result.gameCode);
+  const title = truncate(`🎮 ${name}の${scoreLabel(result.gameCode)}`, MAX_EMBED_TITLE_CHARS);
+  if (!result.hasSnapshot || result.characters.length === 0)
+    return {
+      title,
+      description: truncate(
+        `${name} のショーケースはまだ取得できていません（状態：${result.showcaseStatus ?? '未取得'}）。/game link で登録し直すか、${MEMBER_GAME_ACCOUNTS_URL} のマイページで同期してください。`,
+        MAX_EMBED_DESCRIPTION_CHARS,
+      ),
+      color: EMBED_COLOR_NEUTRAL,
+    };
+  const footerText = truncate(
+    `UID ${result.uid} ・ 取得：${formatJstDateTime(result.fetchedAt)}`,
+    MAX_EMBED_FOOTER_CHARS,
+  );
+  const fields: GameEmbedField[] = [];
+  let usedChars = title.length + footerText.length;
+  let omitted = 0;
+  for (let index = 0; index < result.characters.length; index += 1) {
+    const field = buildCharacterScoreField(result.characters[index]!);
+    const remainingAfter = result.characters.length - index - 1;
+    // 最後の1枠は「ほか N 件」フィールドのために空けておく。
+    const fillsLastSlot = fields.length + 1 >= MAX_EMBED_FIELDS && remainingAfter > 0;
+    if (
+      fillsLastSlot ||
+      usedChars + field.name.length + field.value.length > MAX_EMBED_TOTAL_CHARS
+    ) {
+      omitted = result.characters.length - index;
+      break;
+    }
+    fields.push(field);
+    usedChars += field.name.length + field.value.length;
+  }
+  if (omitted > 0) {
+    const omissionField: GameEmbedField = {
+      name: `…ほか ${omitted} 件のキャラクター`,
+      value: '表示しきれない分はWebのマイページで確認してください。',
+    };
+    if (
+      fields.length < MAX_EMBED_FIELDS &&
+      usedChars + omissionField.name.length + omissionField.value.length <= MAX_EMBED_TOTAL_CHARS
+    ) {
+      fields.push(omissionField);
+    }
+  }
+  return { title, color: EMBED_COLOR_PRIMARY, fields, footer: { text: footerText } };
+}
+
+export function buildUnsupportedScoreEmbed(gameCode: string): GameEmbed {
+  return buildNoticeEmbed(
+    `${gameName(gameCode)} はショーケース取得に未対応のため、スコアを表示できません。UIDの登録・確認は /game list を使ってください。`,
+    'neutral',
+  );
 }
