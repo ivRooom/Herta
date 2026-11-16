@@ -57,6 +57,24 @@ it('correction embed phrases each kind and omits the grant line when nothing was
   ).toJSON();
   expect(noGrant.description).not.toContain('新たに正解となった方');
 });
+it('correction delivery accepts the full API result shape for correctedResult', () => {
+  const parsed = correctionDelivery.parse(fixture.correctionDelivery);
+  expect(parsed.correctedResult?.questionId).toBe(fixture.correctionDelivery.questionId);
+  expect(parsed.correctedResult?.dateJst).toBe('2026-10-31');
+  expect(parsed.correctedResult?.finalizedAt).toBe('2026-11-01T00:05:00.000Z');
+  expect(parsed.correctedResult?.options.map((o) => o.optionId)).toEqual(['a', 'b']);
+  expect(
+    correctionDelivery.safeParse({
+      ...fixture.correctionDelivery,
+      correctedResult: {
+        ...fixture.correctionDelivery.correctedResult,
+        options: fixture.correctionDelivery.correctedResult.options.map(
+          (o: { votes: number }, i: number) => (i === 0 ? { ...o, votes: o.votes + 1 } : o),
+        ),
+      },
+    }).success,
+  ).toBe(false);
+});
 it('correction delivery schema rejects identities, unknown kinds and malformed tokens', () => {
   expect(
     correctionDelivery.safeParse({ ...fixture.correctionDelivery, discordUserId: 'synthetic' })

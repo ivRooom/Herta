@@ -15,29 +15,81 @@ import {
   loadDailyQuizStudioSettings,
 } from './daily-quiz-settings.js';
 const idPattern = /^[A-Za-z0-9_-]{1,64}$/;
+const id = z.string().regex(idPattern);
+const instant = z.string().datetime();
+const text = (max: number) => z.string().refine((s) => Array.from(s).length <= max);
+const jstDate = z
+  .string()
+  .regex(/^\d{4}-\d\d-\d\d$/)
+  .refine((s) => Number.isFinite(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s);
+const media = z
+  .object({
+    id,
+    kind: z.enum(['image', 'audio']),
+    mimeType: z.enum([
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'audio/mpeg',
+      'audio/ogg',
+      'audio/wav',
+    ]),
+    url: z
+      .string()
+      .url()
+      .max(2048)
+      .refine((value) => new URL(value).protocol === 'https:'),
+    byteSize: z.number().int().min(1).max(10485760),
+    durationMs: z.number().int().min(1).max(30000).nullable(),
+    rights: z.enum(['original', 'licensed', 'public_domain']),
+  })
+  .strict();
+// Mirrors publicDailyQuestion in daily-participation-client.ts (post-#917),
+// kept local so this PR is independent of #919's merge order.
+export const rescueQuestion = z
+  .object({
+    id,
+    dateJst: jstDate,
+    slot: z.enum(['daily', 'bonus', 'rescue']),
+    categoryId: id,
+    themeId: id,
+    format: z.enum(['choice2', 'choice3', 'choice4', 'image_choice', 'audio_choice', 'free_text']),
+    scoring: z.enum(['instant', 'poll', 'majority', 'minority', 'human_review']),
+    prompt: text(1000).refine((s) => s.trim().length > 0),
+    options: z
+      .array(
+        z
+          .object({
+            id,
+            label: text(80).refine((s) => s.trim().length > 0),
+            mediaId: id.nullable(),
+          })
+          .strict(),
+      )
+      .max(4),
+    media: z.array(media).max(5),
+    closesAt: instant,
+    requiresClaim: z.boolean(),
+    maxTextLength: z.number().int().min(1).max(1000),
+  })
+  .strict()
+  .refine((q) => {
+    const count = { choice2: 2, choice3: 3, choice4: 4, free_text: 0 }[
+      q.format as 'choice2' | 'choice3' | 'choice4' | 'free_text'
+    ];
+    return (
+      (count === undefined ? q.options.length >= 2 : q.options.length === count) &&
+      new Set(q.options.map((o) => o.id)).size === q.options.length &&
+      new Set(q.media.map((m) => m.id)).size === q.media.length &&
+      q.options.every((o) => o.mediaId === null || q.media.some((m) => m.id === o.mediaId))
+    );
+  });
 export const rescueDelivery = z
   .object({
     questionId: z.string().regex(idPattern),
     deliveryToken: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/),
     status: z.enum(['sending', 'uncertain']),
-    question: z
-      .object({
-        dateJst: z.string().regex(/^\d{4}-\d\d-\d\d$/),
-        prompt: z.string().max(2000),
-        options: z
-          .array(
-            z
-              .object({
-                id: z.string(),
-                label: z.string().max(160),
-              })
-              .strict(),
-          )
-          .max(8),
-        scoring: z.enum(['instant', 'poll', 'majority', 'minority', 'human_review']),
-        closesAt: z.string().datetime(),
-      })
-      .strict(),
+    question: rescueQuestion,
   })
   .strict();
 type RescueDelivery = z.infer<typeof rescueDelivery>;

@@ -34,6 +34,30 @@ it('rescue action row is a plain link button to the member participation page', 
   });
   expect(row.components[0]).not.toHaveProperty('custom_id');
 });
+it('rescue delivery accepts the full public question shape and enforces its refinements', () => {
+  const parsed = rescueDelivery.parse(fixture.rescueDelivery);
+  expect(parsed.question.id).toBe(fixture.rescueDelivery.questionId);
+  expect(parsed.question.slot).toBe('rescue');
+  expect(parsed.question.media).toEqual([]);
+  expect(parsed.question.options.every((o) => o.mediaId === null)).toBe(true);
+  expect(
+    rescueDelivery.safeParse({
+      ...fixture.rescueDelivery,
+      question: {
+        ...fixture.rescueDelivery.question,
+        options: fixture.rescueDelivery.question.options.map((o: { id: string }, i: number) =>
+          i === 0 ? { ...o, mediaId: 'missing_media' } : o,
+        ),
+      },
+    }).success,
+  ).toBe(false);
+  expect(
+    rescueDelivery.safeParse({
+      ...fixture.rescueDelivery,
+      question: { ...fixture.rescueDelivery.question, format: 'choice4' },
+    }).success,
+  ).toBe(false);
+});
 it('rescue delivery schema rejects identities, unknown states and malformed deadlines', () => {
   expect(
     rescueDelivery.safeParse({ ...fixture.rescueDelivery, discordUserId: 'synthetic' }).success,

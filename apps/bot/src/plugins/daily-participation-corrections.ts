@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { EmbedBuilder, PermissionFlagsBits, type Client } from 'discord.js';
 import { request } from './daily-bonus-wallet.js';
+import { anonymousDailyResult } from './daily-participation-results.js';
 import {
   dailyQuizParticipationEnabled,
   loadDailyQuizStudioSettings,
@@ -9,25 +10,6 @@ import {
 const bounded = z.number().int().min(0).max(1000000);
 const idPattern = /^[A-Za-z0-9_-]{1,64}$/;
 const scoring = z.enum(['instant', 'poll', 'majority', 'minority', 'human_review']);
-export const correctedDailyResult = z
-  .object({
-    options: z
-      .array(
-        z
-          .object({
-            label: z.string().max(160),
-            votes: bounded,
-            percentage: z.number().min(0).max(100),
-            winner: z.boolean(),
-          })
-          .strict(),
-      )
-      .min(2)
-      .max(4),
-    participantCount: bounded,
-    state: z.enum(['finalized', 'void']),
-  })
-  .strict();
 export const correctionDelivery = z
   .object({
     correctionId: z.string().regex(idPattern),
@@ -59,7 +41,7 @@ export const correctionDelivery = z
         scoring,
       })
       .strict(),
-    correctedResult: correctedDailyResult.optional(),
+    correctedResult: anonymousDailyResult.optional(),
   })
   .strict();
 type CorrectionDelivery = z.infer<typeof correctionDelivery>;
