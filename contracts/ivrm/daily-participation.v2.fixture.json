@@ -158,5 +158,84 @@
       }
     ],
     "finalizedAt": "2026-10-31T15:00:01.000Z"
+  },
+  "correctionDelivery": {
+    "correctionId": "c_20261031_1",
+    "questionId": "q_20261031",
+    "deliveryToken": "synthetic-delivery-token",
+    "status": "sending",
+    "correction": {
+      "kind": "correct_answer",
+      "revision": 1,
+      "reason": "Synthetic correction reason",
+      "summary": {
+        "respondents": 10,
+        "newlyCorrect": 7,
+        "newlyIncorrect": 3,
+        "grantTotal": 70
+      },
+      "correctOptionLabel": "B"
+    },
+    "question": {
+      "dateJst": "2026-10-31",
+      "prompt": "Synthetic poll",
+      "scoring": "minority"
+    },
+    "correctedResult": {
+      "questionId": "q_20261031",
+      "dateJst": "2026-10-31",
+      "prompt": "Synthetic poll",
+      "scoring": "minority",
+      "state": "finalized",
+      "participantCount": 10,
+      "finalizedAt": "2026-11-01T00:05:00.000Z",
+      "options": [
+        {
+          "optionId": "a",
+          "label": "A",
+          "votes": 3,
+          "percentage": 30,
+          "winner": false
+        },
+        {
+          "optionId": "b",
+          "label": "B",
+          "votes": 7,
+          "percentage": 70,
+          "winner": true
+        }
+      ]
+    }
+  },
+  "rescueDelivery": {
+    "questionId": "q_20261031_rescue",
+    "deliveryToken": "synthetic-delivery-token",
+    "status": "sending",
+    "question": {
+      "id": "q_20261031_rescue",
+      "dateJst": "2026-10-31",
+      "slot": "rescue",
+      "categoryId": "quiz",
+      "themeId": "game",
+      "format": "choice2",
+      "scoring": "instant",
+      "prompt": "Synthetic rescue question",
+      "options": [
+        {
+          "id": "a",
+          "label": "A",
+          "mediaId": null
+        },
+        {
+          "id": "b",
+          "label": "B",
+          "mediaId": null
+        }
+      ],
+      "media": [],
+      "closesAt": "2026-11-01T00:00:00.000Z",
+      "requiresClaim": true,
+      "maxTextLength": 500
+    }
   }
 }
