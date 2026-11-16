@@ -28,7 +28,7 @@ export interface GameAccountsConfig {
   guildId: string;
 }
 
-export type GameAccountsAction = 'link' | 'unlink' | 'list' | 'score' | 'card';
+export type GameAccountsAction = 'link' | 'unlink' | 'list' | 'score' | 'card' | 'progress';
 
 export interface GameAccountsRequestInput {
   action: GameAccountsAction;
@@ -86,6 +86,47 @@ export interface LinkShowcaseState {
   fetchedAt: string | null;
 }
 
+/** One explored area of a HoYoLAB progress snapshot (Genshin only). */
+export interface HoyolabExploration {
+  id: number | null;
+  /** Localized area name as returned by HoYoLAB. */
+  name: string | null;
+  /** Exploration percent, 0-100 with one decimal. */
+  percent: number | null;
+  /** Reputation / area level where the area carries one. */
+  level: number | null;
+  offerings: { name: string | null; level: number | null }[];
+}
+
+export type HoyolabEndgameKind =
+  'spiral_abyss' | 'memory_of_chaos' | 'pure_fiction' | 'apocalyptic_shadow';
+
+export interface HoyolabEndgameEntry {
+  kind: HoyolabEndgameKind;
+  scheduleId: number | null;
+  /** Deepest floor/stage label verbatim ("12-3" for the Abyss). */
+  maxFloor: string | null;
+  totalStars: number | null;
+  totalScore: number | null;
+  /** Whether the account has any recorded attempt this schedule. */
+  hasData: boolean;
+}
+
+/**
+ * The display-relevant slice of the API's HoyolabProgressSnapshot
+ * (ivrm-web integrations/hoyolab.ts). The stored snapshot also carries
+ * provider/server/roster data the bot never renders; the parser keeps
+ * only what the progress embed reads and drops the rest.
+ */
+export interface HoyolabProgressSnapshot {
+  gameCode: string;
+  uid: string;
+  player: { nickname: string | null; level: number | null };
+  stats: Record<string, number | string | null>;
+  explorations: HoyolabExploration[];
+  endgame: HoyolabEndgameEntry[];
+}
+
 export type IvrmGameAccountsResult =
   | { status: 'ok'; action: 'link'; account: LinkedGameAccount; showcase: LinkShowcaseState }
   | { status: 'ok'; action: 'unlink'; gameCode: string }
@@ -108,7 +149,20 @@ export type IvrmGameAccountsResult =
       fetchedAt: string | null;
       cards: GameCardPng[];
     }
+  | {
+      status: 'ok';
+      action: 'progress';
+      gameCode: string;
+      uid: string;
+      /** Stored progress status ("ok", "not_public", ...); null until the first refresh attempt. */
+      progressStatus: string | null;
+      fetchedAt: string | null;
+      succeededAt: string | null;
+      hasProgress: boolean;
+      progress: HoyolabProgressSnapshot | null;
+    }
   | { status: 'card-unavailable' }
+  | { status: 'progress-unsupported' }
   | { status: 'not-linked' }
   | { status: 'not-found'; error: 'game_not_found' | 'game_account_not_found' }
   | { status: 'invalid-input'; field: string | null; message: string }
@@ -225,6 +279,96 @@ function parseArtifactScore(value: unknown): ArtifactScore | null | undefined {
     perPiece.push({ cv: piece.cv, rolls });
   }
   return { total: value.total, perPiece, version: value.version };
+}
+
+function isNumberOrNull(value: unknown): value is number | null {
+  return value === null || isFiniteNumber(value);
+}
+
+const HOYOLAB_ENDGAME_KINDS: readonly string[] = [
+  'spiral_abyss',
+  'memory_of_chaos',
+  'pure_fiction',
+  'apocalyptic_shadow',
+];
+
+/**
+ * Validates a stored HoYoLAB progress snapshot. Returns null for the
+ * explicit no-snapshot value and undefined for anything malformed, so
+ * a corrupt upstream payload fails closed like every other action.
+ */
+function parseHoyolabProgress(value: unknown): HoyolabProgressSnapshot | null | undefined {
+  if (value === null) return null;
+  if (!isRecord(value)) return undefined;
+  if (typeof value.gameCode !== 'string' || typeof value.uid !== 'string') return undefined;
+  if (
+    !isRecord(value.player) ||
+    !isStringOrNull(value.player.nickname) ||
+    !isNumberOrNull(value.player.level)
+  )
+    return undefined;
+  if (!isRecord(value.stats)) return undefined;
+  const stats: Record<string, number | string | null> = {};
+  for (const [key, entry] of Object.entries(value.stats)) {
+    if (!(entry === null || typeof entry === 'string' || isFiniteNumber(entry))) return undefined;
+    stats[key] = entry;
+  }
+  if (!Array.isArray(value.explorations) || !Array.isArray(value.endgame)) return undefined;
+  const explorations: HoyolabExploration[] = [];
+  for (const entry of value.explorations) {
+    if (!isRecord(entry)) return undefined;
+    if (
+      !isNumberOrNull(entry.id) ||
+      !isStringOrNull(entry.name) ||
+      !isNumberOrNull(entry.percent) ||
+      !isNumberOrNull(entry.level) ||
+      !Array.isArray(entry.offerings)
+    )
+      return undefined;
+    const offerings: HoyolabExploration['offerings'] = [];
+    for (const offering of entry.offerings) {
+      if (!isRecord(offering) || !isStringOrNull(offering.name) || !isNumberOrNull(offering.level))
+        return undefined;
+      offerings.push({ name: offering.name, level: offering.level });
+    }
+    explorations.push({
+      id: entry.id,
+      name: entry.name,
+      percent: entry.percent,
+      level: entry.level,
+      offerings,
+    });
+  }
+  const endgame: HoyolabEndgameEntry[] = [];
+  for (const entry of value.endgame) {
+    if (!isRecord(entry)) return undefined;
+    if (
+      typeof entry.kind !== 'string' ||
+      !HOYOLAB_ENDGAME_KINDS.includes(entry.kind) ||
+      !isNumberOrNull(entry.scheduleId) ||
+      !isStringOrNull(entry.maxFloor) ||
+      !isNumberOrNull(entry.totalStars) ||
+      !isNumberOrNull(entry.totalScore) ||
+      typeof entry.hasData !== 'boolean'
+    )
+      return undefined;
+    endgame.push({
+      kind: entry.kind as HoyolabEndgameKind,
+      scheduleId: entry.scheduleId,
+      maxFloor: entry.maxFloor,
+      totalStars: entry.totalStars,
+      totalScore: entry.totalScore,
+      hasData: entry.hasData,
+    });
+  }
+  return {
+    gameCode: value.gameCode,
+    uid: value.uid,
+    player: { nickname: value.player.nickname, level: value.player.level },
+    stats,
+    explorations,
+    endgame,
+  };
 }
 
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -374,6 +518,33 @@ function parseSuccessBody(
         cards,
       };
     }
+    case 'progress': {
+      if (
+        typeof value.gameCode !== 'string' ||
+        typeof value.uid !== 'string' ||
+        !isStringOrNull(value.status) ||
+        !isStringOrNull(value.fetchedAt) ||
+        !isStringOrNull(value.succeededAt) ||
+        typeof value.hasProgress !== 'boolean'
+      )
+        return { status: 'unavailable' };
+      const progress = parseHoyolabProgress(value.progress);
+      // The API's hasProgress is exactly "a snapshot is stored"; a body
+      // that disagrees with itself is an upstream malfunction.
+      if (progress === undefined || value.hasProgress !== (progress !== null))
+        return { status: 'unavailable' };
+      return {
+        status: 'ok',
+        action: 'progress',
+        gameCode: value.gameCode,
+        uid: value.uid,
+        progressStatus: value.status,
+        fetchedAt: value.fetchedAt,
+        succeededAt: value.succeededAt,
+        hasProgress: value.hasProgress,
+        progress,
+      };
+    }
   }
 }
 
@@ -423,6 +594,10 @@ function mapErrorResponse(
     )
       return { status: 'card-unavailable' };
   }
+  // Progress on a game without a HoYoLAB record is a display concern,
+  // not an input error: the plugin answers with its unsupported embed.
+  if (input.action === 'progress' && status === 422 && error === 'progress_not_supported')
+    return { status: 'progress-unsupported' };
   if (status === 404) {
     if (error === 'game_not_found' || error === 'game_account_not_found')
       return { status: 'not-found', error };

@@ -23,14 +23,17 @@ import {
   buildLinkSuccessEmbed,
   buildListEmbed,
   buildNoticeEmbed,
+  buildProgressEmbed,
   buildScoreCharacterEmbed,
   buildScoreEmbed,
   buildUnlinkCancelledEmbed,
   buildUnlinkConfirmEmbed,
   buildUnlinkSuccessEmbed,
+  buildUnsupportedProgressEmbed,
   buildUnsupportedScoreEmbed,
   gameDefinition,
   gameName,
+  isProgressSupported,
   isShowcaseSupported,
   scoreSwitcherCharacters,
   type GameEmbed,
@@ -221,9 +224,9 @@ const SCORE_BUTTONS_PER_ROW = 5;
 const MAX_BUTTON_LABEL_CHARS = 80;
 
 /**
- * Score switches whose API calls are in flight, keyed by guild:user. A
- * second press while one is running is rejected instead of racing two
- * edits of the same message.
+ * Score switches whose API calls are in flight, keyed by guild and the
+ * view owner's user id. A second press while one is running is rejected
+ * instead of racing two edits of the same message.
  */
 const pendingScoreSwitch = new Set<string>();
 
@@ -331,10 +334,13 @@ export async function buildScoreViewReply(
  *
  * The button carries only ids, so the handler re-reads the score (the
  * API serves the stored snapshot; nothing is fetched upstream) and
- * rebuilds the whole view for the pressed character. Only the member
- * who ran the command may switch: the response is ephemeral, so a
- * press by anyone else is rejected with an ephemeral note. When the
- * new view has no PNG, `attachments: []` clears the previous card.
+ * rebuilds the whole view for the pressed character. The score reply
+ * is public (#923), so anyone in the channel may switch the view: the
+ * ids in the button name the member whose showcase this is, and the
+ * handler always re-reads THAT member's score — a presser can never
+ * surface or affect their own data through someone else's buttons.
+ * When the new view has no PNG, `attachments: []` clears the previous
+ * card.
  */
 export async function handleGameAccountsScoreButton(
   context: PluginRuntimeContext<GameAccountsConfig, unknown, PrismaClient>,
@@ -346,13 +352,6 @@ export async function handleGameAccountsScoreButton(
   if (!interaction.guildId || interaction.guildId !== context.guildId) return;
   const parsed = parseScoreCustomId(interaction.customId);
   if (!parsed) return;
-  if (parsed.userId !== interaction.user.id) {
-    await interaction.reply({
-      content: 'この切替ボタンは、コマンドを実行した本人だけが使えます。',
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
   if (context.config.enabled === false) {
     await interaction.reply({
       content: 'ゲームアカウント連携Pluginは現在無効です。',
@@ -371,7 +370,9 @@ export async function handleGameAccountsScoreButton(
   pendingScoreSwitch.add(pendingKey);
   try {
     await interaction.deferUpdate();
-    const result = await callApi(interaction.guildId, interaction.user.id, {
+    // The view belongs to the member named in the button, whoever
+    // pressed it: the re-read and the rebuilt buttons both use that id.
+    const result = await callApi(interaction.guildId, parsed.userId, {
       action: 'score',
       gameCode: parsed.gameCode,
     });
@@ -393,7 +394,7 @@ export async function handleGameAccountsScoreButton(
     }
     const view = await buildScoreViewReply(
       interaction.guildId,
-      interaction.user.id,
+      parsed.userId,
       result,
       parsed.characterId,
       callApi,
@@ -460,7 +461,12 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
           }
           inFlight.add(key);
           try {
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            // link registers the member's own UID, so it stays between
+            // the member and the bot. list / score / progress are
+            // showcases meant to be seen, so they post publicly (#923).
+            await interaction.deferReply(
+              subcommand === 'link' ? { flags: MessageFlags.Ephemeral } : {},
+            );
             if (subcommand === 'link') {
               const gameCode = interaction.options.getString('game', true);
               const uid = interaction.options.getString('uid', true);
@@ -536,6 +542,34 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
                 callIvrmGameAccounts,
               );
               await interaction.editReply(view);
+              return;
+            }
+            if (subcommand === 'progress') {
+              const gameCode = interaction.options.getString('game', true);
+              if (!isProgressSupported(gameCode)) {
+                await interaction.editReply({ embeds: [buildUnsupportedProgressEmbed(gameCode)] });
+                return;
+              }
+              const result = await callIvrmGameAccounts(guildId, userId, {
+                action: 'progress',
+                gameCode,
+              });
+              if (result.status === 'progress-unsupported') {
+                await interaction.editReply({ embeds: [buildUnsupportedProgressEmbed(gameCode)] });
+                return;
+              }
+              await interaction.editReply({
+                embeds: [
+                  result.status !== 'ok'
+                    ? buildGameAccountsErrorEmbed(result)
+                    : result.action === 'progress'
+                      ? buildProgressEmbed(result)
+                      : buildNoticeEmbed(
+                          '処理できませんでした。少し待ってからお試しください。',
+                          'error',
+                        ),
+                ],
+              });
               return;
             }
             await interaction.editReply('不明な操作です。');

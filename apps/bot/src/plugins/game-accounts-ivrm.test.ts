@@ -462,3 +462,218 @@ describe('card action (build-card PNG)', () => {
     ).toEqual({ status: 'unavailable' });
   });
 });
+
+describe('progress action (HoYoLAB exploration)', () => {
+  // The stored snapshot as the API serves it, including the fields the
+  // bot never renders (provider / server / roster / image URLs).
+  const snapshot = {
+    provider: 'hoyolab',
+    gameCode: 'genshin',
+    uid: '812468719',
+    server: 'os_asia',
+    player: { nickname: 'いゔる。', level: 56 },
+    stats: { activeDays: 320, totalChests: 2270, commonChests: 800 },
+    explorations: [
+      {
+        id: 1,
+        name: 'モンド',
+        percent: 96.4,
+        level: 10,
+        offerings: [{ name: '風神像', level: 10 }],
+        mapUrl: 'https://example.invalid/map',
+        backgroundImage: 'https://example.invalid/bg',
+      },
+    ],
+    endgame: [
+      {
+        kind: 'spiral_abyss',
+        scheduleId: 42,
+        maxFloor: '12-3',
+        totalStars: 36,
+        totalScore: null,
+        hasData: true,
+      },
+    ],
+    roster: [{ characterId: 10000098, level: 80, constellation: 5, rarity: 5 }],
+  };
+  const fetchedAt = '2026-11-16T01:15:00.000Z';
+
+  it('sends gameCode in the signed body, matching the contract keys', () => {
+    const id = '44444444-4444-4444-8444-444444444444',
+      stamp = '2026-11-16T00:00:00.000Z';
+    const key = createHmac('sha256', config.secret).update(contract.hmacPurpose).digest();
+    const request = buildGameAccountsRequest(
+      config,
+      guild,
+      user,
+      { action: 'progress', gameCode: 'genshin' },
+      id,
+      stamp,
+    );
+    const body = JSON.parse(request.init.body) as Record<string, unknown>;
+    const actionContract = contract.request.actions.progress;
+    expect(Object.keys(body).sort()).toEqual(
+      [...contract.request.required, ...actionContract.required, ...actionContract.optional].sort(),
+    );
+    expect(body.gameCode).toBe('genshin');
+    expect(request.init.headers['X-IVRM-Signature']).toBe(
+      createHmac('sha256', key)
+        .update(['POST', contract.path, stamp, id, request.init.body].join('\n'))
+        .digest('hex'),
+    );
+  });
+
+  it('parses a progress result, keeping the display slice of the snapshot', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockJson(() => ({
+        gameCode: 'genshin',
+        uid: '812468719',
+        status: 'ok',
+        fetchedAt,
+        succeededAt: fetchedAt,
+        hasProgress: true,
+        progress: snapshot,
+      })),
+    );
+    const result = await callIvrmGameAccounts(
+      guild,
+      user,
+      { action: 'progress', gameCode: 'genshin' },
+      config,
+    );
+    expect(result).toMatchObject({
+      status: 'ok',
+      action: 'progress',
+      gameCode: 'genshin',
+      uid: '812468719',
+      progressStatus: 'ok',
+      hasProgress: true,
+    });
+    if (result.status === 'ok' && result.action === 'progress') {
+      expect(result.progress?.player).toEqual({ nickname: 'いゔる。', level: 56 });
+      expect(result.progress?.stats.totalChests).toBe(2270);
+      expect(result.progress?.explorations).toEqual([
+        {
+          id: 1,
+          name: 'モンド',
+          percent: 96.4,
+          level: 10,
+          offerings: [{ name: '風神像', level: 10 }],
+        },
+      ]);
+      expect(result.progress?.endgame[0]?.kind).toBe('spiral_abyss');
+      // Roster and image URLs are stored data the bot never renders.
+      expect(result.progress).not.toHaveProperty('roster');
+    }
+  });
+
+  it('parses the not-yet-fetched result as nulls, not an error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockJson(() => ({
+        gameCode: 'starrail',
+        uid: '804899751',
+        status: null,
+        fetchedAt: null,
+        succeededAt: null,
+        hasProgress: false,
+        progress: null,
+      })),
+    );
+    expect(
+      await callIvrmGameAccounts(guild, user, { action: 'progress', gameCode: 'starrail' }, config),
+    ).toEqual({
+      status: 'ok',
+      action: 'progress',
+      gameCode: 'starrail',
+      uid: '804899751',
+      progressStatus: null,
+      fetchedAt: null,
+      succeededAt: null,
+      hasProgress: false,
+      progress: null,
+    });
+  });
+
+  it('fails closed on malformed snapshots and self-contradicting bodies', async () => {
+    const bodies: Array<Record<string, unknown>> = [
+      // hasProgress claims a snapshot that is not there.
+      { status: 'ok', fetchedAt, succeededAt: fetchedAt, hasProgress: true, progress: null },
+      // A snapshot is there but hasProgress denies it.
+      { status: 'ok', fetchedAt, succeededAt: fetchedAt, hasProgress: false, progress: snapshot },
+      // Explorations must be a list of typed entries.
+      {
+        status: 'ok',
+        fetchedAt,
+        succeededAt: fetchedAt,
+        hasProgress: true,
+        progress: { ...snapshot, explorations: [{ name: 'モンド', percent: '96.4' }] },
+      },
+      // Unknown endgame kinds are not displayable data.
+      {
+        status: 'ok',
+        fetchedAt,
+        succeededAt: fetchedAt,
+        hasProgress: true,
+        progress: {
+          ...snapshot,
+          endgame: [
+            {
+              kind: 'theater_mechanicus',
+              scheduleId: null,
+              maxFloor: null,
+              totalStars: null,
+              totalScore: null,
+              hasData: true,
+            },
+          ],
+        },
+      },
+    ];
+    for (const body of bodies) {
+      vi.stubGlobal(
+        'fetch',
+        mockJson(() => ({ gameCode: 'genshin', uid: '812468719', ...body })),
+      );
+      expect(
+        await callIvrmGameAccounts(
+          guild,
+          user,
+          { action: 'progress', gameCode: 'genshin' },
+          config,
+        ),
+      ).toEqual({ status: 'unavailable' });
+    }
+  });
+
+  it('maps progress_not_supported to its own status, keeping member errors distinct', async () => {
+    const cases: Array<[number, unknown, unknown]> = [
+      [
+        422,
+        { status: 'error', error: 'progress_not_supported' },
+        { status: 'progress-unsupported' },
+      ],
+      [404, { status: 'error', error: 'member_not_linked' }, { status: 'not-linked' }],
+      [
+        404,
+        { status: 'error', error: 'game_account_not_found' },
+        { status: 'not-found', error: 'game_account_not_found' },
+      ],
+      [
+        422,
+        { status: 'error', error: 'invalid_input', field: 'gameCode', message: 'bad' },
+        { status: 'invalid-input', field: 'gameCode', message: 'bad' },
+      ],
+    ];
+    for (const [status, body, expected] of cases) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Response.json(body, { status })),
+      );
+      expect(
+        await callIvrmGameAccounts(guild, user, { action: 'progress', gameCode: 'zzz' }, config),
+      ).toEqual(expected);
+    }
+  });
+});

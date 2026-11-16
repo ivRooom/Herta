@@ -1,5 +1,7 @@
 import type {
   GameAccountListEntry,
+  HoyolabEndgameEntry,
+  HoyolabProgressSnapshot,
   IvrmGameAccountsResult,
   ShowcaseCharacterScore,
 } from './game-accounts-ivrm.js';
@@ -59,6 +61,17 @@ export function scoreLabel(gameCode: string): string {
 
 export function isShowcaseSupported(gameCode: string): boolean {
   return gameDefinition(gameCode)?.showcaseSupported ?? false;
+}
+
+/**
+ * HoYoLAB 戦績 (探索度) に対応しているか。API の progress アクションが
+ * 受け付けるのは原神と崩壊：スターレイルだけで、他タイトルは 422
+ * (progress_not_supported) を返す。表示側も同じ集合で先に案内する。
+ */
+const PROGRESS_SUPPORTED_GAMES: ReadonlySet<string> = new Set(['genshin', 'starrail']);
+
+export function isProgressSupported(gameCode: string): boolean {
+  return PROGRESS_SUPPORTED_GAMES.has(gameCode);
 }
 
 const jstDateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
@@ -193,6 +206,20 @@ export function formatScoreBar(total: number, gameCode: string): string {
   return '▰'.repeat(filled) + '▱'.repeat(SCORE_BAR_SEGMENTS - filled);
 }
 
+export const PERCENT_BAR_SEGMENTS = 10;
+
+/** 探索度 (%) をスコアと同じブロック文字のバーにする。範囲外は丸める。 */
+export function formatPercentBar(percent: number): string {
+  const ratio = Math.min(1, Math.max(0, percent / 100));
+  const filled = Math.round(ratio * PERCENT_BAR_SEGMENTS);
+  return '▰'.repeat(filled) + '▱'.repeat(PERCENT_BAR_SEGMENTS - filled);
+}
+
+/** 探索度 (%) の数値表記。小数1桁までだが、整数なら小数部を落とす。 */
+export function formatPercent(percent: number): string {
+  return Number.isInteger(percent) ? `${percent}` : percent.toFixed(1);
+}
+
 /** ivrm-web 連携の失敗状態を、本人向けの案内文へ変換する。 */
 export function formatGameAccountsError(
   result: Exclude<IvrmGameAccountsResult, { status: 'ok' }>,
@@ -210,6 +237,8 @@ export function formatGameAccountsError(
         : `入力を確認してください（${result.message}）`;
     case 'card-unavailable':
       return 'カード画像は現在表示できません。';
+    case 'progress-unsupported':
+      return 'そのゲームは探索度表示に未対応です。対応しているのは原神と崩壊：スターレイルです。';
     case 'ineligible-guild':
       return 'このサーバーはivrm-webの会員情報連携の対象外です。';
     case 'unconfigured':
@@ -534,6 +563,245 @@ export function buildScoreCharacterEmbed(
 export function buildUnsupportedScoreEmbed(gameCode: string): GameEmbed {
   return buildNoticeEmbed(
     `${gameName(gameCode)} はショーケース取得に未対応のため、スコアを表示できません。UIDの登録・確認は /game list を使ってください。`,
+    'neutral',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 探索度 Embed (#923)。HoYoLAB 戦績の保存済みスナップショットを表示する。
+// スナップショットは API 側で表示向けに正規化済みなので、ここでは
+// Discord の制限 (25 フィールド / 値 1024 字 / 全体 6000 字) に収める
+// 整形だけを行う。
+// ---------------------------------------------------------------------------
+
+type ProgressResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'progress' }>;
+
+function formatCount(value: number): string {
+  return value.toLocaleString('ja-JP');
+}
+
+function statNumber(snapshot: HoyolabProgressSnapshot, key: string): number | null {
+  const value = snapshot.stats[key];
+  return typeof value === 'number' ? value : null;
+}
+
+/** [ラベル, stats キー] の並びで、数値があるものだけ「ラベル 数値」の行にする。 */
+function buildStatLines(
+  snapshot: HoyolabProgressSnapshot,
+  entries: ReadonlyArray<readonly [string, string]>,
+): string[] {
+  const lines: string[] = [];
+  for (const [label, key] of entries) {
+    const value = statNumber(snapshot, key);
+    if (value !== null) lines.push(`${label} ${formatCount(value)}`);
+  }
+  return lines;
+}
+
+/** 原神の宝箱内訳 (API が返す5段階)。合計は totalChests として別に来る。 */
+const GENSHIN_CHEST_LABELS: ReadonlyArray<readonly [string, string]> = [
+  ['普通の宝箱', 'commonChests'],
+  ['精巧な宝箱', 'exquisiteChests'],
+  ['貴重な宝箱', 'preciousChests'],
+  ['豪華な宝箱', 'luxuriousChests'],
+  ['珍奇な宝箱', 'magicChests'],
+];
+
+const ENDGAME_LABELS: Record<string, string> = {
+  spiral_abyss: '深境螺旋',
+  memory_of_chaos: '混沌の記憶',
+  pure_fiction: '虚構叙事',
+  apocalyptic_shadow: '末日の幻影',
+};
+
+function formatEndgameValue(entry: HoyolabEndgameEntry): string {
+  const parts: string[] = [];
+  if (entry.maxFloor) parts.push(`到達 ${entry.maxFloor}`);
+  if (entry.totalStars !== null) parts.push(`★${entry.totalStars}`);
+  if (entry.totalScore !== null) parts.push(`スコア ${formatCount(entry.totalScore)}`);
+  return parts.length > 0 ? parts.join(' ・ ') : '記録あり';
+}
+
+function buildEndgameFields(snapshot: HoyolabProgressSnapshot): GameEmbedField[] {
+  const recorded = snapshot.endgame.filter((entry) => entry.hasData);
+  if (recorded.length === 0) {
+    return snapshot.endgame.length > 0
+      ? [{ name: '高難易度コンテンツ', value: '今期の記録はまだありません' }]
+      : [];
+  }
+  // 原神は深境螺旋だけなので専用フィールド、スタレは3モードを1つにまとめる。
+  if (snapshot.gameCode === 'genshin') {
+    return recorded.map((entry) => ({
+      name: ENDGAME_LABELS[entry.kind] ?? entry.kind,
+      value: formatEndgameValue(entry),
+    }));
+  }
+  return [
+    {
+      name: '高難易度コンテンツ',
+      value: recorded
+        .map((entry) => `${ENDGAME_LABELS[entry.kind] ?? entry.kind}：${formatEndgameValue(entry)}`)
+        .join('\n'),
+    },
+  ];
+}
+
+/** フィールド値の上限 (1024 字) に余裕を持って収まる行数ずつに切る。 */
+const EXPLORATION_LINES_PER_FIELD = 12;
+
+function buildExplorationFields(snapshot: HoyolabProgressSnapshot): GameEmbedField[] {
+  if (snapshot.explorations.length === 0) return [];
+  const lines = snapshot.explorations.map((area) => {
+    const name = area.name ?? '名称不明のエリア';
+    if (area.percent === null) return `${name} 未計測`;
+    return `${name} ${formatPercentBar(area.percent)} ${formatPercent(area.percent)}%`;
+  });
+  const fields: GameEmbedField[] = [];
+  for (let index = 0; index < lines.length; index += EXPLORATION_LINES_PER_FIELD) {
+    fields.push({
+      name: index === 0 ? 'エリア別探索度' : 'エリア別探索度（続き）',
+      value: lines.slice(index, index + EXPLORATION_LINES_PER_FIELD).join('\n'),
+    });
+  }
+  return fields;
+}
+
+function buildGenshinProgressFields(snapshot: HoyolabProgressSnapshot): GameEmbedField[] {
+  const fields = buildExplorationFields(snapshot);
+  const totalChests = statNumber(snapshot, 'totalChests');
+  const chestLines = buildStatLines(snapshot, GENSHIN_CHEST_LABELS);
+  if (totalChests !== null || chestLines.length > 0) {
+    const lines: string[] = [];
+    if (totalChests !== null) lines.push(`合計 ${formatCount(totalChests)}`);
+    lines.push(...chestLines);
+    fields.push({ name: '宝箱', value: lines.join('\n') });
+  }
+  const recordLines = buildStatLines(snapshot, [
+    ['活動日数', 'activeDays'],
+    ['アチーブメント', 'achievements'],
+    ['獲得キャラ', 'characters'],
+    ['ワープポイント', 'waypoints'],
+    ['秘境', 'domains'],
+  ]);
+  if (recordLines.length > 0) fields.push({ name: '記録', value: recordLines.join('\n') });
+  fields.push(...buildEndgameFields(snapshot));
+  return fields;
+}
+
+function buildStarRailProgressFields(snapshot: HoyolabProgressSnapshot): GameEmbedField[] {
+  const fields: GameEmbedField[] = [];
+  const recordLines = buildStatLines(snapshot, [
+    ['宝箱', 'chests'],
+    ['活動日数', 'activeDays'],
+    ['アチーブメント', 'achievements'],
+    ['獲得キャラ', 'characters'],
+  ]);
+  if (recordLines.length > 0) fields.push({ name: '記録', value: recordLines.join('\n') });
+  fields.push(...buildEndgameFields(snapshot));
+  return fields;
+}
+
+/** スコア表示と同じ予算管理: 25 フィールド / 全体 6000 字に収め、溢れた分は省略フィールドで示す。 */
+function capProgressFields(
+  title: string,
+  footerText: string,
+  fields: GameEmbedField[],
+): GameEmbedField[] {
+  const capped: GameEmbedField[] = [];
+  let usedChars = title.length + footerText.length;
+  let omitted = 0;
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index]!;
+    const safeField: GameEmbedField = {
+      name: truncate(field.name, MAX_EMBED_FIELD_NAME_CHARS),
+      value: truncate(field.value, MAX_EMBED_FIELD_VALUE_CHARS),
+    };
+    const remainingAfter = fields.length - index - 1;
+    // 最後の1枠は「ほか N 件」フィールドのために空けておく。
+    const fillsLastSlot = capped.length + 1 >= MAX_EMBED_FIELDS && remainingAfter > 0;
+    if (
+      fillsLastSlot ||
+      usedChars + safeField.name.length + safeField.value.length > MAX_EMBED_TOTAL_CHARS
+    ) {
+      omitted = fields.length - index;
+      break;
+    }
+    capped.push(safeField);
+    usedChars += safeField.name.length + safeField.value.length;
+  }
+  if (omitted > 0) {
+    const omissionField: GameEmbedField = {
+      name: `…ほか ${omitted} 件の項目`,
+      value: '表示しきれない分はWebのマイページで確認してください。',
+    };
+    if (
+      capped.length < MAX_EMBED_FIELDS &&
+      usedChars + omissionField.name.length + omissionField.value.length <= MAX_EMBED_TOTAL_CHARS
+    ) {
+      capped.push(omissionField);
+    }
+  }
+  return capped;
+}
+
+export function buildProgressEmbed(result: ProgressResult): GameEmbed {
+  const name = gameName(result.gameCode);
+  const title = truncate(`🗺️ ${name}の探索度`, MAX_EMBED_TITLE_CHARS);
+  if (!result.hasProgress || !result.progress) {
+    if (result.progressStatus === 'not_public') {
+      return {
+        title,
+        description: truncate(
+          `${name} の戦績はHoYoLABで非公開になっています。HoYoLABの戦績ページの設定で公開をONにすると探索度が表示されるようになります（反映は定期取得のタイミングです）。`,
+          MAX_EMBED_DESCRIPTION_CHARS,
+        ),
+        color: EMBED_COLOR_WARNING,
+      };
+    }
+    return {
+      title,
+      description: truncate(
+        result.progressStatus
+          ? `${name} の探索度はまだ取得できていません（状態：${result.progressStatus}）。戦績は定期的に自動取得されるので、時間をおいてからもう一度確認してください。`
+          : `${name} の探索度はまだ取得できていません。戦績は定期的に自動取得されるので、時間をおいてからもう一度確認してください。`,
+        MAX_EMBED_DESCRIPTION_CHARS,
+      ),
+      color: EMBED_COLOR_NEUTRAL,
+    };
+  }
+  const snapshot = result.progress;
+  const playerParts: string[] = [];
+  if (snapshot.player.nickname) playerParts.push(snapshot.player.nickname);
+  if (snapshot.player.level !== null) {
+    playerParts.push(
+      `${result.gameCode === 'starrail' ? '開拓レベル' : '冒険ランク'} ${snapshot.player.level}`,
+    );
+  }
+  const footerText = truncate(
+    `UID ${result.uid} ・ 取得：${formatJstDateTime(result.succeededAt ?? result.fetchedAt)}`,
+    MAX_EMBED_FOOTER_CHARS,
+  );
+  const fields = capProgressFields(
+    title,
+    footerText,
+    result.gameCode === 'starrail'
+      ? buildStarRailProgressFields(snapshot)
+      : buildGenshinProgressFields(snapshot),
+  );
+  return {
+    title,
+    ...(playerParts.length > 0
+      ? { description: truncate(playerParts.join(' ・ '), MAX_EMBED_DESCRIPTION_CHARS) }
+      : {}),
+    color: EMBED_COLOR_PRIMARY,
+    fields,
+    footer: { text: footerText },
+  };
+}
+
+export function buildUnsupportedProgressEmbed(gameCode: string): GameEmbed {
+  return buildNoticeEmbed(
+    `${gameName(gameCode)} は探索度（HoYoLAB戦績）の表示に未対応です。対応しているのは原神と崩壊：スターレイルです。`,
     'neutral',
   );
 }

@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
 import { gameAccountsManifest } from '@herta/plugin-catalog';
 import type { PluginRuntimeContext } from '@herta/plugin-sdk';
 import {
   buildScoreViewReply,
+  gameAccountsPlugin,
   handleGameAccountsScoreButton,
   handleGameAccountsUnlinkButton,
 } from './game-accounts.js';
@@ -422,18 +424,31 @@ describe('game accounts score switcher buttons', () => {
     expect(componentsJson(result?.options?.components).flatMap(rowButtons)).toHaveLength(2);
   });
 
-  it('rejects presses from anyone but the command invoker', async () => {
+  it('lets anyone in the channel switch, always reading the view owner’s score', async () => {
     const timeline: string[] = [];
-    const api = makeScoreApi();
+    const base = makeScoreApi();
+    const seenUserIds: string[] = [];
+    const api = vi.fn(async (guildId: string, userId: string, input: GameAccountsRequestInput) => {
+      seenUserIds.push(userId);
+      return (base as unknown as ScoreApi)(guildId, userId, input);
+    }) as unknown as ScoreApi;
     const { calls, interaction } = makeScoreInteraction('10000046', user, timeline);
     interaction.user = { id: '523456789012345678' };
 
     await handleGameAccountsScoreButton(makeContext(), interaction, api);
 
-    expect(api).not.toHaveBeenCalled();
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.method).toBe('reply');
-    expect(calls[0]?.options?.content).toContain('本人だけが使えます');
+    // The score re-read and the card render both name the member whose
+    // buttons these are; the presser only changes what is displayed.
+    expect(seenUserIds.length).toBeGreaterThan(0);
+    expect(seenUserIds.every((id) => id === user)).toBe(true);
+    expect(calls.some((call) => call.method === 'reply')).toBe(false);
+    const result = calls.filter((call) => call.method === 'editReply').at(-1);
+    expect(JSON.stringify(result?.options?.embeds)).toContain('胡桃');
+    const buttons = componentsJson(result?.options?.components).flatMap(rowButtons);
+    expect(buttons[1]).toMatchObject({
+      custom_id: `game-accounts:score:${user}:genshin:10000046`,
+      disabled: true,
+    });
   });
 
   it('rejects a second press while a switch is in flight', async () => {
@@ -491,5 +506,147 @@ describe('game accounts score switcher buttons', () => {
     await handleGameAccountsScoreButton(makeContext(), otherGuild.interaction, api);
     expect(otherGuild.calls).toHaveLength(0);
     expect(api).not.toHaveBeenCalled();
+  });
+});
+
+interface FakeCommandInteraction {
+  calls: Array<{ method: string; options?: unknown }>;
+  interaction: {
+    guildId: string | null;
+    user: { id: string };
+    options: {
+      getSubcommand(): string;
+      getString(name: string, required?: boolean): string;
+    };
+    deferReply(options?: { flags?: number }): Promise<unknown>;
+    editReply(options: unknown): Promise<unknown>;
+    reply(options: unknown): Promise<unknown>;
+  };
+}
+
+function makeCommandInteraction(subcommand: string, gameCode = 'genshin'): FakeCommandInteraction {
+  const calls: FakeCommandInteraction['calls'] = [];
+  const interaction: FakeCommandInteraction['interaction'] = {
+    guildId: guild,
+    user: { id: user },
+    options: {
+      getSubcommand: () => subcommand,
+      getString: () => gameCode,
+    },
+    async deferReply(options) {
+      calls.push({ method: 'deferReply', options });
+    },
+    async editReply(options) {
+      calls.push({ method: 'editReply', options });
+    },
+    async reply(options) {
+      calls.push({ method: 'reply', options });
+    },
+  };
+  return { calls, interaction };
+}
+
+async function runCommand(subcommand: string, gameCode = 'genshin') {
+  const { calls, interaction } = makeCommandInteraction(subcommand, gameCode);
+  const commands = gameAccountsPlugin.provideCommands!(makeContext());
+  await commands[0]!.execute(interaction as unknown as ChatInputCommandInteraction);
+  return calls;
+}
+
+function deferFlags(calls: FakeCommandInteraction['calls']): number | undefined {
+  const defer = calls.find((call) => call.method === 'deferReply');
+  return (defer?.options as { flags?: number } | undefined)?.flags;
+}
+
+function lastEditEmbedsJson(calls: FakeCommandInteraction['calls']): string {
+  const edit = calls.filter((call) => call.method === 'editReply').at(-1);
+  return JSON.stringify((edit?.options as { embeds?: unknown })?.embeds ?? null);
+}
+
+describe('game command reply visibility (#923)', () => {
+  beforeEach(() => {
+    // No integration configured: the client answers "unconfigured"
+    // without any network access, which is enough to observe how the
+    // command defers its reply.
+    vi.stubEnv('IVRM_WEB_API_BASE_URL', '');
+    vi.stubEnv('HERTA_MBTI_SYNC_SECRET', '');
+    vi.stubEnv('IVRM_INTEGRATION_GUILD_ID', '');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('defers publicly for list, score and progress', async () => {
+    for (const subcommand of ['list', 'score', 'progress']) {
+      const calls = await runCommand(subcommand);
+      expect(deferFlags(calls)).toBeUndefined();
+      // The unconfigured integration still lands in an editReply.
+      expect(lastEditEmbedsJson(calls)).toContain('未設定です');
+    }
+  });
+
+  it('keeps link ephemeral: it handles the member’s own UID', async () => {
+    const calls = await runCommand('link');
+    expect(deferFlags(calls)).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('keeps unlink ephemeral with its confirmation buttons', async () => {
+    const { calls, interaction } = makeCommandInteraction('unlink');
+    const commands = gameAccountsPlugin.provideCommands!(makeContext());
+    await commands[0]!.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.method).toBe('reply');
+    expect((calls[0]?.options as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(JSON.stringify(calls[0]?.options)).toContain('解除');
+  });
+
+  it('answers progress for an unsupported game without the API', async () => {
+    const calls = await runCommand('progress', 'zzz');
+    expect(deferFlags(calls)).toBeUndefined();
+    expect(lastEditEmbedsJson(calls)).toContain('探索度（HoYoLAB戦績）の表示に未対応です');
+  });
+
+  it('renders the progress embed when the API returns a snapshot', async () => {
+    vi.stubEnv('IVRM_WEB_API_BASE_URL', 'https://api.ivrm.jp');
+    vi.stubEnv('HERTA_MBTI_SYNC_SECRET', 'test-secret');
+    vi.stubEnv('IVRM_INTEGRATION_GUILD_ID', guild);
+    const snapshot = {
+      provider: 'hoyolab',
+      gameCode: 'genshin',
+      uid: '812468719',
+      server: 'os_asia',
+      player: { nickname: 'いゔる。', level: 56 },
+      stats: { totalChests: 2270 },
+      explorations: [{ id: 1, name: 'フォンテーヌ', percent: 100, level: 10, offerings: [] }],
+      endgame: [],
+      roster: [],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init: RequestInit) => {
+        const request = JSON.parse(init.body as string) as Record<string, unknown>;
+        return Response.json({
+          schemaVersion: 2,
+          requestId: request.requestId,
+          discordUserId: user,
+          action: request.action,
+          gameCode: 'genshin',
+          uid: '812468719',
+          status: 'ok',
+          fetchedAt: '2026-11-16T01:15:00.000Z',
+          succeededAt: '2026-11-16T01:15:00.000Z',
+          hasProgress: true,
+          progress: snapshot,
+        });
+      }),
+    );
+
+    const calls = await runCommand('progress');
+    expect(deferFlags(calls)).toBeUndefined();
+    const embeds = lastEditEmbedsJson(calls);
+    expect(embeds).toContain('エリア別探索度');
+    expect(embeds).toContain('フォンテーヌ');
+    expect(embeds).toContain('合計 2,270');
   });
 });

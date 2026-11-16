@@ -12,30 +12,36 @@ import {
   buildGameAccountsErrorEmbed,
   buildLinkSuccessEmbed,
   buildListEmbed,
+  buildProgressEmbed,
   buildScoreCharacterEmbed,
   buildScoreEmbed,
   buildUnlinkCancelledEmbed,
   buildUnlinkConfirmEmbed,
   buildUnlinkSuccessEmbed,
+  buildUnsupportedProgressEmbed,
   buildUnsupportedScoreEmbed,
   embedCharacterCount,
   formatGameAccountsError,
   formatJstDateTime,
+  formatPercent,
+  formatPercentBar,
   formatRolls,
   formatRollsShort,
   formatScoreBar,
   gameName,
+  isProgressSupported,
   isShowcaseSupported,
   scoreLabel,
   scorePieceLabel,
   scoreRollLegend,
   scoreSwitcherCharacters,
 } from './game-accounts-core.js';
-import type { IvrmGameAccountsResult } from './game-accounts-ivrm.js';
+import type { HoyolabProgressSnapshot, IvrmGameAccountsResult } from './game-accounts-ivrm.js';
 
 type ListResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'list' }>;
 type ScoreResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'score' }>;
 type LinkResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'link' }>;
+type ProgressResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'progress' }>;
 
 const fetchedAt = '2026-11-15T14:43:29.060Z';
 
@@ -547,5 +553,227 @@ describe('score switcher (one character at a time)', () => {
     const result = resultWith([scored('10000098', 'クロリンデ', 160.8)]);
     expect(buildScoreCharacterEmbed(result, '10000099')).toBeNull();
     expect(buildScoreCharacterEmbed({ ...result, hasSnapshot: false }, '10000098')).toBeNull();
+  });
+});
+
+describe('progress support', () => {
+  it('covers only Genshin and Star Rail, matching the API', () => {
+    expect(isProgressSupported('genshin')).toBe(true);
+    expect(isProgressSupported('starrail')).toBe(true);
+    expect(isProgressSupported('zzz')).toBe(false);
+    expect(isProgressSupported('endfield')).toBe(false);
+    expect(isProgressSupported('wuthering')).toBe(false);
+    expect(isProgressSupported('nte')).toBe(false);
+  });
+
+  it('explains unsupported games as a neutral embed', () => {
+    const embed = buildUnsupportedProgressEmbed('zzz');
+    expect(embed.color).toBe(EMBED_COLOR_NEUTRAL);
+    expect(embed.description).toContain(
+      'ゼンレスゾーンゼロ は探索度（HoYoLAB戦績）の表示に未対応です',
+    );
+    expect(formatGameAccountsError({ status: 'progress-unsupported' })).toContain('未対応です');
+  });
+});
+
+describe('formatPercentBar / formatPercent', () => {
+  it('renders an empty bar at 0 and a full bar at 100, clamping outliers', () => {
+    expect(formatPercentBar(0)).toBe('▱▱▱▱▱▱▱▱▱▱');
+    expect(formatPercentBar(100)).toBe('▰▰▰▰▰▰▰▰▰▰');
+    expect(formatPercentBar(120)).toBe('▰▰▰▰▰▰▰▰▰▰');
+    expect(formatPercentBar(-5)).toBe('▱▱▱▱▱▱▱▱▱▱');
+    expect(formatPercentBar(50)).toBe('▰▰▰▰▰▱▱▱▱▱');
+  });
+
+  it('drops the decimal part for whole percents only', () => {
+    expect(formatPercent(100)).toBe('100');
+    expect(formatPercent(0)).toBe('0');
+    expect(formatPercent(96.4)).toBe('96.4');
+  });
+});
+
+describe('buildProgressEmbed', () => {
+  const succeededAt = '2026-11-16T01:15:00.000Z';
+
+  function genshinSnapshot(): HoyolabProgressSnapshot {
+    return {
+      gameCode: 'genshin',
+      uid: '812468719',
+      player: { nickname: 'いゔる。', level: 56 },
+      stats: {
+        activeDays: 320,
+        achievements: 580,
+        characters: 42,
+        waypoints: 183,
+        domains: 35,
+        commonChests: 800,
+        exquisiteChests: 900,
+        preciousChests: 300,
+        luxuriousChests: 150,
+        magicChests: 120,
+        totalChests: 2270,
+      },
+      explorations: [
+        { id: 1, name: 'モンド', percent: 96.4, level: 10, offerings: [] },
+        { id: 2, name: 'フォンテーヌ', percent: 100, level: 10, offerings: [] },
+        { id: 3, name: 'ナタ', percent: null, level: null, offerings: [] },
+      ],
+      endgame: [
+        {
+          kind: 'spiral_abyss',
+          scheduleId: 42,
+          maxFloor: '12-3',
+          totalStars: 36,
+          totalScore: null,
+          hasData: true,
+        },
+      ],
+    };
+  }
+
+  function progressResult(
+    overrides: Partial<ProgressResult> = {},
+    snapshot: HoyolabProgressSnapshot | null = genshinSnapshot(),
+  ): ProgressResult {
+    return {
+      status: 'ok',
+      action: 'progress',
+      gameCode: snapshot?.gameCode ?? 'genshin',
+      uid: '812468719',
+      progressStatus: 'ok',
+      fetchedAt: succeededAt,
+      succeededAt,
+      hasProgress: snapshot !== null,
+      progress: snapshot,
+      ...overrides,
+    };
+  }
+
+  it('renders Genshin areas with bars, the chest breakdown and the Abyss', () => {
+    const embed = buildProgressEmbed(progressResult());
+    expect(embed.title).toBe('🗺️ 原神の探索度');
+    expect(embed.color).toBe(EMBED_COLOR_PRIMARY);
+    expect(embed.description).toContain('いゔる。');
+    expect(embed.description).toContain('冒険ランク 56');
+    const exploration = embed.fields?.find((field) => field.name === 'エリア別探索度');
+    expect(exploration?.value).toContain('モンド ▰▰▰▰▰▰▰▰▰▰ 96.4%');
+    expect(exploration?.value).toContain('フォンテーヌ ▰▰▰▰▰▰▰▰▰▰ 100%');
+    expect(exploration?.value).toContain('ナタ 未計測');
+    const chests = embed.fields?.find((field) => field.name === '宝箱');
+    expect(chests?.value).toContain('合計 2,270');
+    expect(chests?.value).toContain('普通の宝箱 800');
+    expect(chests?.value).toContain('珍奇な宝箱 120');
+    const record = embed.fields?.find((field) => field.name === '記録');
+    expect(record?.value).toContain('アチーブメント 580');
+    const abyss = embed.fields?.find((field) => field.name === '深境螺旋');
+    expect(abyss?.value).toBe('到達 12-3 ・ ★36');
+    expect(embed.footer?.text).toContain('UID 812468719');
+    expect(embedCharacterCount(embed)).toBeLessThanOrEqual(MAX_EMBED_TOTAL_CHARS);
+  });
+
+  it('renders Star Rail chests and all three endgame modes in one field', () => {
+    const snapshot: HoyolabProgressSnapshot = {
+      gameCode: 'starrail',
+      uid: '804899751',
+      player: { nickname: 'いゔる。', level: 70 },
+      stats: { activeDays: 210, achievements: 340, characters: 28, chests: 1248 },
+      explorations: [],
+      endgame: [
+        {
+          kind: 'memory_of_chaos',
+          scheduleId: 12,
+          maxFloor: '12',
+          totalStars: 36,
+          totalScore: null,
+          hasData: true,
+        },
+        {
+          kind: 'pure_fiction',
+          scheduleId: 12,
+          maxFloor: null,
+          totalStars: 12,
+          totalScore: 65432,
+          hasData: true,
+        },
+        {
+          kind: 'apocalyptic_shadow',
+          scheduleId: 12,
+          maxFloor: null,
+          totalStars: null,
+          totalScore: null,
+          hasData: false,
+        },
+      ],
+    };
+    const embed = buildProgressEmbed(progressResult({}, snapshot));
+    expect(embed.title).toBe('🗺️ 崩壊：スターレイルの探索度');
+    expect(embed.description).toContain('開拓レベル 70');
+    const record = embed.fields?.find((field) => field.name === '記録');
+    expect(record?.value).toContain('宝箱 1,248');
+    const endgame = embed.fields?.find((field) => field.name === '高難易度コンテンツ');
+    expect(endgame?.value).toContain('混沌の記憶：到達 12 ・ ★36');
+    expect(endgame?.value).toContain('虚構叙事：★12 ・ スコア 65,432');
+    // Modes without a recorded attempt this schedule are not listed.
+    expect(endgame?.value).not.toContain('末日の幻影');
+  });
+
+  it('notes an empty endgame schedule instead of dropping the section', () => {
+    const snapshot = genshinSnapshot();
+    snapshot.endgame = [
+      {
+        kind: 'spiral_abyss',
+        scheduleId: 42,
+        maxFloor: null,
+        totalStars: 0,
+        totalScore: null,
+        hasData: false,
+      },
+    ];
+    const embed = buildProgressEmbed(progressResult({}, snapshot));
+    const endgame = embed.fields?.find((field) => field.name === '高難易度コンテンツ');
+    expect(endgame?.value).toBe('今期の記録はまだありません');
+  });
+
+  it('guides to wait when nothing has been fetched yet', () => {
+    const embed = buildProgressEmbed(
+      progressResult({ progressStatus: null, fetchedAt: null, succeededAt: null }, null),
+    );
+    expect(embed.color).toBe(EMBED_COLOR_NEUTRAL);
+    expect(embed.description).toContain('まだ取得できていません');
+    expect(embed.description).not.toContain('状態：');
+  });
+
+  it('surfaces the stored status when the last fetch failed', () => {
+    const embed = buildProgressEmbed(progressResult({ progressStatus: 'auth_invalid' }, null));
+    expect(embed.color).toBe(EMBED_COLOR_NEUTRAL);
+    expect(embed.description).toContain('まだ取得できていません（状態：auth_invalid）');
+  });
+
+  it('tells the member to publish their record when the status is not_public', () => {
+    const embed = buildProgressEmbed(progressResult({ progressStatus: 'not_public' }, null));
+    expect(embed.color).toBe(EMBED_COLOR_WARNING);
+    expect(embed.description).toContain('非公開になっています');
+    expect(embed.description).toContain('公開をONにすると');
+  });
+
+  it('keeps a long exploration list within the embed limits', () => {
+    const snapshot = genshinSnapshot();
+    snapshot.explorations = Array.from({ length: 40 }, (_, index) => ({
+      id: index + 1,
+      name: `とても長い名前のエリア第${index + 1}区域`,
+      percent: 87.5,
+      level: 10,
+      offerings: [],
+    }));
+    const embed = buildProgressEmbed(progressResult({}, snapshot));
+    expect(embed.fields!.length).toBeLessThanOrEqual(MAX_EMBED_FIELDS);
+    expect(embedCharacterCount(embed)).toBeLessThanOrEqual(MAX_EMBED_TOTAL_CHARS);
+    for (const field of embed.fields ?? []) {
+      expect(field.value.length).toBeLessThanOrEqual(MAX_EMBED_FIELD_VALUE_CHARS);
+    }
+    // 40 areas at 12 lines per field need 4 exploration fields, all kept.
+    expect(embed.fields?.filter((field) => field.name.startsWith('エリア別探索度'))).toHaveLength(
+      4,
+    );
   });
 });

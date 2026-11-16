@@ -14,7 +14,7 @@ export const gameAccountsManifest: PluginManifest = {
   name: 'ゲームアカウント連携',
   version: '1.0.0',
   description:
-    'Discordからivrm-webのゲームアカウントへUIDを登録・解除し、Enkaショーケースの聖遺物スコアを確認できます。登録内容はWebのマイページと同期します',
+    'Discordからivrm-webのゲームアカウントへUIDを登録・解除し、Enkaショーケースの聖遺物スコアやHoYoLABの探索度を確認できます。登録内容はWebのマイページと同期します',
   author: { name: 'Herta' },
   category: 'utility',
   permissions: [],
@@ -31,7 +31,7 @@ export const gameAccountsManifest: PluginManifest = {
   commands: [
     {
       name: 'game',
-      description: 'ivrm-webのゲームアカウント連携（UID登録・聖遺物スコア）',
+      description: 'ivrm-webのゲームアカウント連携（UID登録・聖遺物スコア・探索度）',
       subcommands: [
         {
           name: 'link',
@@ -72,6 +72,19 @@ export const gameAccountsManifest: PluginManifest = {
         {
           name: 'score',
           description: 'ショーケースの聖遺物・遺物スコアを表示します',
+          options: [
+            {
+              name: 'game',
+              description: 'ゲームタイトル',
+              type: 'string',
+              required: true,
+              choices: gameChoices,
+            },
+          ],
+        },
+        {
+          name: 'progress',
+          description: 'HoYoLABの戦績（探索度・宝箱数・高難易度コンテンツ）を表示します',
           options: [
             {
               name: 'game',
