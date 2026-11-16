@@ -11,12 +11,12 @@ import {
  * Support escalation for failed daily operations (#896).
  *
  * When a Discord-side bonus claim or quiz answer fails for a service-side
- * reason, the failure reply gains two buttons: one that notifies the
- * operators (mentioning the configured support role in the configured
- * support channel) and one that links to the Member portal, where the
- * same operation can be retried on the Web. Nothing here changes the
- * success paths, and with no support channel configured the notify
- * button is simply not rendered (fail-safe).
+ * reason, the failure reply gains two buttons: one that reports the
+ * failure in the same channel where it happened (mentioning the
+ * configured support role or user) and one that links to the Member
+ * portal, where the same operation can be retried on the Web. Nothing
+ * here changes the success paths, and with no support mention target
+ * configured the report button is simply not rendered (fail-safe).
  */
 
 export type DailySupportKind = 'claim' | 'answer';
@@ -24,8 +24,7 @@ export type DailySupportKind = 'claim' | 'answer';
 export type DailySupportFailureClass = 'service_unavailable' | 'account_unlinked' | 'unexpected';
 
 export interface DailySupportConfig {
-  supportChannelId?: string;
-  supportRoleId?: string;
+  supportMentionId?: string;
 }
 
 /** The portal page where the same operation can be retried on the Web. */
@@ -39,12 +38,12 @@ const JST_DATE = /^\d{4}-\d\d-\d\d$/;
 const TARGET_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export function dailySupportConfigured(config: DailySupportConfig | undefined): boolean {
-  return typeof config?.supportChannelId === 'string' && SNOWFLAKE.test(config.supportChannelId);
+  return typeof config?.supportMentionId === 'string' && SNOWFLAKE.test(config.supportMentionId);
 }
 
-function supportRoleId(config: DailySupportConfig | undefined): string {
-  return typeof config?.supportRoleId === 'string' && SNOWFLAKE.test(config.supportRoleId)
-    ? config.supportRoleId
+function supportMentionId(config: DailySupportConfig | undefined): string {
+  return typeof config?.supportMentionId === 'string' && SNOWFLAKE.test(config.supportMentionId)
+    ? config.supportMentionId
     : '';
 }
 
@@ -88,9 +87,9 @@ export function isDailySupportInteraction(customId: string): boolean {
 }
 
 /**
- * The action row attached to a failure reply. The notify button appears
- * only when a support channel is configured; the portal link always
- * appears so the member can retry on the Web.
+ * The action row attached to a failure reply. The report button appears
+ * only when a support mention target is configured; the portal link
+ * always appears so the member can retry on the Web.
  */
 export function dailySupportActionRow(
   ref: DailySupportReference,
@@ -187,6 +186,7 @@ export function dailySupportNotificationContent(input: {
     `ユーザー: ${input.userDisplayName}（ID: ${input.userId}）`,
     `時刻: ${time} JST`,
     'Discord 側で失敗が続く場合は、Member ポータルでも試せるよう案内済みです。',
+    `Memberポータル: ${DAILY_SUPPORT_PORTAL_URL[input.ref.kind]}`,
   ].join('\n');
 }
 
@@ -196,31 +196,44 @@ export interface DailySupportContext {
   config: DailySupportConfig;
 }
 
-/** Sends the operator notification. Never throws; false means not sent. */
+/**
+ * Sends the operator report to the channel where the failure happened,
+ * mentioning the configured support target. The target may be a role or
+ * a user; it is resolved against the guild so the mention uses the form
+ * that actually notifies (<@&id> for roles, <@id> for users). An
+ * unresolvable target falls back to the user form. Never throws; false
+ * means not sent.
+ */
 export async function sendDailySupportNotification(
   ctx: DailySupportContext,
   input: {
     userId: string;
     userDisplayName: string;
     ref: DailySupportReference;
+    /** The channel the failure happened in; the report is posted there. */
+    channelId: string;
     now?: Date;
   },
 ): Promise<boolean> {
-  if (!dailySupportConfigured(ctx.config)) return false;
+  if (!dailySupportConfigured(ctx.config) || !input.channelId) return false;
+  const mentionId = supportMentionId(ctx.config);
   try {
-    const channel = await ctx.client.channels.fetch(ctx.config.supportChannelId!);
+    const channel = await ctx.client.channels.fetch(input.channelId);
     if (!channel?.isTextBased() || channel.isThread() || !('send' in channel)) return false;
-    const roleId = supportRoleId(ctx.config);
+    const role = await ctx.client.guilds
+      .fetch(ctx.guildId)
+      .then((guild) => guild.roles.fetch(mentionId))
+      .catch(() => null);
     await channel.send({
-      content: `${roleId ? `<@&${roleId}> ` : ''}${dailySupportNotificationContent({
+      content: `${role ? `<@&${mentionId}>` : `<@${mentionId}>`} ${dailySupportNotificationContent({
         userId: input.userId,
         userDisplayName: input.userDisplayName,
         ref: input.ref,
         now: input.now ?? new Date(),
       })}`,
-      allowedMentions: roleId
-        ? { parse: [], roles: [roleId], users: [], repliedUser: false }
-        : { parse: [] },
+      allowedMentions: role
+        ? { parse: [], roles: [mentionId], users: [], repliedUser: false }
+        : { parse: [], roles: [], users: [mentionId], repliedUser: false },
     });
     return true;
   } catch {
@@ -268,6 +281,7 @@ export async function handleDailySupportNotify(
     userId: interaction.user.id,
     userDisplayName: interaction.user.displayName,
     ref,
+    channelId: interaction.channelId ?? '',
   });
   if (!sent) {
     releaseDailySupportNotification(key);

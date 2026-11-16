@@ -49,8 +49,7 @@ interface Context {
     enabled: boolean;
     notificationRoleId: string;
     fortuneEnabled?: boolean;
-    supportChannelId?: string;
-    supportRoleId?: string;
+    supportMentionId?: string;
   };
 }
 type Interaction = ButtonInteraction | ModalSubmitInteraction;
