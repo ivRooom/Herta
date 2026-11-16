@@ -2,7 +2,20 @@ import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@herta/db';
 import { minecraftStatusManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
-import { AttachmentBuilder, type APIEmbed } from 'discord.js';
+import {
+  ActionRowBuilder,
+  AttachmentBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  type APIActionRowComponent,
+  type APIButtonComponent,
+  type APIEmbed,
+  type APIModalInteractionResponseCallbackData,
+} from 'discord.js';
 import {
   renderMinecraftStatusCard,
   type MinecraftServerTone,
@@ -113,7 +126,9 @@ interface MinecraftStatusInteraction {
 }
 
 interface ReplyOptions {
-  content: string;
+  content?: string;
+  embeds?: APIEmbed[];
+  components?: APIActionRowComponent<APIButtonComponent>[];
   flags?: number;
   allowedMentions: { parse: [] };
 }
@@ -121,6 +136,7 @@ interface ReplyOptions {
 interface EditReplyOptions {
   content?: string;
   embeds?: APIEmbed[];
+  components?: APIActionRowComponent<APIButtonComponent>[];
   files?: AttachmentBuilder[];
   allowedMentions: { parse: [] } | { users: string[] };
 }
@@ -138,8 +154,13 @@ interface MinecraftReportChannel {
   };
 }
 
+interface MinecraftDmUser {
+  send(options: { embeds: APIEmbed[]; allowedMentions: { parse: [] } }): Promise<unknown>;
+}
+
 interface MinecraftReportClient {
   channels: { fetch(channelId: string): Promise<MinecraftReportChannel | null> };
+  users?: { fetch(userId: string): Promise<MinecraftDmUser | null> };
 }
 
 type MinecraftStatusContext = PluginRuntimeContext<
@@ -170,6 +191,20 @@ export const minecraftStatusPlugin = definePlugin<
       },
     };
     return [command];
+  },
+  provideEvents() {
+    return [
+      {
+        event: 'interactionCreate',
+        async handler(context, ...args) {
+          const interaction = args[0] as MinecraftComponentInteraction | undefined;
+          if (!interaction || typeof interaction.customId !== 'string') return;
+          if (!interaction.customId.startsWith(MINECRAFT_WHITELIST_COMPONENT_PREFIX)) return;
+          if (interaction.guildId && interaction.guildId !== context.guildId) return;
+          await handleMinecraftWhitelistComponent(context, interaction);
+        },
+      },
+    ];
   },
 });
 
@@ -1589,6 +1624,376 @@ export function formatMinecraftPendingRequests(data: Record<string, unknown>): s
   ].join('\n');
 }
 
+// ---- ホワイトリスト審査の Discord UX (Embed / ボタン / モーダル / DM) ----
+// /mc whitelist list の応答に承認・却下ボタンを付け、申請IDの手入力を不要にする。
+// ボタン・モーダル側でも承認ロールを再検証する (fail-closed はコマンドと同じ)。
+// 審査結果は申請者へ DM でも通知する (DM 不可の場合は通知だけ失敗させる)。
+
+export const MINECRAFT_WHITELIST_COMPONENT_PREFIX = 'mcw:';
+const MINECRAFT_WHITELIST_BUTTON_LIMIT = 5;
+
+export interface MinecraftPendingRequestSummary {
+  id: string;
+  minecraftUsername: string;
+  discordUsername: string;
+  discordUserId: string | null;
+  requestedAt: string | null;
+}
+
+export function parseMinecraftPendingRequests(
+  data: Record<string, unknown>,
+): MinecraftPendingRequestSummary[] {
+  const requests = Array.isArray(data['requests']) ? data['requests'] : [];
+  return requests.slice(0, 10).map((entry) => {
+    const item = isRecord(entry) ? entry : {};
+    return {
+      id: botApiString(item['id']) ?? '?',
+      minecraftUsername: botApiString(item['minecraftUsername']) ?? '?',
+      discordUsername: botApiString(item['discordUsername']) ?? '?',
+      discordUserId: botApiString(item['discordUserId']),
+      requestedAt: botApiString(item['requestedAt']),
+    };
+  });
+}
+
+function formatRequestedAt(value: string | null): string {
+  if (!value) return '日時不明';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+export function buildMinecraftPendingRequestsEmbed(
+  requests: MinecraftPendingRequestSummary[],
+): APIEmbed {
+  const embed = new EmbedBuilder().setTitle('🗂️ 審査待ちの連携申請').setColor(COLOR_ATTENTION);
+  if (requests.length === 0) {
+    embed.setDescription('審査待ちの連携申請はありません。');
+    return embed.toJSON();
+  }
+  embed.setDescription(`審査待ち: ${requests.length}件`);
+  for (const request of requests) {
+    embed.addFields({
+      name: `🎮 ${request.minecraftUsername}`,
+      value: [
+        `Discord: ${request.discordUsername}`,
+        `申請日時: ${formatRequestedAt(request.requestedAt)}`,
+        `申請ID: ${request.id}`,
+      ].join('\n'),
+    });
+  }
+  if (requests.length > MINECRAFT_WHITELIST_BUTTON_LIMIT) {
+    embed.setFooter({
+      text: `ボタンで操作できるのは先頭${MINECRAFT_WHITELIST_BUTTON_LIMIT}件までです。残りは /mc whitelist の approve / reject、または Web 管理画面で処理してください。`,
+    });
+  }
+  return embed.toJSON();
+}
+
+export function buildMinecraftPendingRequestRows(
+  requests: MinecraftPendingRequestSummary[],
+): APIActionRowComponent<APIButtonComponent>[] {
+  return requests
+    .slice(0, MINECRAFT_WHITELIST_BUTTON_LIMIT)
+    .map((request) =>
+      new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${MINECRAFT_WHITELIST_COMPONENT_PREFIX}approve:${request.id}`)
+            .setLabel(`承認: ${request.minecraftUsername}`)
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`${MINECRAFT_WHITELIST_COMPONENT_PREFIX}reject:${request.id}`)
+            .setLabel(`却下: ${request.minecraftUsername}`)
+            .setStyle(ButtonStyle.Danger),
+        )
+        .toJSON(),
+    );
+}
+
+export type MinecraftWhitelistComponentAction = 'approve' | 'reject' | 'reject-submit';
+
+export function parseMinecraftWhitelistComponentId(customId: string): {
+  action: MinecraftWhitelistComponentAction;
+  requestId: string;
+} | null {
+  if (!customId.startsWith(MINECRAFT_WHITELIST_COMPONENT_PREFIX)) return null;
+  const rest = customId.slice(MINECRAFT_WHITELIST_COMPONENT_PREFIX.length);
+  const separator = rest.indexOf(':');
+  if (separator <= 0) return null;
+  const action = rest.slice(0, separator);
+  const requestId = rest.slice(separator + 1);
+  if (!requestId) return null;
+  if (action === 'approve' || action === 'reject' || action === 'reject-submit') {
+    return { action, requestId };
+  }
+  return null;
+}
+
+export function buildMinecraftRejectModal(
+  requestId: string,
+): APIModalInteractionResponseCallbackData {
+  return new ModalBuilder()
+    .setCustomId(`${MINECRAFT_WHITELIST_COMPONENT_PREFIX}reject-submit:${requestId}`)
+    .setTitle('却下理由の入力')
+    .addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId('note')
+          .setLabel('却下理由 (申請者にも通知されます)')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(500),
+      ),
+    )
+    .toJSON();
+}
+
+/** /minecraft/bot/link の応答を Embed にする (formatMinecraftLinkStatus の Embed 版) */
+export function buildMinecraftLinkStatusEmbed(data: Record<string, unknown>): APIEmbed {
+  const status = botApiString(data['status']) ?? 'none';
+  const link = isRecord(data['link']) ? data['link'] : null;
+  const request = isRecord(data['request']) ? data['request'] : null;
+  const whitelist = isRecord(data['whitelist']) ? data['whitelist'] : null;
+  const whitelistLabel = whitelistStatusLabel(whitelist ? botApiString(whitelist['status']) : null);
+  const embed = new EmbedBuilder().setTitle('🎮 Minecraft連携の状態');
+
+  if (status === 'approved' && link) {
+    embed
+      .setColor(COLOR_ONLINE)
+      .setDescription('Minecraftアカウントと連携済みです。')
+      .addFields(
+        {
+          name: 'Minecraft',
+          value: botApiString(link['minecraftUsername']) ?? '?',
+          inline: true,
+        },
+        { name: 'ホワイトリスト', value: whitelistLabel, inline: true },
+      );
+    return embed.toJSON();
+  }
+  if (status === 'pending' && request) {
+    embed
+      .setColor(COLOR_ATTENTION)
+      .setDescription(
+        '連携申請中です (審査待ち)。取り消す場合は /mc link の cancel を実行してください。',
+      )
+      .addFields(
+        {
+          name: 'Minecraft',
+          value: botApiString(request['minecraftUsername']) ?? '?',
+          inline: true,
+        },
+        { name: '申請ID', value: botApiString(request['id']) ?? '?' },
+      );
+    return embed.toJSON();
+  }
+  if (status === 'rejected' && request) {
+    const note = botApiString(request['reviewNote']);
+    embed
+      .setColor(COLOR_OFFLINE)
+      .setDescription(
+        '前回の連携申請は却下されました。再申請は /mc link の apply、または Web ポータルからできます: https://member.ivrm.jp/minecraft',
+      )
+      .addFields({
+        name: 'Minecraft',
+        value: botApiString(request['minecraftUsername']) ?? '?',
+        inline: true,
+      });
+    if (note) {
+      embed.addFields({ name: '却下理由', value: note });
+    }
+    return embed.toJSON();
+  }
+  if (status === 'cancelled') {
+    embed
+      .setColor(COLOR_UNKNOWN)
+      .setDescription(
+        '前回の連携申請は取り消されています。再申請は /mc link の apply、または Web ポータルからできます: https://member.ivrm.jp/minecraft',
+      );
+    return embed.toJSON();
+  }
+  embed
+    .setColor(COLOR_UNKNOWN)
+    .setDescription(
+      'Minecraftアカウントはまだ連携されていません。申請は /mc link の apply、または Web ポータルからできます: https://member.ivrm.jp/minecraft',
+    );
+  return embed.toJSON();
+}
+
+/** 審査結果を申請者へ DM で知らせる Embed */
+export function buildMinecraftReviewNoticeEmbed(
+  action: 'approve' | 'reject',
+  fields: { minecraftUsername: string; note?: string },
+): APIEmbed {
+  if (action === 'approve') {
+    return new EmbedBuilder()
+      .setTitle('✅ Minecraft連携が承認されました')
+      .setColor(COLOR_ONLINE)
+      .setDescription(
+        'ホワイトリストへの反映が始まります。数分後にサーバーへ入れるようになります。',
+      )
+      .addFields({ name: 'Minecraft', value: fields.minecraftUsername })
+      .toJSON();
+  }
+  const embed = new EmbedBuilder()
+    .setTitle('❌ Minecraft連携申請が却下されました')
+    .setColor(COLOR_OFFLINE)
+    .setDescription(
+      '内容を確認のうえ、/mc link の apply または Web ポータルから再申請できます: https://member.ivrm.jp/minecraft',
+    )
+    .addFields({ name: 'Minecraft', value: fields.minecraftUsername });
+  if (fields.note) {
+    embed.addFields({ name: '却下理由', value: fields.note });
+  }
+  return embed.toJSON();
+}
+
+async function notifyMinecraftReviewResult(
+  context: MinecraftStatusContext,
+  target: MinecraftPendingRequestSummary,
+  action: 'approve' | 'reject',
+  note?: string,
+): Promise<void> {
+  if (!target.discordUserId || !context.client.users) return;
+  try {
+    const user = await context.client.users.fetch(target.discordUserId);
+    await user?.send({
+      embeds: [
+        buildMinecraftReviewNoticeEmbed(action, {
+          minecraftUsername: target.minecraftUsername,
+          note,
+        }),
+      ],
+      allowedMentions: { parse: [] },
+    });
+  } catch {
+    // DM を受け取れないユーザーでは通知だけ失敗し、審査結果には影響させない
+  }
+}
+
+export interface MinecraftComponentInteraction {
+  guildId: string | null;
+  customId: string;
+  user?: { id?: string };
+  member?: unknown;
+  fields?: { getTextInputValue(name: string): string };
+  isButton(): boolean;
+  isModalSubmit(): boolean;
+  reply(options: ReplyOptions): Promise<unknown>;
+  update(options: EditReplyOptions): Promise<unknown>;
+  showModal(modal: APIModalInteractionResponseCallbackData): Promise<unknown>;
+}
+
+async function componentEphemeralReply(
+  interaction: MinecraftComponentInteraction,
+  content: string,
+): Promise<void> {
+  await interaction.reply({
+    content,
+    flags: EPHEMERAL_FLAG,
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function fetchPendingSummaries(
+  api: MinecraftBotApiConfig,
+  base: Record<string, unknown>,
+): Promise<MinecraftPendingRequestSummary[] | null> {
+  const result = await callMinecraftBotApi(api, '/minecraft/bot/requests/pending', base);
+  return result.ok && result.data ? parseMinecraftPendingRequests(result.data) : null;
+}
+
+/** 承認・却下ボタンと却下モーダルの処理。ロール再検証と結果 DM を含む */
+export async function handleMinecraftWhitelistComponent(
+  context: MinecraftStatusContext,
+  interaction: MinecraftComponentInteraction,
+): Promise<void> {
+  const parsed = parseMinecraftWhitelistComponentId(interaction.customId);
+  if (!parsed) return;
+  const config = normalizeMinecraftStatusConfig(context.config);
+  if (!config.enabled) {
+    await componentEphemeralReply(interaction, 'Minecraft Status Pluginは現在無効です。');
+    return;
+  }
+  if (!canApproveMinecraftWhitelist(interaction, config)) {
+    await componentEphemeralReply(
+      interaction,
+      'この操作にはホワイトリスト承認の専用ロールが必要です。',
+    );
+    return;
+  }
+  const api = resolveMinecraftBotApiConfig(process.env);
+  if (!api) {
+    await componentEphemeralReply(interaction, MINECRAFT_LINK_UNAVAILABLE_MESSAGE);
+    return;
+  }
+  const approverId = interaction.user?.id;
+  const guildId = interaction.guildId ?? context.guildId;
+  if (!approverId || !guildId) {
+    await componentEphemeralReply(interaction, 'ユーザー情報を取得できませんでした。');
+    return;
+  }
+  const base = { discordUserId: approverId, guildId, approverRoleVerified: true };
+
+  if (parsed.action === 'reject') {
+    if (!interaction.isButton()) return;
+    await interaction.showModal(buildMinecraftRejectModal(parsed.requestId));
+    return;
+  }
+
+  const action: 'approve' | 'reject' = parsed.action === 'approve' ? 'approve' : 'reject';
+  let note: string | undefined;
+  if (parsed.action === 'reject-submit') {
+    if (!interaction.isModalSubmit()) return;
+    note = interaction.fields?.getTextInputValue('note')?.trim();
+    if (!note) {
+      await componentEphemeralReply(interaction, '却下理由を入力してください。');
+      return;
+    }
+  } else if (!interaction.isButton()) {
+    return;
+  }
+
+  const before = await fetchPendingSummaries(api, base);
+  const target = before?.find((entry) => entry.id === parsed.requestId);
+  const result = await callMinecraftBotApi(api, `/minecraft/bot/requests/${action}`, {
+    ...base,
+    requestId: parsed.requestId,
+    ...(note ? { reviewNote: note } : {}),
+  });
+  if (!result.ok) {
+    await componentEphemeralReply(interaction, formatMinecraftBotApiError(result));
+    return;
+  }
+  if (target) {
+    await notifyMinecraftReviewResult(context, target, action, note);
+  }
+
+  const refreshed = (await fetchPendingSummaries(api, base)) ?? [];
+  const payload = {
+    embeds: [buildMinecraftPendingRequestsEmbed(refreshed)],
+    components: buildMinecraftPendingRequestRows(refreshed),
+    allowedMentions: { parse: [] } as { parse: [] },
+  };
+  if (interaction.isModalSubmit()) {
+    // モーダル送信からは元のメッセージを更新できないため、最新の一覧を新規に返す
+    await interaction.reply({
+      content: action === 'approve' ? '承認しました。' : '却下しました。',
+      ...payload,
+      flags: EPHEMERAL_FLAG,
+    });
+    return;
+  }
+  await interaction.update(payload);
+}
+
 /** Bot API のエラーコードを Discord 向けの文面にする */
 export function formatMinecraftBotApiError(result: MinecraftBotApiResult): string {
   const code = result.data ? botApiString(result.data['code']) : null;
@@ -1650,6 +2055,27 @@ async function ephemeralReply(
   });
 }
 
+async function ephemeralPayloadReply(
+  interaction: MinecraftStatusInteraction,
+  payload: {
+    embeds: APIEmbed[];
+    components?: APIActionRowComponent<APIButtonComponent>[];
+  },
+): Promise<void> {
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({
+      ...payload,
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+  await interaction.reply({
+    ...payload,
+    flags: EPHEMERAL_FLAG,
+    allowedMentions: { parse: [] },
+  });
+}
+
 async function executeMinecraftLink(
   context: MinecraftStatusContext,
   interaction: MinecraftStatusInteraction,
@@ -1702,12 +2128,13 @@ async function executeMinecraftLink(
   }
 
   const result = await callMinecraftBotApi(api, '/minecraft/bot/link', base);
-  await ephemeralReply(
-    interaction,
-    result.ok && result.data
-      ? formatMinecraftLinkStatus(result.data)
-      : formatMinecraftBotApiError(result),
-  );
+  if (result.ok && result.data) {
+    await ephemeralPayloadReply(interaction, {
+      embeds: [buildMinecraftLinkStatusEmbed(result.data)],
+    });
+    return;
+  }
+  await ephemeralReply(interaction, formatMinecraftBotApiError(result));
 }
 
 async function executeMinecraftWhitelist(
@@ -1715,7 +2142,6 @@ async function executeMinecraftWhitelist(
   interaction: MinecraftStatusInteraction,
   config: MinecraftStatusConfig,
 ): Promise<void> {
-  void context;
   if (!canApproveMinecraftWhitelist(interaction, config)) {
     await ephemeralReply(
       interaction,
@@ -1756,11 +2182,16 @@ async function executeMinecraftWhitelist(
       await ephemeralReply(interaction, 'reject のときは note（却下理由）が必須です。');
       return;
     }
+    const before = await fetchPendingSummaries(api, base);
+    const target = before?.find((entry) => entry.id === requestId);
     const result = await callMinecraftBotApi(api, `/minecraft/bot/requests/${action}`, {
       ...base,
       requestId,
       ...(note ? { reviewNote: note } : {}),
     });
+    if (result.ok && target) {
+      await notifyMinecraftReviewResult(context, target, action, note ?? undefined);
+    }
     await ephemeralReply(
       interaction,
       result.ok
@@ -1792,10 +2223,13 @@ async function executeMinecraftWhitelist(
   }
 
   const result = await callMinecraftBotApi(api, '/minecraft/bot/requests/pending', base);
-  await ephemeralReply(
-    interaction,
-    result.ok && result.data
-      ? formatMinecraftPendingRequests(result.data)
-      : formatMinecraftBotApiError(result),
-  );
+  if (result.ok && result.data) {
+    const requests = parseMinecraftPendingRequests(result.data);
+    await ephemeralPayloadReply(interaction, {
+      embeds: [buildMinecraftPendingRequestsEmbed(requests)],
+      components: buildMinecraftPendingRequestRows(requests),
+    });
+    return;
+  }
+  await ephemeralReply(interaction, formatMinecraftBotApiError(result));
 }
