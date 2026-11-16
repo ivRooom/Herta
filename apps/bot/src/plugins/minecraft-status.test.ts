@@ -1177,13 +1177,13 @@ describe('Minecraft ホワイトリスト審査リマインド (#916)', () => {
       } as unknown as Parameters<typeof runMinecraftWhitelistReminderCycle>[0];
     }
 
-    it('24時間超の審査待ちを運営チャンネルへメンション付きで通知する', async () => {
+    it('24時間超の審査待ちを運営チャンネルへ通知する (メンションなし)', async () => {
       const calls = setupFetch([overdueEntry, freshEntry]);
       let sentPayload:
         | {
             content?: string;
             embeds: { fields?: { value: string }[] }[];
-            allowedMentions: { roles: string[] };
+            allowedMentions: { parse: [] };
           }
         | undefined;
       const send = vi.fn(async (options: unknown) => {
@@ -1191,8 +1191,9 @@ describe('Minecraft ホワイトリスト審査リマインド (#916)', () => {
       });
       await runMinecraftWhitelistReminderCycle(makeContext({ send }), nowMs);
       expect(send).toHaveBeenCalledTimes(1);
-      expect(sentPayload?.content).toContain(`<@&${approverRoleId}>`);
-      expect(sentPayload?.allowedMentions.roles).toEqual([approverRoleId]);
+      // メンションは P0 レベルの緊急アラートのみ。リマインドはロールメンションも付けない
+      expect(sentPayload?.content).toBeUndefined();
+      expect(sentPayload?.allowedMentions).toEqual({ parse: [] });
       expect(sentPayload?.embeds[0]?.fields).toHaveLength(1);
       expect(sentPayload?.embeds[0]?.fields?.[0]?.value).toContain('mclr_old');
       // 実行者は承認ロールの保持者で、ロール確認済みとして API を呼ぶ

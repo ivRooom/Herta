@@ -2055,11 +2055,7 @@ export function collectRecentlyRemindedRequestIds(
 
 interface MinecraftReminderChannel {
   isTextBased(): boolean;
-  send(options: {
-    content?: string;
-    embeds: APIEmbed[];
-    allowedMentions: { roles: string[] };
-  }): Promise<unknown>;
+  send(options: { embeds: APIEmbed[]; allowedMentions: { parse: [] } }): Promise<unknown>;
   messages: {
     fetch(options: { limit: number }): Promise<{
       values(): Iterable<MinecraftReminderChannelMessage>;
@@ -2164,10 +2160,10 @@ export async function runMinecraftWhitelistReminderCycle(
       );
       const fresh = overdue.filter((request) => !reminded.has(request.id));
       if (fresh.length === 0) return;
+      // 通知ポリシー: メンションは P0 レベルの緊急アラートのみ。定期リマインドでは ping しない
       await channel.send({
-        content: config.whitelistApproverRoleIds.map((roleId) => `<@&${roleId}>`).join(' '),
         embeds: [buildMinecraftWhitelistReminderEmbed(fresh, nowMs)],
-        allowedMentions: { roles: [...config.whitelistApproverRoleIds] },
+        allowedMentions: { parse: [] },
       });
     } catch {
       // リマインドの失敗でワーカーを落とさない (次周期で再試行する)
