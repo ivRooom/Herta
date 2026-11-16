@@ -46,6 +46,49 @@ it('accepts pinned status and rejects secret/provisional fields and malformed da
       false,
     );
 });
+it('accepts a three-question status with daily, bonus and rescue slots (#917)', async () => {
+  configure();
+  const bonusQuestion = { ...fixture.publicQuestion, id: 'q_bonus_20261031', slot: 'bonus' };
+  const rescueQuestion = { ...fixture.publicQuestion, id: 'q_rescue_20261031', slot: 'rescue' };
+  const response = (questionId: string) => ({
+    questionId,
+    optionId: 'a',
+    text: null,
+    state: 'graded',
+    isCorrect: true,
+    rewardPoints: 10,
+    submittedAt: '2026-10-31T00:30:00.000Z',
+    origin: 'discord',
+  });
+  const status = {
+    ...fixture.status,
+    questions: [fixture.publicQuestion, bonusQuestion, rescueQuestion],
+    responses: [
+      response(fixture.publicQuestion.id),
+      response(bonusQuestion.id),
+      response(rescueQuestion.id),
+    ],
+  };
+  expect(participationStatusSchema.safeParse(status).success).toBe(true);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json(status)),
+  );
+  const parsed = await participationStatus(guild, user);
+  expect(parsed.questions.map((q) => q.slot)).toEqual(['daily', 'bonus', 'rescue']);
+  expect(parsed.responses).toHaveLength(3);
+  // Slot uniqueness still applies: a second rescue question is rejected.
+  expect(
+    participationStatusSchema.safeParse({
+      ...status,
+      questions: [
+        fixture.publicQuestion,
+        rescueQuestion,
+        { ...fixture.publicQuestion, id: 'q_rescue2_20261031', slot: 'rescue' },
+      ],
+    }).success,
+  ).toBe(false);
+});
 it('signs v2 exact bytes and binds the canonical answer key', async () => {
   configure();
   vi.stubGlobal(
@@ -107,6 +150,28 @@ it('fetches the yesterday review with the canonical body and validates it (#820)
   expect(review.revealed).toBe(true);
   expect(review.entries[0]!.correctOptionId).toBe('a');
   expect(review.entries[0]!.userResponse?.optionId).toBe('b');
+});
+it('accepts a yesterday review with daily, bonus and rescue entries (#917)', async () => {
+  configure();
+  const entry = (id: string, slot: string) => ({
+    ...yesterdayEntry,
+    question: { ...yesterdayEntry.question, id, slot },
+  });
+  const payload = {
+    ...yesterdayPayload,
+    entries: [
+      entry('q_daily_20261030', 'daily'),
+      entry('q_bonus_20261030', 'bonus'),
+      entry('q_rescue_20261030', 'rescue'),
+    ],
+  };
+  expect(yesterdayReviewSchema.safeParse(payload).success).toBe(true);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json(payload)),
+  );
+  const review = await yesterdayReview(guild, user);
+  expect(review.entries.map((e) => e.question.slot)).toEqual(['daily', 'bonus', 'rescue']);
 });
 it('accepts yesterday stats and rejects malformed aggregates (#903)', async () => {
   configure();
