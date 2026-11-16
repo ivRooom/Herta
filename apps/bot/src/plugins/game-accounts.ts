@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   MessageFlags,
@@ -12,12 +13,17 @@ import {
   type PluginEventHandler,
   type PluginRuntimeContext,
 } from '@herta/plugin-sdk';
-import { callIvrmGameAccounts } from './game-accounts-ivrm.js';
+import {
+  callIvrmGameAccounts,
+  type IvrmGameAccountsResult,
+  type ShowcaseCharacterScore,
+} from './game-accounts-ivrm.js';
 import {
   buildGameAccountsErrorEmbed,
   buildLinkSuccessEmbed,
   buildListEmbed,
   buildNoticeEmbed,
+  buildScoreCharacterEmbed,
   buildScoreEmbed,
   buildUnlinkCancelledEmbed,
   buildUnlinkConfirmEmbed,
@@ -26,10 +32,12 @@ import {
   gameDefinition,
   gameName,
   isShowcaseSupported,
+  scoreSwitcherCharacters,
   type GameEmbed,
 } from './game-accounts-core.js';
 
 const UNLINK_CUSTOM_ID_PREFIX = 'game-accounts:unlink:';
+const SCORE_CUSTOM_ID_PREFIX = 'game-accounts:score:';
 
 const inFlight = new Set<string>();
 
@@ -59,6 +67,9 @@ interface GameButtonInteraction {
   editReply(options: {
     embeds?: GameEmbed[];
     components?: ActionRowBuilder<ButtonBuilder>[] | never[];
+    files?: AttachmentBuilder[];
+    /** Empty array clears attachments left over from a previous view. */
+    attachments?: never[];
   }): Promise<unknown>;
 }
 
@@ -205,6 +216,210 @@ export async function handleGameAccountsUnlinkButton(
   }
 }
 
+/** Discord caps an action row at 5 buttons; the switcher holds at most 6. */
+const SCORE_BUTTONS_PER_ROW = 5;
+const MAX_BUTTON_LABEL_CHARS = 80;
+
+/**
+ * Score switches whose API calls are in flight, keyed by guild:user. A
+ * second press while one is running is rejected instead of racing two
+ * edits of the same message.
+ */
+const pendingScoreSwitch = new Set<string>();
+
+function buildScoreCustomId(userId: string, gameCode: string, characterId: string) {
+  return `${SCORE_CUSTOM_ID_PREFIX}${userId}:${gameCode}:${characterId}`;
+}
+
+function parseScoreCustomId(
+  customId: string,
+): { userId: string; gameCode: string; characterId: string } | null {
+  const parts = customId.slice(SCORE_CUSTOM_ID_PREFIX.length).split(':');
+  if (parts.length !== 3) return null;
+  const [userId, gameCode, characterId] = parts as [string, string, string];
+  if (!/^\d{17,20}$/.test(userId) || !isKnownGameCode(gameCode)) return null;
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(characterId)) return null;
+  return { userId, gameCode, characterId };
+}
+
+function scoreButtonLabel(character: ShowcaseCharacterScore): string {
+  const label = character.name ?? `キャラクターID ${character.id}`;
+  if (label.length <= MAX_BUTTON_LABEL_CHARS) return label;
+  return `${label.slice(0, MAX_BUTTON_LABEL_CHARS - 1)}…`;
+}
+
+function scoreSwitcherRows(
+  userId: string,
+  gameCode: string,
+  characters: ShowcaseCharacterScore[],
+  selectedId: string,
+): ActionRowBuilder<ButtonBuilder>[] {
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  for (let index = 0; index < characters.length; index += SCORE_BUTTONS_PER_ROW) {
+    const row = new ActionRowBuilder<ButtonBuilder>();
+    for (const character of characters.slice(index, index + SCORE_BUTTONS_PER_ROW)) {
+      const selected = character.id === selectedId;
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(buildScoreCustomId(userId, gameCode, character.id))
+          .setLabel(scoreButtonLabel(character))
+          .setStyle(selected ? ButtonStyle.Primary : ButtonStyle.Secondary)
+          .setDisabled(selected),
+      );
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+export interface ScoreViewReply {
+  embeds: GameEmbed[];
+  components: ActionRowBuilder<ButtonBuilder>[];
+  files?: AttachmentBuilder[];
+}
+
+type ScoreResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'score' }>;
+
+/**
+ * Builds the one-character score view (#1147 S3c): the selected
+ * character's build-card PNG when the API renders one, with the
+ * single-character text embed and the character switcher buttons in
+ * both cases. Any card failure (unsupported game, no build, renderer
+ * down) silently degrades to the text-only view; the buttons keep
+ * working so another character may still produce a card. When no
+ * character carries a score there is nothing to switch between, so
+ * the classic all-characters embed is returned without buttons.
+ * Exported for tests; the command and the button handler share it.
+ */
+export async function buildScoreViewReply(
+  guildId: string,
+  userId: string,
+  result: ScoreResult,
+  selectedId: string | undefined,
+  callApi: typeof callIvrmGameAccounts = callIvrmGameAccounts,
+): Promise<ScoreViewReply> {
+  const characters = scoreSwitcherCharacters(result);
+  if (characters.length === 0) return { embeds: [buildScoreEmbed(result)], components: [] };
+  const selected = characters.find((character) => character.id === selectedId) ?? characters[0]!;
+  const embed = buildScoreCharacterEmbed(result, selected.id) ?? buildScoreEmbed(result);
+  const components = scoreSwitcherRows(userId, result.gameCode, characters, selected.id);
+  try {
+    const card = await callApi(guildId, userId, {
+      action: 'card',
+      gameCode: result.gameCode,
+      characterId: selected.id,
+    });
+    if (card.status === 'ok' && card.action === 'card') {
+      const png = card.cards.find((entry) => entry.characterId === selected.id) ?? card.cards[0];
+      if (png) {
+        return {
+          embeds: [embed],
+          components,
+          files: [new AttachmentBuilder(png.png, { name: `game-card-${selected.id}.png` })],
+        };
+      }
+    }
+  } catch {
+    // A failed card call is just the text view; never fail the score reply.
+  }
+  return { embeds: [embed], components };
+}
+
+/**
+ * Handles the score character-switcher buttons. Exported for tests; the
+ * plugin wires it through `interactionCreate` next to the unlink handler.
+ *
+ * The button carries only ids, so the handler re-reads the score (the
+ * API serves the stored snapshot; nothing is fetched upstream) and
+ * rebuilds the whole view for the pressed character. Only the member
+ * who ran the command may switch: the response is ephemeral, so a
+ * press by anyone else is rejected with an ephemeral note. When the
+ * new view has no PNG, `attachments: []` clears the previous card.
+ */
+export async function handleGameAccountsScoreButton(
+  context: PluginRuntimeContext<GameAccountsConfig, unknown, PrismaClient>,
+  interaction: GameButtonInteraction | undefined,
+  callApi: typeof callIvrmGameAccounts = callIvrmGameAccounts,
+): Promise<void> {
+  if (!interaction?.isButton?.() || !interaction.customId?.startsWith(SCORE_CUSTOM_ID_PREFIX))
+    return;
+  if (!interaction.guildId || interaction.guildId !== context.guildId) return;
+  const parsed = parseScoreCustomId(interaction.customId);
+  if (!parsed) return;
+  if (parsed.userId !== interaction.user.id) {
+    await interaction.reply({
+      content: 'この切替ボタンは、コマンドを実行した本人だけが使えます。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  if (context.config.enabled === false) {
+    await interaction.reply({
+      content: 'ゲームアカウント連携Pluginは現在無効です。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  const pendingKey = `${interaction.guildId}:${parsed.userId}`;
+  if (pendingScoreSwitch.has(pendingKey)) {
+    await interaction.reply({
+      content: '表示を切り替え中です。完了するまでお待ちください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  pendingScoreSwitch.add(pendingKey);
+  try {
+    await interaction.deferUpdate();
+    const result = await callApi(interaction.guildId, interaction.user.id, {
+      action: 'score',
+      gameCode: parsed.gameCode,
+    });
+    if (result.status !== 'ok') {
+      await interaction.editReply({
+        embeds: [buildGameAccountsErrorEmbed(result)],
+        components: [],
+        attachments: [],
+      });
+      return;
+    }
+    if (result.action !== 'score') {
+      await interaction.editReply({
+        embeds: [buildNoticeEmbed('処理できませんでした。少し待ってからお試しください。', 'error')],
+        components: [],
+        attachments: [],
+      });
+      return;
+    }
+    const view = await buildScoreViewReply(
+      interaction.guildId,
+      interaction.user.id,
+      result,
+      parsed.characterId,
+      callApi,
+    );
+    await interaction.editReply(
+      view.files
+        ? { embeds: view.embeds, components: view.components, files: view.files }
+        : { embeds: view.embeds, components: view.components, attachments: [] },
+    );
+  } catch (error) {
+    context.logger.error(
+      { error: error instanceof Error ? error.name : 'UnknownError' },
+      'Game accounts score switch failed',
+    );
+    await interaction.editReply({
+      embeds: [
+        buildNoticeEmbed('表示を切り替えられませんでした。少し待ってからお試しください。', 'error'),
+      ],
+      components: [],
+      attachments: [],
+    });
+  } finally {
+    pendingScoreSwitch.delete(pendingKey);
+  }
+}
+
 export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, PrismaClient>({
   manifest: gameAccountsManifest,
   provideCommands(context) {
@@ -294,18 +509,33 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
                 action: 'score',
                 gameCode,
               });
-              await interaction.editReply({
-                embeds: [
-                  result.status !== 'ok'
-                    ? buildGameAccountsErrorEmbed(result)
-                    : result.action === 'score'
-                      ? buildScoreEmbed(result)
-                      : buildNoticeEmbed(
-                          '処理できませんでした。少し待ってからお試しください。',
-                          'error',
-                        ),
-                ],
-              });
+              if (result.status !== 'ok') {
+                await interaction.editReply({ embeds: [buildGameAccountsErrorEmbed(result)] });
+                return;
+              }
+              if (result.action !== 'score') {
+                await interaction.editReply({
+                  embeds: [
+                    buildNoticeEmbed(
+                      '処理できませんでした。少し待ってからお試しください。',
+                      'error',
+                    ),
+                  ],
+                });
+                return;
+              }
+              // One character at a time (#1147 S3c): the build-card PNG
+              // when available, the single-character embed, and the
+              // switcher buttons. Falls back to the classic embed when
+              // no character carries a score.
+              const view = await buildScoreViewReply(
+                guildId,
+                userId,
+                result,
+                undefined,
+                callIvrmGameAccounts,
+              );
+              await interaction.editReply(view);
               return;
             }
             await interaction.editReply('不明な操作です。');
@@ -328,10 +558,9 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
       {
         event: 'interactionCreate',
         async handler(context, ...args) {
-          await handleGameAccountsUnlinkButton(
-            context,
-            args[0] as GameButtonInteraction | undefined,
-          );
+          const interaction = args[0] as GameButtonInteraction | undefined;
+          await handleGameAccountsUnlinkButton(context, interaction);
+          await handleGameAccountsScoreButton(context, interaction);
         },
       },
     ] as PluginEventHandler<GameAccountsConfig, unknown, PrismaClient>[];

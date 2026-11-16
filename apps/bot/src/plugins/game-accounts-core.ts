@@ -208,6 +208,8 @@ export function formatGameAccountsError(
       return result.field
         ? `入力を確認してください（${result.field}：${result.message}）`
         : `入力を確認してください（${result.message}）`;
+    case 'card-unavailable':
+      return 'カード画像は現在表示できません。';
     case 'ineligible-guild':
       return 'このサーバーはivrm-webの会員情報連携の対象外です。';
     case 'unconfigured':
@@ -481,6 +483,52 @@ export function buildScoreEmbed(
     }
   }
   return { title, color: EMBED_COLOR_PRIMARY, fields, footer: { text: footerText } };
+}
+
+/**
+ * カード切替 UI (#1147 S3c) の対象キャラ数上限。API の一括カード生成
+ * (GAME_CARD_MAX_BATCH) と同じ 6 に揃える。
+ */
+export const SCORE_SWITCHER_MAX_CHARACTERS = 6;
+
+/**
+ * カード切替 UI の対象はスコアが付いたキャラだけ (カードはスコア付き
+ * キャラにしか生成されない)。ショーケース順のまま上限件数に切る。
+ */
+export function scoreSwitcherCharacters(
+  result: Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'score' }>,
+): ShowcaseCharacterScore[] {
+  return result.characters
+    .filter((character) => character.artifactScore !== null)
+    .slice(0, SCORE_SWITCHER_MAX_CHARACTERS);
+}
+
+/**
+ * 1体分だけのスコア Embed。カード画像に添える小さい Embed と、画像が
+ * 使えない場合のフォールバック表示を兼ねる。フッターには切替 UI の
+ * 位置 (n / 総数) も入れる。対象キャラが結果に無い場合は null。
+ */
+export function buildScoreCharacterEmbed(
+  result: Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'score' }>,
+  characterId: string,
+): GameEmbed | null {
+  if (!result.hasSnapshot) return null;
+  const character = result.characters.find((entry) => entry.id === characterId);
+  if (!character) return null;
+  const name = gameName(result.gameCode);
+  const title = truncate(`🎮 ${name}の${scoreLabel(result.gameCode)}`, MAX_EMBED_TITLE_CHARS);
+  const switcher = scoreSwitcherCharacters(result);
+  const position = switcher.findIndex((entry) => entry.id === characterId);
+  const footerParts = [`UID ${result.uid}`, `取得：${formatJstDateTime(result.fetchedAt)}`];
+  if (character.artifactScore) footerParts.push(`凡例：${scoreRollLegend(result.gameCode)}`);
+  if (position >= 0 && switcher.length > 1)
+    footerParts.push(`${position + 1} / ${switcher.length}`);
+  return {
+    title,
+    color: EMBED_COLOR_PRIMARY,
+    fields: [buildCharacterScoreField(result.gameCode, character)],
+    footer: { text: truncate(footerParts.join(' ・ '), MAX_EMBED_FOOTER_CHARS) },
+  };
 }
 
 export function buildUnsupportedScoreEmbed(gameCode: string): GameEmbed {

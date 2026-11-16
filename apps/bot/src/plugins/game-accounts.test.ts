@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@herta/db';
 import { gameAccountsManifest } from '@herta/plugin-catalog';
 import type { PluginRuntimeContext } from '@herta/plugin-sdk';
-import { handleGameAccountsUnlinkButton } from './game-accounts.js';
-import type { IvrmGameAccountsResult } from './game-accounts-ivrm.js';
+import {
+  buildScoreViewReply,
+  handleGameAccountsScoreButton,
+  handleGameAccountsUnlinkButton,
+} from './game-accounts.js';
+import type { GameAccountsRequestInput, IvrmGameAccountsResult } from './game-accounts-ivrm.js';
 
 const guild = '123456789012345678';
 const user = '223456789012345678';
@@ -203,5 +207,289 @@ describe('game accounts unlink buttons', () => {
     expect(api).not.toHaveBeenCalled();
     expect(disabled.calls).toHaveLength(1);
     expect(disabled.calls[0]?.options?.content).toContain('現在無効です');
+  });
+});
+
+type ScoreApi = NonNullable<Parameters<typeof handleGameAccountsScoreButton>[2]>;
+type ScoreResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'score' }>;
+
+const scoreResult: ScoreResult = {
+  status: 'ok',
+  action: 'score',
+  gameCode: 'genshin',
+  uid: '812468719',
+  showcaseStatus: 'ok',
+  fetchedAt: '2026-11-15T14:43:29.060Z',
+  hasSnapshot: true,
+  characters: [
+    {
+      id: '10000098',
+      name: 'クロリンデ',
+      level: 80,
+      artifactScore: { total: 160.8, version: 1, perPiece: [{ cv: 34.9, rolls: { critRate: 3 } }] },
+    },
+    {
+      id: '10000046',
+      name: '胡桃',
+      level: 80,
+      artifactScore: { total: 74.5, version: 1, perPiece: [{ cv: 30.3, rolls: { critDmg: 3 } }] },
+    },
+    { id: '10000061', name: '綺良々', level: 70, artifactScore: null },
+  ],
+};
+
+const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+
+function makeScoreApi(cardFails = false) {
+  return vi.fn(
+    async (
+      _guildId: string,
+      _userId: string,
+      input: GameAccountsRequestInput,
+    ): Promise<IvrmGameAccountsResult> => {
+      if (input.action === 'score') return scoreResult;
+      if (input.action === 'card') {
+        if (cardFails) return { status: 'card-unavailable' };
+        return {
+          status: 'ok',
+          action: 'card',
+          gameCode: 'genshin',
+          uid: '812468719',
+          fetchedAt: '2026-11-15T14:43:29.060Z',
+          cards: [
+            {
+              characterId: input.characterId ?? '',
+              name: null,
+              score: null,
+              png: tinyPng,
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected action: ${input.action}`);
+    },
+  ) as unknown as ScoreApi;
+}
+
+function componentsJson(components: unknown): Array<Record<string, unknown>> {
+  return JSON.parse(JSON.stringify(components ?? [])) as Array<Record<string, unknown>>;
+}
+
+function rowButtons(row: Record<string, unknown>): Array<Record<string, unknown>> {
+  return (row.components as Array<Record<string, unknown>>) ?? [];
+}
+
+describe('score view reply (initial /game score)', () => {
+  it('shows only the first scored character, with its PNG card attached', async () => {
+    const api = makeScoreApi();
+    const view = await buildScoreViewReply(guild, user, scoreResult, undefined, api);
+
+    expect(api).toHaveBeenCalledWith(
+      guild,
+      user,
+      expect.objectContaining({ action: 'card', characterId: '10000098' }),
+    );
+    expect(view.files).toHaveLength(1);
+    expect(view.files?.[0]?.name).toBe('game-card-10000098.png');
+    expect(view.embeds).toHaveLength(1);
+    expect(view.embeds[0]?.fields).toHaveLength(1);
+    expect(view.embeds[0]?.fields?.[0]?.name).toContain('クロリンデ');
+    // Buttons exist for the two scored characters only; the selected one
+    // is disabled, and the unscored character gets no button.
+    const buttons = componentsJson(view.components).flatMap(rowButtons);
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toMatchObject({
+      custom_id: `game-accounts:score:${user}:genshin:10000098`,
+      label: 'クロリンデ',
+      disabled: true,
+    });
+    expect(buttons[1]).toMatchObject({
+      custom_id: `game-accounts:score:${user}:genshin:10000046`,
+      label: '胡桃',
+    });
+    expect(buttons[1]?.disabled).toBeFalsy();
+  });
+
+  it('falls back to the text view (no file) when the card cannot be rendered', async () => {
+    const api = makeScoreApi(true);
+    const view = await buildScoreViewReply(guild, user, scoreResult, undefined, api);
+
+    expect(view.files).toBeUndefined();
+    expect(view.embeds[0]?.fields).toHaveLength(1);
+    expect(view.embeds[0]?.fields?.[0]?.name).toContain('クロリンデ');
+    expect(componentsJson(view.components).flatMap(rowButtons)).toHaveLength(2);
+  });
+
+  it('keeps the classic all-characters embed when nobody has a score', async () => {
+    const api = makeScoreApi();
+    const unscored: ScoreResult = {
+      ...scoreResult,
+      characters: scoreResult.characters.map((character) => ({
+        ...character,
+        artifactScore: null,
+      })),
+    };
+    const view = await buildScoreViewReply(guild, user, unscored, undefined, api);
+
+    expect(api).not.toHaveBeenCalled();
+    expect(view.files).toBeUndefined();
+    expect(view.components).toEqual([]);
+    expect(view.embeds[0]?.fields).toHaveLength(3);
+  });
+});
+
+interface FakeScoreInteraction {
+  calls: Array<{ method: string; options?: Record<string, unknown> }>;
+  interaction: {
+    guildId: string | null;
+    user: { id: string };
+    customId?: string;
+    isButton(): boolean;
+    reply(options: { content: string; flags: number }): Promise<unknown>;
+    update(options: { embeds?: unknown; components?: unknown }): Promise<unknown>;
+    deferUpdate(): Promise<unknown>;
+    editReply(options: {
+      embeds?: unknown;
+      components?: unknown;
+      files?: unknown;
+      attachments?: unknown;
+    }): Promise<unknown>;
+  };
+}
+
+function makeScoreInteraction(
+  characterId: string,
+  userId: string,
+  timeline: string[],
+): FakeScoreInteraction {
+  const calls: FakeScoreInteraction['calls'] = [];
+  const interaction: FakeScoreInteraction['interaction'] = {
+    guildId: guild,
+    user: { id: userId },
+    customId: `game-accounts:score:${userId}:genshin:${characterId}`,
+    isButton: () => true,
+    async reply(options) {
+      timeline.push('reply');
+      calls.push({ method: 'reply', options });
+    },
+    async update(options) {
+      timeline.push('update');
+      calls.push({ method: 'update', options });
+    },
+    async deferUpdate() {
+      timeline.push('deferUpdate');
+      calls.push({ method: 'deferUpdate' });
+    },
+    async editReply(options) {
+      timeline.push('editReply');
+      calls.push({ method: 'editReply', options });
+    },
+  };
+  return { calls, interaction };
+}
+
+describe('game accounts score switcher buttons', () => {
+  it('defers, then swaps the attachment and embed to the pressed character', async () => {
+    const timeline: string[] = [];
+    const api = makeScoreApi();
+    const { calls, interaction } = makeScoreInteraction('10000046', user, timeline);
+
+    await handleGameAccountsScoreButton(makeContext(), interaction, api);
+
+    expect(timeline).toEqual(['deferUpdate', 'editReply']);
+    const result = calls.filter((call) => call.method === 'editReply').at(-1);
+    const files = result?.options?.files as Array<{ name?: string }> | undefined;
+    expect(files).toHaveLength(1);
+    expect(files?.[0]?.name).toBe('game-card-10000046.png');
+    expect(JSON.stringify(result?.options?.embeds)).toContain('胡桃');
+    expect(JSON.stringify(result?.options?.embeds)).not.toContain('クロリンデ Lv');
+    const buttons = componentsJson(result?.options?.components).flatMap(rowButtons);
+    expect(buttons[0]?.disabled).toBeFalsy();
+    expect(buttons[1]).toMatchObject({ label: '胡桃', disabled: true });
+  });
+
+  it('falls back to the text view and clears the old attachment when the card fails', async () => {
+    const timeline: string[] = [];
+    const api = makeScoreApi(true);
+    const { calls, interaction } = makeScoreInteraction('10000046', user, timeline);
+
+    await handleGameAccountsScoreButton(makeContext(), interaction, api);
+
+    const result = calls.filter((call) => call.method === 'editReply').at(-1);
+    expect(result?.options?.files).toBeUndefined();
+    expect(result?.options?.attachments).toEqual([]);
+    expect(JSON.stringify(result?.options?.embeds)).toContain('胡桃');
+    expect(componentsJson(result?.options?.components).flatMap(rowButtons)).toHaveLength(2);
+  });
+
+  it('rejects presses from anyone but the command invoker', async () => {
+    const timeline: string[] = [];
+    const api = makeScoreApi();
+    const { calls, interaction } = makeScoreInteraction('10000046', user, timeline);
+    interaction.user = { id: '523456789012345678' };
+
+    await handleGameAccountsScoreButton(makeContext(), interaction, api);
+
+    expect(api).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.method).toBe('reply');
+    expect(calls[0]?.options?.content).toContain('本人だけが使えます');
+  });
+
+  it('rejects a second press while a switch is in flight', async () => {
+    const timeline: string[] = [];
+    const cardStarted = deferred<void>();
+    const cardGate = deferred<IvrmGameAccountsResult>();
+    const base = makeScoreApi();
+    const api = vi.fn(
+      async (
+        guildId: string,
+        userId: string,
+        input: GameAccountsRequestInput,
+      ): Promise<IvrmGameAccountsResult> => {
+        if (input.action === 'card') {
+          cardStarted.resolve();
+          return cardGate.promise;
+        }
+        return (base as unknown as ScoreApi)(guildId, userId, input);
+      },
+    ) as unknown as ScoreApi;
+    const first = makeScoreInteraction('10000046', user, timeline);
+    const second = makeScoreInteraction('10000098', user, timeline);
+
+    const firstPromise = handleGameAccountsScoreButton(makeContext(), first.interaction, api);
+    await cardStarted.promise;
+    await handleGameAccountsScoreButton(makeContext(), second.interaction, api);
+
+    expect(second.calls).toHaveLength(1);
+    expect(second.calls[0]?.method).toBe('reply');
+    expect(second.calls[0]?.options?.content).toContain('切り替え中です');
+
+    cardGate.resolve({
+      status: 'ok',
+      action: 'card',
+      gameCode: 'genshin',
+      uid: '812468719',
+      fetchedAt: null,
+      cards: [{ characterId: '10000046', name: null, score: null, png: tinyPng }],
+    });
+    await firstPromise;
+    const result = first.calls.filter((call) => call.method === 'editReply').at(-1);
+    expect(JSON.stringify(result?.options?.embeds)).toContain('胡桃');
+  });
+
+  it('ignores malformed custom ids and buttons for other guilds', async () => {
+    const timeline: string[] = [];
+    const api = makeScoreApi();
+    const malformed = makeScoreInteraction('10000046', user, timeline);
+    malformed.interaction.customId = 'game-accounts:score:not-a-snowflake:genshin:10000046';
+    await handleGameAccountsScoreButton(makeContext(), malformed.interaction, api);
+    expect(malformed.calls).toHaveLength(0);
+
+    const otherGuild = makeScoreInteraction('10000046', user, timeline);
+    otherGuild.interaction.guildId = '999456789012345678';
+    await handleGameAccountsScoreButton(makeContext(), otherGuild.interaction, api);
+    expect(otherGuild.calls).toHaveLength(0);
+    expect(api).not.toHaveBeenCalled();
   });
 });

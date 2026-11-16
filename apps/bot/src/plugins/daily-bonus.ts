@@ -34,6 +34,8 @@ import { savedDailyFortune } from './daily-fortune.js';
 import { renderFortuneCard } from './fortune-card.js';
 import { handleDailyParticipation, isParticipationInteraction } from './daily-participation.js';
 import { scanParticipationResults } from './daily-participation-results.js';
+import { scanCorrectionDeliveries } from './daily-participation-corrections.js';
+import { scanRescueAnnouncements } from './daily-participation-rescue.js';
 import {
   dailyQuizParticipationEnabled,
   loadDailyQuizStudioSettings,
@@ -132,6 +134,14 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
   const date = dailyBonusCalendarDate(now);
   const resultGeneration = generations.get(ctx.guildId) ?? 0;
   await scanParticipationResults(
+    ctx,
+    () => resultGeneration === (generations.get(ctx.guildId) ?? 0),
+  );
+  await scanCorrectionDeliveries(
+    ctx,
+    () => resultGeneration === (generations.get(ctx.guildId) ?? 0),
+  );
+  await scanRescueAnnouncements(
     ctx,
     () => resultGeneration === (generations.get(ctx.guildId) ?? 0),
   );
