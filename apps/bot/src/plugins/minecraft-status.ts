@@ -57,6 +57,7 @@ export interface MinecraftStatusConfig {
   eventChannelId: string;
   operatorRoleIds: string[];
   whitelistApproverRoleIds: string[];
+  whitelistOpsChannelId: string;
 }
 
 /** status.ivrm.jp/api/current.json の形（収集側の都合で欠ける場合があるため全て任意） */
@@ -158,9 +159,18 @@ interface MinecraftDmUser {
   send(options: { embeds: APIEmbed[]; allowedMentions: { parse: [] } }): Promise<unknown>;
 }
 
+interface MinecraftReminderGuild {
+  roles: {
+    fetch(roleId: string): Promise<{ members?: { keys(): Iterable<string> } } | null>;
+  };
+}
+
 interface MinecraftReportClient {
   channels: { fetch(channelId: string): Promise<MinecraftReportChannel | null> };
   users?: { fetch(userId: string): Promise<MinecraftDmUser | null> };
+  // 審査リマインド用 (Bot 自身の ID と、承認ロール保持者の探索に使う)
+  user?: { id: string } | null;
+  guilds?: { fetch(guildId: string): Promise<MinecraftReminderGuild | null> };
 }
 
 type MinecraftStatusContext = PluginRuntimeContext<
@@ -178,10 +188,12 @@ export const minecraftStatusPlugin = definePlugin<
   async onEnable(context) {
     startReportWorker(context);
     startEventWorker(context);
+    startWhitelistReminderWorker(context);
   },
   async onDisable(context) {
     stopReportWorker(context.guildId);
     stopEventWorker(context.guildId);
+    stopWhitelistReminderWorker(context.guildId);
   },
   provideCommands(context) {
     const command: CommandHandler<MinecraftStatusInteraction> = {
@@ -232,6 +244,11 @@ export function normalizeMinecraftStatusConfig(value: unknown): MinecraftStatusC
         : '',
     operatorRoleIds: normalizeRoleIds(source.operatorRoleIds),
     whitelistApproverRoleIds: normalizeRoleIds(source.whitelistApproverRoleIds),
+    whitelistOpsChannelId:
+      typeof source.whitelistOpsChannelId === 'string' &&
+      /^\d{15,25}$/.test(source.whitelistOpsChannelId)
+        ? source.whitelistOpsChannelId
+        : '',
   };
 }
 
@@ -1910,6 +1927,260 @@ async function fetchPendingSummaries(
   return result.ok && result.data ? parseMinecraftPendingRequests(result.data) : null;
 }
 
+// ---- ホワイトリスト審査待ちリマインド (Herta #916) ----
+// 申請から24時間を超えた審査待ちを、1時間間隔で運営チャンネルへ通知する。
+// 通知先は Studio 設定 whitelistOpsChannelId (未設定なら無効の fail-closed)。
+// Bot API の審査待ち一覧は「実行者 = 運営者」の Discord ID が必須で、
+// ivRooom 未登録の ID では取得できない。そのため実行者は、承認ロールを
+// 実際に確認できた運営者の ID を使う: /mc whitelist のコマンド・ボタン操作で
+// 検証済みの ID を覚えておき、無ければ承認ロールの保持者から探索する。
+// 同一申請への再通知は24時間に1回まで (運営チャンネルの Bot 自身の投稿を
+// 走査し、申請IDが含まれる直近24時間の投稿があれば対象から外す)。
+
+export const MINECRAFT_WHITELIST_REMINDER_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+const WHITELIST_REMINDER_INTERVAL_MS = 60 * 60 * 1000;
+const WHITELIST_REMINDER_SCAN_LIMIT = 100;
+const WHITELIST_REMINDER_MAX_OPERATOR_CANDIDATES = 5;
+
+const whitelistReminderTimers = new Map<string, NodeJS.Timeout>();
+const whitelistReminderRuns = new Map<string, Promise<void>>();
+const whitelistReminderOperators = new Map<string, string>();
+
+/** 承認ロールを確認できた運営者の Discord ID をギルドごとに覚える */
+export function rememberMinecraftWhitelistOperator(guildId: string, discordUserId: string): void {
+  if (guildId && discordUserId) {
+    whitelistReminderOperators.set(guildId, discordUserId);
+  }
+}
+
+/** 申請からの経過時間が threshold を超えた申請だけを返す (申請日時の無い・不正な申請は除く) */
+export function selectOverdueMinecraftRequests(
+  requests: MinecraftPendingRequestSummary[],
+  nowMs: number,
+  thresholdMs: number = MINECRAFT_WHITELIST_REMINDER_THRESHOLD_MS,
+): MinecraftPendingRequestSummary[] {
+  return requests.filter((request) => {
+    if (!request.requestedAt) return false;
+    const requestedMs = Date.parse(request.requestedAt);
+    return Number.isFinite(requestedMs) && nowMs - requestedMs > thresholdMs;
+  });
+}
+
+/** 申請からの経過時間 (時間単位、切り捨て) */
+export function minecraftPendingElapsedHours(
+  request: MinecraftPendingRequestSummary,
+  nowMs: number,
+): number {
+  if (!request.requestedAt) return 0;
+  const requestedMs = Date.parse(request.requestedAt);
+  if (!Number.isFinite(requestedMs)) return 0;
+  return Math.max(0, Math.floor((nowMs - requestedMs) / (60 * 60 * 1000)));
+}
+
+export function buildMinecraftWhitelistReminderEmbed(
+  requests: MinecraftPendingRequestSummary[],
+  nowMs: number,
+): APIEmbed {
+  const embed = new EmbedBuilder()
+    .setTitle('⏰ ホワイトリスト審査待ちのリマインド')
+    .setColor(COLOR_ATTENTION)
+    .setDescription(
+      `申請から24時間以上が経過した審査待ちが ${requests.length} 件あります。審査をお願いします。`,
+    );
+  for (const request of requests) {
+    embed.addFields({
+      name: `🎮 ${request.minecraftUsername}`,
+      value: [
+        `Discord: ${request.discordUserId ? `<@${request.discordUserId}>` : request.discordUsername}`,
+        `経過時間: 約${minecraftPendingElapsedHours(request, nowMs)}時間`,
+        `申請日時: ${formatRequestedAt(request.requestedAt)}`,
+        `申請ID: ${request.id}`,
+      ].join('\n'),
+    });
+  }
+  embed.setFooter({
+    text: '審査は /mc whitelist の list、または Web 管理画面 (admin.ivrm.jp/minecraft) から行えます',
+  });
+  return embed.toJSON();
+}
+
+export interface MinecraftReminderChannelMessage {
+  author?: { id?: string };
+  authorId?: string;
+  createdTimestamp?: number;
+  content?: string;
+  embeds?: {
+    description?: string;
+    footer?: { text?: string };
+    fields?: { name?: string; value?: string }[];
+  }[];
+}
+
+const REMINDED_REQUEST_ID_PATTERN = /申請ID:\s*([A-Za-z0-9_-]+)/g;
+
+/**
+ * 直近 windowMs 以内に Bot 自身が投稿したリマインドに含まれる申請IDを集める。
+ * リマインド Embed の各フィールドに「申請ID: <id>」が入っていることが前提。
+ */
+export function collectRecentlyRemindedRequestIds(
+  messages: Iterable<MinecraftReminderChannelMessage>,
+  botUserId: string | null,
+  nowMs: number,
+  windowMs: number = MINECRAFT_WHITELIST_REMINDER_THRESHOLD_MS,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if (typeof message.createdTimestamp !== 'number') continue;
+    if (nowMs - message.createdTimestamp > windowMs) continue;
+    const authorId = message.author?.id ?? message.authorId;
+    if (botUserId && authorId !== botUserId) continue;
+    const texts: string[] = [];
+    if (message.content) texts.push(message.content);
+    for (const embed of message.embeds ?? []) {
+      if (embed.description) texts.push(embed.description);
+      if (embed.footer?.text) texts.push(embed.footer.text);
+      for (const field of embed.fields ?? []) {
+        if (field.name) texts.push(field.name);
+        if (field.value) texts.push(field.value);
+      }
+    }
+    for (const text of texts) {
+      for (const match of text.matchAll(REMINDED_REQUEST_ID_PATTERN)) {
+        if (match[1]) ids.add(match[1]);
+      }
+    }
+  }
+  return ids;
+}
+
+interface MinecraftReminderChannel {
+  isTextBased(): boolean;
+  send(options: {
+    content?: string;
+    embeds: APIEmbed[];
+    allowedMentions: { roles: string[] };
+  }): Promise<unknown>;
+  messages: {
+    fetch(options: { limit: number }): Promise<{
+      values(): Iterable<MinecraftReminderChannelMessage>;
+    }>;
+  };
+}
+
+function startWhitelistReminderWorker(context: MinecraftStatusContext): void {
+  stopWhitelistReminderWorker(context.guildId);
+  void runMinecraftWhitelistReminderCycle(context);
+  const timer = setInterval(() => {
+    void runMinecraftWhitelistReminderCycle(context);
+  }, WHITELIST_REMINDER_INTERVAL_MS);
+  timer.unref();
+  whitelistReminderTimers.set(context.guildId, timer);
+}
+
+function stopWhitelistReminderWorker(guildId: string): void {
+  const timer = whitelistReminderTimers.get(guildId);
+  if (timer) clearInterval(timer);
+  whitelistReminderTimers.delete(guildId);
+}
+
+/** 承認ロールの保持者 (メンバーキャッシュにある範囲) の Discord ID を集める */
+async function discoverWhitelistApproverIds(
+  context: MinecraftStatusContext,
+  config: MinecraftStatusConfig,
+): Promise<string[]> {
+  if (!context.client.guilds) return [];
+  try {
+    const guild = await context.client.guilds.fetch(context.guildId);
+    if (!guild) return [];
+    const ids: string[] = [];
+    for (const roleId of config.whitelistApproverRoleIds) {
+      const role = await guild.roles.fetch(roleId);
+      for (const memberId of role?.members?.keys() ?? []) {
+        if (typeof memberId === 'string' && !ids.includes(memberId)) ids.push(memberId);
+      }
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 審査待ち一覧を、運営者の ID を実行者として取得する。
+ * 候補は「承認ロールの保持者 (探索できた範囲)」→「操作で検証済みの ID」の順で試し、
+ * 最初に成功した ID を次回用に覚える。全て失敗したら null。
+ */
+async function fetchPendingForReminder(
+  context: MinecraftStatusContext,
+  api: MinecraftBotApiConfig,
+  config: MinecraftStatusConfig,
+): Promise<MinecraftPendingRequestSummary[] | null> {
+  const candidates: string[] = [];
+  for (const id of await discoverWhitelistApproverIds(context, config)) {
+    if (!candidates.includes(id)) candidates.push(id);
+  }
+  const remembered = whitelistReminderOperators.get(context.guildId);
+  if (remembered && !candidates.includes(remembered)) candidates.push(remembered);
+  for (const discordUserId of candidates.slice(0, WHITELIST_REMINDER_MAX_OPERATOR_CANDIDATES)) {
+    const result = await fetchPendingSummaries(api, {
+      discordUserId,
+      guildId: context.guildId,
+      approverRoleVerified: true,
+    });
+    if (result) {
+      whitelistReminderOperators.set(context.guildId, discordUserId);
+      return result;
+    }
+  }
+  return null;
+}
+
+export async function runMinecraftWhitelistReminderCycle(
+  context: MinecraftStatusContext,
+  nowMs: number = Date.now(),
+): Promise<void> {
+  const existing = whitelistReminderRuns.get(context.guildId);
+  if (existing) return existing;
+  const run = (async () => {
+    try {
+      const config = normalizeMinecraftStatusConfig(context.config);
+      if (!config.enabled || !config.whitelistOpsChannelId) return;
+      if (config.whitelistApproverRoleIds.length === 0) return;
+      const api = resolveMinecraftBotApiConfig(process.env);
+      if (!api) return;
+      const requests = await fetchPendingForReminder(context, api, config);
+      if (!requests) return;
+      const overdue = selectOverdueMinecraftRequests(requests, nowMs);
+      if (overdue.length === 0) return;
+      const fetched = await context.client.channels.fetch(config.whitelistOpsChannelId);
+      if (!fetched || !fetched.isTextBased()) return;
+      if ((fetched as { guildId?: string | null }).guildId !== context.guildId) return;
+      const channel = fetched as unknown as MinecraftReminderChannel;
+      const recent = await channel.messages.fetch({ limit: WHITELIST_REMINDER_SCAN_LIMIT });
+      const reminded = collectRecentlyRemindedRequestIds(
+        recent.values(),
+        context.client.user?.id ?? null,
+        nowMs,
+      );
+      const fresh = overdue.filter((request) => !reminded.has(request.id));
+      if (fresh.length === 0) return;
+      await channel.send({
+        content: config.whitelistApproverRoleIds.map((roleId) => `<@&${roleId}>`).join(' '),
+        embeds: [buildMinecraftWhitelistReminderEmbed(fresh, nowMs)],
+        allowedMentions: { roles: [...config.whitelistApproverRoleIds] },
+      });
+    } catch {
+      // リマインドの失敗でワーカーを落とさない (次周期で再試行する)
+    }
+  })();
+  whitelistReminderRuns.set(context.guildId, run);
+  try {
+    await run;
+  } finally {
+    whitelistReminderRuns.delete(context.guildId);
+  }
+}
+
 /** 承認・却下ボタンと却下モーダルの処理。ロール再検証と結果 DM を含む */
 export async function handleMinecraftWhitelistComponent(
   context: MinecraftStatusContext,
@@ -1941,6 +2212,8 @@ export async function handleMinecraftWhitelistComponent(
     return;
   }
   const base = { discordUserId: approverId, guildId, approverRoleVerified: true };
+  // 審査リマインド (#916) の実行者候補として、ロール確認済みの運営者を覚える
+  rememberMinecraftWhitelistOperator(guildId, approverId);
 
   if (parsed.action === 'reject') {
     if (!interaction.isButton()) return;
@@ -2164,6 +2437,8 @@ async function executeMinecraftWhitelist(
     guildId: interaction.guildId,
     approverRoleVerified: true,
   };
+  // 審査リマインド (#916) の実行者候補として、ロール確認済みの運営者を覚える
+  rememberMinecraftWhitelistOperator(interaction.guildId, discordUserId);
   // Bot API の応答待ちで応答期限（約3秒）を切らないよう、先に defer する
   await interaction.deferReply({ flags: EPHEMERAL_FLAG });
   const action = interaction.options.getString('action') ?? 'list';

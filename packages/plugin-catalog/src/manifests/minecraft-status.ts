@@ -142,6 +142,15 @@ export const minecraftStatusManifest: PluginManifest = {
           help: '/mc whitelist の承認・却下・再同期を実行できる専用ロールのIDを指定します。未設定の場合は誰も実行できません。',
         },
       },
+      whitelistOpsChannelId: {
+        type: 'string',
+        title: 'ホワイトリスト審査リマインドの通知先チャンネルID',
+        default: '',
+        'x-herta-ui': {
+          section: 'ホワイトリスト承認',
+          help: 'ホワイトリスト連携申請が24時間を超えて審査待ちのときに、リマインドを投稿するテキストチャンネルのIDを指定します。未設定の場合はリマインドしません。',
+        },
+      },
     },
     required: [
       'enabled',
@@ -152,6 +161,7 @@ export const minecraftStatusManifest: PluginManifest = {
       'reportChannelId',
       'announceEvents',
       'eventChannelId',
+      'whitelistOpsChannelId',
       'showServers',
       'showBackup',
       'staleAfterMinutes',
