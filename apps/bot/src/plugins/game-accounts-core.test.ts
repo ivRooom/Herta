@@ -12,6 +12,7 @@ import {
   buildGameAccountsErrorEmbed,
   buildLinkSuccessEmbed,
   buildListEmbed,
+  buildScoreCharacterEmbed,
   buildScoreEmbed,
   buildUnlinkCancelledEmbed,
   buildUnlinkConfirmEmbed,
@@ -28,6 +29,7 @@ import {
   scoreLabel,
   scorePieceLabel,
   scoreRollLegend,
+  scoreSwitcherCharacters,
 } from './game-accounts-core.js';
 import type { IvrmGameAccountsResult } from './game-accounts-ivrm.js';
 
@@ -476,5 +478,74 @@ describe('link / unlink / error embeds', () => {
     expect(embed.description).toContain(
       '鳴潮 はショーケース取得に未対応のため、スコアを表示できません',
     );
+  });
+});
+
+describe('score switcher (one character at a time)', () => {
+  function scored(
+    id: string,
+    name: string | null,
+    total: number,
+  ): ScoreResult['characters'][number] {
+    return { id, name, level: 80, artifactScore: { total, version: 1, perPiece: [] } };
+  }
+  function resultWith(characters: ScoreResult['characters']): ScoreResult {
+    return {
+      status: 'ok',
+      action: 'score',
+      gameCode: 'genshin',
+      uid: '812468719',
+      showcaseStatus: 'ok',
+      fetchedAt,
+      hasSnapshot: true,
+      characters,
+    };
+  }
+
+  it('keeps only scored characters, in showcase order', () => {
+    const result = resultWith([
+      scored('10000098', 'クロリンデ', 160.8),
+      { id: '10000061', name: '綺良々', level: 70, artifactScore: null },
+      scored('10000046', '胡桃', 74.5),
+    ]);
+    expect(scoreSwitcherCharacters(result).map((character) => character.id)).toEqual([
+      '10000098',
+      '10000046',
+    ]);
+  });
+
+  it('caps the switcher at six characters', () => {
+    const result = resultWith(
+      Array.from({ length: 8 }, (_, index) => scored(`1000000${index}`, `キャラ${index}`, 10)),
+    );
+    expect(scoreSwitcherCharacters(result)).toHaveLength(6);
+  });
+
+  it('builds an embed for exactly one character, with its switcher position', () => {
+    const result = resultWith([
+      scored('10000098', 'クロリンデ', 160.8),
+      scored('10000046', '胡桃', 74.5),
+      { id: '10000061', name: '綺良々', level: 70, artifactScore: null },
+    ]);
+    const embed = buildScoreCharacterEmbed(result, '10000046');
+    expect(embed?.title).toBe('🎮 原神の聖遺物スコア');
+    expect(embed?.fields).toHaveLength(1);
+    expect(embed?.fields?.[0]?.name).toBe('胡桃 Lv.80 ・ スコア 74.5');
+    expect(embed?.footer?.text).toContain('UID 812468719');
+    expect(embed?.footer?.text).toContain('凡例：');
+    expect(embed?.footer?.text).toContain('2 / 2');
+    expect(embedCharacterCount(embed!)).toBeLessThanOrEqual(MAX_EMBED_TOTAL_CHARS);
+  });
+
+  it('omits the position for a single scored character', () => {
+    const result = resultWith([scored('10000098', 'クロリンデ', 160.8)]);
+    const embed = buildScoreCharacterEmbed(result, '10000098');
+    expect(embed?.footer?.text).not.toContain('1 / 1');
+  });
+
+  it('returns null for an unknown character and without a snapshot', () => {
+    const result = resultWith([scored('10000098', 'クロリンデ', 160.8)]);
+    expect(buildScoreCharacterEmbed(result, '10000099')).toBeNull();
+    expect(buildScoreCharacterEmbed({ ...result, hasSnapshot: false }, '10000098')).toBeNull();
   });
 });

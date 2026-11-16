@@ -310,3 +310,155 @@ describe('private ivrm-web game accounts client', () => {
     });
   });
 });
+
+describe('card action (build-card PNG)', () => {
+  // A real 1x1 PNG, so the magic-byte check sees an actual PNG payload.
+  const pngBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+  it('sends characterId in the signed body', () => {
+    const id = '44444444-4444-4444-8444-444444444444',
+      stamp = '2026-11-16T00:00:00.000Z';
+    const key = createHmac('sha256', config.secret).update(contract.hmacPurpose).digest();
+    const request = buildGameAccountsRequest(
+      config,
+      guild,
+      user,
+      { action: 'card', gameCode: 'genshin', characterId: '10000098' },
+      id,
+      stamp,
+    );
+    const body = JSON.parse(request.init.body) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(
+      [...contract.request.required, 'gameCode', 'characterId'].sort(),
+    );
+    expect(body.characterId).toBe('10000098');
+    expect(request.init.headers['X-IVRM-Signature']).toBe(
+      createHmac('sha256', key)
+        .update(['POST', contract.path, stamp, id, request.init.body].join('\n'))
+        .digest('hex'),
+    );
+  });
+
+  it('parses a card result and decodes the PNG', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockJson(() => ({
+        gameCode: 'genshin',
+        uid: '812468719',
+        fetchedAt: '2026-11-15T14:43:29.060Z',
+        cards: [{ characterId: 10000098, name: 'クロリンデ', score: 160.8, pngBase64 }],
+      })),
+    );
+    const result = await callIvrmGameAccounts(
+      guild,
+      user,
+      { action: 'card', gameCode: 'genshin', characterId: '10000098' },
+      config,
+    );
+    expect(result).toMatchObject({ status: 'ok', action: 'card', uid: '812468719' });
+    if (result.status === 'ok' && result.action === 'card') {
+      expect(result.cards).toHaveLength(1);
+      expect(result.cards[0]?.characterId).toBe('10000098');
+      expect(result.cards[0]?.name).toBe('クロリンデ');
+      expect(result.cards[0]?.score).toBe(160.8);
+      expect(Buffer.isBuffer(result.cards[0]?.png)).toBe(true);
+      expect(result.cards[0]?.png.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    }
+  });
+
+  it('fails closed on a non-PNG or malformed card payload', async () => {
+    for (const pngBase64 of ['aGVsbG8gd29ybGQ=', 'not*base64*png', '']) {
+      vi.stubGlobal(
+        'fetch',
+        mockJson(() => ({
+          gameCode: 'genshin',
+          uid: '812468719',
+          fetchedAt: null,
+          cards: [{ characterId: '10000098', name: null, score: null, pngBase64 }],
+        })),
+      );
+      expect(
+        await callIvrmGameAccounts(
+          guild,
+          user,
+          { action: 'card', gameCode: 'genshin', characterId: '10000098' },
+          config,
+        ),
+      ).toEqual({ status: 'unavailable' });
+    }
+  });
+
+  it('maps card-specific errors to card-unavailable, keeping member errors distinct', async () => {
+    const cases: Array<[number, unknown, unknown]> = [
+      [404, { status: 'error', error: 'card_unavailable' }, { status: 'card-unavailable' }],
+      [404, { status: 'error', error: 'character_not_found' }, { status: 'card-unavailable' }],
+      [422, { status: 'error', error: 'card_not_supported' }, { status: 'card-unavailable' }],
+      [404, { status: 'error', error: 'member_not_linked' }, { status: 'not-linked' }],
+      [
+        404,
+        { status: 'error', error: 'game_account_not_found' },
+        { status: 'not-found', error: 'game_account_not_found' },
+      ],
+      [502, { status: 'error', error: 'card_render_failed' }, { status: 'unavailable' }],
+      [503, { status: 'error', error: 'card_renderer_unavailable' }, { status: 'unavailable' }],
+    ];
+    for (const [status, body, expected] of cases) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Response.json(body, { status })),
+      );
+      expect(
+        await callIvrmGameAccounts(
+          guild,
+          user,
+          { action: 'card', gameCode: 'genshin', characterId: '10000098' },
+          config,
+        ),
+      ).toEqual(expected);
+    }
+  });
+
+  it('accepts a card body above the score cap but rejects one above the card cap', async () => {
+    // ~100 KiB of valid PNG-prefixed base64: over the 64 KiB score cap,
+    // well under the card cap.
+    const medium = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(100_000, 1),
+    ]).toString('base64');
+    vi.stubGlobal(
+      'fetch',
+      mockJson(() => ({
+        gameCode: 'genshin',
+        uid: '812468719',
+        fetchedAt: null,
+        cards: [{ characterId: '10000098', name: null, score: null, pngBase64: medium }],
+      })),
+    );
+    const ok = await callIvrmGameAccounts(
+      guild,
+      user,
+      { action: 'card', gameCode: 'genshin', characterId: '10000098' },
+      config,
+    );
+    expect(ok).toMatchObject({ status: 'ok', action: 'card' });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response('x'.repeat(4 * 1024 * 1024 + 1), {
+            headers: { 'content-type': 'application/json' },
+          }),
+      ),
+    );
+    expect(
+      await callIvrmGameAccounts(
+        guild,
+        user,
+        { action: 'card', gameCode: 'genshin', characterId: '10000098' },
+        config,
+      ),
+    ).toEqual({ status: 'unavailable' });
+  });
+});

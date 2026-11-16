@@ -10,19 +10,41 @@ export const GAME_ACCOUNTS_PURPOSE = 'herta-game-accounts-v2';
  */
 const MAX_RESPONSE_BYTES = 65_536;
 
+/**
+ * Card responses carry one base64 PNG (1600x900, roughly 1.5 MiB raw), so
+ * the cap is sized for a single card plus JSON overhead. The client only
+ * ever requests one character's card at a time; anything larger than this
+ * is treated as an upstream malfunction, not parsed.
+ */
+const MAX_CARD_RESPONSE_BYTES = 4 * 1024 * 1024;
+
+const REQUEST_TIMEOUT_MS = 5_000;
+/** Rendering a card runs sharp plus CDN asset fetches on the API side. */
+const CARD_REQUEST_TIMEOUT_MS = 20_000;
+
 export interface GameAccountsConfig {
   apiBaseUrl: string;
   secret: string;
   guildId: string;
 }
 
-export type GameAccountsAction = 'link' | 'unlink' | 'list' | 'score';
+export type GameAccountsAction = 'link' | 'unlink' | 'list' | 'score' | 'card';
 
 export interface GameAccountsRequestInput {
   action: GameAccountsAction;
   gameCode?: string;
   uid?: string;
   region?: string;
+  /** Card action only: which character's build card to render. */
+  characterId?: string;
+}
+
+export interface GameCardPng {
+  characterId: string;
+  /** Japanese character name when the Web snapshot resolved one. */
+  name: string | null;
+  score: number | null;
+  png: Buffer;
 }
 
 export interface LinkedGameAccount {
@@ -78,6 +100,15 @@ export type IvrmGameAccountsResult =
       hasSnapshot: boolean;
       characters: ShowcaseCharacterScore[];
     }
+  | {
+      status: 'ok';
+      action: 'card';
+      gameCode: string;
+      uid: string;
+      fetchedAt: string | null;
+      cards: GameCardPng[];
+    }
+  | { status: 'card-unavailable' }
   | { status: 'not-linked' }
   | { status: 'not-found'; error: 'game_not_found' | 'game_account_not_found' }
   | { status: 'invalid-input'; field: string | null; message: string }
@@ -126,6 +157,7 @@ export function buildGameAccountsRequest(
   if (input.gameCode !== undefined) payload.gameCode = input.gameCode;
   if (input.uid !== undefined) payload.uid = input.uid;
   if (input.region !== undefined) payload.region = input.region;
+  if (input.characterId !== undefined) payload.characterId = input.characterId;
   const body = JSON.stringify(payload);
   const key = createHmac('sha256', config.secret).update(GAME_ACCOUNTS_PURPOSE).digest();
   const signature = createHmac('sha256', key)
@@ -193,6 +225,22 @@ function parseArtifactScore(value: unknown): ArtifactScore | null | undefined {
     perPiece.push({ cv: piece.cv, rolls });
   }
   return { total: value.total, perPiece, version: value.version };
+}
+
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/**
+ * Decodes a card PNG from base64, rejecting anything that is not a
+ * well-formed base64 string carrying an actual PNG. A malformed or
+ * non-PNG payload is an upstream malfunction, never an attachment.
+ */
+function decodePngBase64(value: string): Buffer | null {
+  if (value.length === 0 || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value))
+    return null;
+  const png = Buffer.from(value, 'base64');
+  if (png.byteLength <= PNG_MAGIC.length) return null;
+  if (!PNG_MAGIC.every((byte, index) => png[index] === byte)) return null;
+  return png;
 }
 
 function parseSuccessBody(
@@ -290,6 +338,42 @@ function parseSuccessBody(
         characters,
       };
     }
+    case 'card': {
+      if (
+        typeof value.gameCode !== 'string' ||
+        typeof value.uid !== 'string' ||
+        !isStringOrNull(value.fetchedAt) ||
+        !Array.isArray(value.cards)
+      )
+        return { status: 'unavailable' };
+      const cards: GameCardPng[] = [];
+      for (const card of value.cards) {
+        if (!isRecord(card)) return { status: 'unavailable' };
+        if (
+          !(typeof card.characterId === 'string' || isFiniteNumber(card.characterId)) ||
+          !isStringOrNull(card.name) ||
+          !(card.score === null || isFiniteNumber(card.score)) ||
+          typeof card.pngBase64 !== 'string'
+        )
+          return { status: 'unavailable' };
+        const png = decodePngBase64(card.pngBase64);
+        if (!png) return { status: 'unavailable' };
+        cards.push({
+          characterId: String(card.characterId),
+          name: card.name,
+          score: card.score,
+          png,
+        });
+      }
+      return {
+        status: 'ok',
+        action: 'card',
+        gameCode: value.gameCode,
+        uid: value.uid,
+        fetchedAt: value.fetchedAt,
+        cards,
+      };
+    }
   }
 }
 
@@ -323,8 +407,22 @@ async function readBoundedJson(
   }
 }
 
-function mapErrorResponse(status: number, value: unknown): IvrmGameAccountsResult {
+function mapErrorResponse(
+  status: number,
+  value: unknown,
+  input: GameAccountsRequestInput,
+): IvrmGameAccountsResult {
   const error = isRecord(value) && typeof value.error === 'string' ? value.error : null;
+  // Card-specific failures (no snapshot/build for the character, an
+  // unsupported game, a render failure) are not user-facing errors: the
+  // caller falls back to the text score view, so they share one status.
+  if (input.action === 'card') {
+    if (
+      (status === 404 && (error === 'card_unavailable' || error === 'character_not_found')) ||
+      (status === 422 && error === 'card_not_supported')
+    )
+      return { status: 'card-unavailable' };
+  }
   if (status === 404) {
     if (error === 'game_not_found' || error === 'game_account_not_found')
       return { status: 'not-found', error };
@@ -362,18 +460,22 @@ export async function callIvrmGameAccounts(
     requestId,
     new Date().toISOString(),
   );
+  const isCard = input.action === 'card';
   try {
     const response = await fetch(request.url, {
       ...request.init,
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(isCard ? CARD_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS),
       redirect: 'error',
       cache: 'no-store',
     });
     if (!response.ok) {
       const { value } = await readBoundedJson(response, 4096);
-      return mapErrorResponse(response.status, value);
+      return mapErrorResponse(response.status, value, input);
     }
-    const { parsed, value } = await readBoundedJson(response, MAX_RESPONSE_BYTES);
+    const { parsed, value } = await readBoundedJson(
+      response,
+      isCard ? MAX_CARD_RESPONSE_BYTES : MAX_RESPONSE_BYTES,
+    );
     if (!parsed) return { status: 'unavailable' };
     return parseSuccessBody(value, input, requestId, userId);
   } catch {
