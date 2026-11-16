@@ -37,9 +37,17 @@ describe('daily question card (#851, 1920x1080 chalkboard redesign)', () => {
     expect(svg).toContain('回答は下のボタンから。番号は選択肢と対応しています。');
   });
 
+  it('titles a rescue question 追加問題 instead of 今日の問題 (#917)', () => {
+    const svg = buildDailyQuestionCardSvg({ ...choice4, slot: 'rescue' });
+    expect(svg).toContain('追加問題');
+    expect(svg).not.toContain('今日の問題');
+    expect(svg).not.toContain('ボーナス問題');
+  });
+
   it('contains no emoji or pictograph characters anywhere', () => {
     const variants: DailyQuestionCardInput[] = [
       choice4,
+      { ...choice4, slot: 'rescue' },
       {
         ...choice4,
         result: {

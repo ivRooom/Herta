@@ -21,7 +21,7 @@ export interface DailyQuestionCardResult {
 }
 
 export interface DailyQuestionCardInput {
-  slot: 'daily' | 'bonus';
+  slot: 'daily' | 'bonus' | 'rescue';
   /** Overrides the slot-based title (e.g. 昨日の問題 for the #820 review). */
   heading?: string;
   prompt: string;
@@ -289,7 +289,9 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
   parts.push(
     text('HERTA / DAILY QUESTION', LEFT_X + 40, 170, 28, CHALK_BLUE, `${bold} letter-spacing="6"`),
   );
-  const title = input.heading ?? (input.slot === 'bonus' ? 'ボーナス問題' : '今日の問題');
+  const title =
+    input.heading ??
+    (input.slot === 'bonus' ? 'ボーナス問題' : input.slot === 'rescue' ? '追加問題' : '今日の問題');
   const titleX = LEFT_X + 52;
   parts.push(
     `<path d="${starPath(LEFT_X + 18, 238, 17)}" fill="none" stroke="${CHALK_YELLOW}" stroke-width="3" stroke-linejoin="round"/>`,

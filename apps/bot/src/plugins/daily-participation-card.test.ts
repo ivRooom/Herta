@@ -176,6 +176,26 @@ describe('question presentation (#851)', () => {
     expect(mocks.media).not.toHaveBeenCalled();
   });
 
+  it('renders the default PNG card for a rescue question with the 追加問題 header (#917)', async () => {
+    vi.stubEnv('DAILY_QUESTION_CARD_ENABLED', 'true');
+    mocks.status.mockResolvedValue({
+      ...f.status,
+      questions: [
+        { ...f.publicQuestion, id: 'q_rescue_today', slot: 'rescue', requiresClaim: false },
+      ],
+      responses: [],
+    });
+    const i = interaction('daily-participation:questions:2026-10-31');
+    await handleDailyParticipation(context(), i);
+    const payloads = questionPayloads(i);
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]!.files).toHaveLength(1);
+    expect(payloads[0]!.files![0]!.name).toBe('herta-daily-question.png');
+    expect(payloads[0]!.files![0]!.attachment.subarray(0, 2)).toEqual(Buffer.from([0x89, 0x50]));
+    expect(payloads[0]!.content).toContain('🆘 追加問題');
+    expect(payloads[0]!.content).not.toContain('🧠 今日の問題');
+  });
+
   it('overrides the default card with the author-provided question image', async () => {
     vi.stubEnv('DAILY_QUESTION_CARD_ENABLED', 'true');
     mocks.status.mockResolvedValue({ ...f.status, questions: [heroQuestion], responses: [] });
