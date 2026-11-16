@@ -36,7 +36,7 @@ export const publicDailyQuestion = z
   .object({
     id,
     dateJst: jstDate,
-    slot: z.enum(['daily', 'bonus']),
+    slot: z.enum(['daily', 'bonus', 'rescue']),
     categoryId: id,
     themeId: id,
     format: z.enum(['choice2', 'choice3', 'choice4', 'image_choice', 'audio_choice', 'free_text']),
@@ -116,8 +116,8 @@ export const participationStatusSchema = z
     todayJst: jstDate,
     bonusClaimed: z.boolean(),
     bonusReceipt: receiptSchema.nullable(),
-    questions: z.array(publicDailyQuestion).max(2),
-    responses: z.array(responseSchema).max(2),
+    questions: z.array(publicDailyQuestion).max(3),
+    responses: z.array(responseSchema).max(3),
   })
   .strict()
   .refine(
@@ -202,7 +202,7 @@ export const yesterdayReviewSchema = z
           })
           .strict(),
       )
-      .max(2),
+      .max(3),
   })
   .strict()
   .refine(
