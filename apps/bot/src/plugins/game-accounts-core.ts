@@ -276,18 +276,47 @@ function buildListField(account: GameAccountListEntry): GameEmbedField {
 export function buildListEmbed(
   result: Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'list' }>,
 ): GameEmbed {
+  const title = '🎮 登録済みのゲームアカウント';
   if (result.accounts.length === 0)
     return {
-      title: '🎮 登録済みのゲームアカウント',
+      title,
       description: `登録済みのゲームアカウントはありません。/game link で登録するか、${MEMBER_GAME_ACCOUNTS_URL} のマイページから登録してください。`,
       color: EMBED_COLOR_PRIMARY,
     };
-  return {
-    title: '🎮 登録済みのゲームアカウント',
-    description: '登録内容はWebのマイページと同期しています。',
-    color: EMBED_COLOR_PRIMARY,
-    fields: result.accounts.slice(0, MAX_EMBED_FIELDS).map(buildListField),
-  };
+  const description = '登録内容はWebのマイページと同期しています。';
+  // スコア用と同じく、Embed 全体の文字数予算 (6000) を追跡する。
+  // UID が極端に長い場合でも Discord に拒否されないようにするため。
+  const fields: GameEmbedField[] = [];
+  let usedChars = title.length + description.length;
+  let omitted = 0;
+  for (let index = 0; index < result.accounts.length; index += 1) {
+    const field = buildListField(result.accounts[index]!);
+    const remainingAfter = result.accounts.length - index - 1;
+    // 最後の1枠は「ほか N 件」フィールドのために空けておく。
+    const fillsLastSlot = fields.length + 1 >= MAX_EMBED_FIELDS && remainingAfter > 0;
+    if (
+      fillsLastSlot ||
+      usedChars + field.name.length + field.value.length > MAX_EMBED_TOTAL_CHARS
+    ) {
+      omitted = result.accounts.length - index;
+      break;
+    }
+    fields.push(field);
+    usedChars += field.name.length + field.value.length;
+  }
+  if (omitted > 0) {
+    const omissionField: GameEmbedField = {
+      name: `…ほか ${omitted} 件のアカウント`,
+      value: '表示しきれない分はWebのマイページで確認してください。',
+    };
+    if (
+      fields.length < MAX_EMBED_FIELDS &&
+      usedChars + omissionField.name.length + omissionField.value.length <= MAX_EMBED_TOTAL_CHARS
+    ) {
+      fields.push(omissionField);
+    }
+  }
+  return { title, description, color: EMBED_COLOR_PRIMARY, fields };
 }
 
 function buildCharacterScoreField(character: ShowcaseCharacterScore): GameEmbedField {

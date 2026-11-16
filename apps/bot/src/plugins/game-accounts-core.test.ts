@@ -127,6 +127,25 @@ describe('buildListEmbed', () => {
     expect(embed.fields?.[1]?.value).toContain('最終同期：未取得');
     expect(embed.fields?.[2]?.value).toContain('ショーケース未対応');
   });
+  it('keeps the total embed size within budget when UIDs are extremely long', () => {
+    const longUid = '1'.repeat(1020);
+    const result: ListResult = {
+      status: 'ok',
+      action: 'list',
+      accounts: Array.from({ length: 6 }, (_, index) => ({
+        gameCode: ['genshin', 'starrail', 'zzz', 'endfield', 'wuthering', 'nte'][index]!,
+        uid: longUid,
+        region: null,
+        createdAt: fetchedAt,
+        updatedAt: fetchedAt,
+        showcaseStatus: null,
+        showcaseFetchedAt: null,
+      })),
+    };
+    const embed = buildListEmbed(result);
+    expect(embedCharacterCount(embed)).toBeLessThanOrEqual(MAX_EMBED_TOTAL_CHARS);
+    expect(embed.fields?.at(-1)?.name).toContain('ほか');
+  });
 });
 
 describe('buildScoreEmbed', () => {
