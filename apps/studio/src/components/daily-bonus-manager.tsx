@@ -1,11 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import {
-  currentDailyBonusDate,
-  newDailyAnniversaryIdentity,
-  dailyBonusReferenceRate,
-} from '@/lib/daily-bonus-admin-input';
+import { currentDailyBonusDate, dailyBonusReferenceRate } from '@/lib/daily-bonus-admin-input';
 
 interface Announcement {
   target_date: string;
@@ -17,69 +13,13 @@ interface Announcement {
   eligible_captured_at: string | null;
   confirmed: number;
 }
-interface Event {
-  id: string;
-  title: string;
-  summary: string;
-  category: string;
-  month: number;
-  day: number;
-  base_year: number | null;
-  work_name: string;
-  character_name: string;
-  source_url: string;
-  source_checked_at: string;
-  approved: boolean;
-  public: boolean;
-  priority: number;
-  pinned_date: string | null;
-  anniversary_mode: string;
-}
-interface EventInput {
-  id: string;
-  title: string;
-  summary: string;
-  category: string;
-  month: number;
-  day: number;
-  baseYear: number | null;
-  workName: string;
-  characterName: string;
-  sourceUrl: string;
-  sourceCheckedAt: string;
-  approved: boolean;
-  public: boolean;
-  priority: number;
-  pinnedDate: string | null;
-  anniversaryMode: string;
-}
-const sample: EventInput = {
-  id: '',
-  title: '',
-  summary: '',
-  category: 'game',
-  month: 1,
-  day: 1,
-  baseYear: null,
-  workName: '',
-  characterName: '',
-  sourceUrl: 'https://',
-  sourceCheckedAt: '',
-  approved: false,
-  public: false,
-  priority: 0,
-  pinnedDate: null,
-  anniversaryMode: 'annual',
-};
 export function DailyBonusManager({ guildId }: { guildId: string }) {
   const [today, setToday] = useState('');
   const [data, setData] = useState<{
       announcements: Announcement[];
-      anniversaries: Event[];
     } | null>(null),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false),
-    [event, setEvent] = useState(sample);
+    [busy, setBusy] = useState(false);
   const endpoint = `/api/guilds/${guildId}/daily-bonus`;
   async function load() {
     const response = await fetch(endpoint, { cache: 'no-store' });
@@ -89,7 +29,6 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
   }
   useEffect(() => {
     let active = true;
-    setEvent({ ...sample, ...newDailyAnniversaryIdentity() });
     setToday(currentDailyBonusDate());
     const timer = window.setInterval(() => setToday(currentDailyBonusDate()), 30000);
     void fetch(endpoint, { cache: 'no-store' })
@@ -128,7 +67,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold">デイリーボーナス</h1>
-        <p>通知・配信履歴と、出典を確認した記念日を管理します。</p>
+        <p>通知・配信履歴を管理します。</p>
         <Link className="underline" href={`/dashboard/guilds/${guildId}/plugins/daily-bonus`}>
           配信チャンネル・ロール・通知設定を開く
         </Link>
@@ -200,165 +139,19 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
         )}
       </section>
       <section className="space-y-3">
-        <h2 className="text-xl">記念日と出典</h2>
-        <p>一次資料を確認し、承認・公開の両方を設定した記念日だけ掲載します。</p>
-        <ul>
-          {data?.anniversaries.map((e) => (
-            <li key={e.id}>
-              <button
-                onClick={() =>
-                  setEvent({
-                    id: e.id,
-                    title: e.title,
-                    summary: e.summary,
-                    category: e.category,
-                    month: e.month,
-                    day: e.day,
-                    baseYear: e.base_year,
-                    workName: e.work_name,
-                    characterName: e.character_name,
-                    sourceUrl: e.source_url,
-                    sourceCheckedAt: e.source_checked_at,
-                    approved: e.approved,
-                    public: e.public,
-                    priority: e.priority,
-                    pinnedDate: e.pinned_date,
-                    anniversaryMode: e.anniversary_mode,
-                  })
-                }
-              >
-                {e.month}/{e.day} {e.title}（{e.approved && e.public ? '公開' : '非公開'}）
-              </button>{' '}
-              <a href={e.source_url} target="_blank" rel="noreferrer">
-                出典を確認
-              </a>
-            </li>
-          ))}
-        </ul>
-        <form
-          className="grid gap-3 sm:grid-cols-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void mutate({ action: 'save-anniversary', event });
-          }}
+        <h2 className="text-xl">記念日（今日は何の日）</h2>
+        <p>
+          記念日の登録・審査・公開は Web の管理画面（Today-in-History）へ一本化されました。Studio
+          からの登録・編集はできません。
+        </p>
+        <a
+          className="underline"
+          href="https://admin.ivrm.jp/today-history"
+          target="_blank"
+          rel="noreferrer"
         >
-          {(
-            [
-              'id',
-              'title',
-              'summary',
-              'workName',
-              'characterName',
-              'sourceUrl',
-              'sourceCheckedAt',
-            ] as const
-          ).map((key) => (
-            <label key={key}>
-              {
-                {
-                  id: '管理ID',
-                  title: 'タイトル',
-                  summary: '概要',
-                  workName: '作品名',
-                  characterName: 'キャラクター名',
-                  sourceUrl: '出典URL',
-                  sourceCheckedAt: '出典確認日時',
-                }[key]
-              }
-              <input
-                className={`${field} block w-full`}
-                value={event[key]}
-                onChange={(e) => setEvent({ ...event, [key]: e.target.value })}
-              />
-            </label>
-          ))}
-          <label>
-            カテゴリ
-            <select
-              value={event.category}
-              onChange={(e) => setEvent({ ...event, category: e.target.value })}
-            >
-              {['character', 'game', 'anime', 'manga', 'general', 'community'].map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </select>
-          </label>
-          {(['month', 'day', 'priority'] as const).map((key) => (
-            <label key={key}>
-              {{ month: '月', day: '日', priority: '優先度' }[key]}
-              <input
-                className={`${field} block`}
-                type="number"
-                value={event[key]}
-                onChange={(e) => setEvent({ ...event, [key]: Number(e.target.value) })}
-              />
-            </label>
-          ))}
-          <label>
-            基準年
-            <input
-              className={field}
-              type="number"
-              value={event.baseYear ?? ''}
-              onChange={(e) =>
-                setEvent({ ...event, baseYear: e.target.value ? Number(e.target.value) : null })
-              }
-            />
-          </label>
-          <label>
-            固定掲載日
-            <input
-              className={field}
-              type="date"
-              value={event.pinnedDate ?? ''}
-              onChange={(e) => setEvent({ ...event, pinnedDate: e.target.value || null })}
-            />
-          </label>
-          <label>
-            周年計算
-            <select
-              value={event.anniversaryMode}
-              onChange={(e) => setEvent({ ...event, anniversaryMode: e.target.value })}
-            >
-              <option value="annual">毎年の記念日</option>
-              <option value="elapsed">基準年からの経過年</option>
-            </select>
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={event.approved}
-              onChange={(e) => setEvent({ ...event, approved: e.target.checked })}
-            />
-            出典を確認し承認
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={event.public}
-              onChange={(e) => setEvent({ ...event, public: e.target.checked })}
-            />
-            公開可
-          </label>
-          <button disabled={busy} className={field}>
-            保存
-          </button>
-          <button
-            type="button"
-            className={field}
-            onClick={() => setEvent({ ...sample, ...newDailyAnniversaryIdentity() })}
-          >
-            新規登録
-          </button>
-        </form>
-        <div className="rounded border border-white/20 p-4">
-          <h3>掲載内容プレビュー（ポイント付与なし）</h3>
-          <p>
-            {event.month}/{event.day} {event.title}
-          </p>
-          <p>{event.summary}</p>
-          <p>{event.sourceUrl}</p>
-        </div>
+          Web 管理画面で記念日を管理する
+        </a>
       </section>
     </div>
   );
