@@ -7,7 +7,7 @@
     "sourceRepository": "ivRooom/ivrm-contracts",
     "version": "2.0.0"
   },
-  "description": "Signed private game-account operations for the invoking Discord guild member: link/unlink a game UID in the member's ivrm-web game accounts (the same store the Web portal edits), read the stored Enka showcase summary including per-character artifact scores, render build-card PNGs from the stored snapshot, and read the stored HoYoLAB exploration progress. Actions: link, unlink, list, score, card, progress. No browser CORS; no-store on every response.",
+  "description": "Signed private game-account operations for the invoking Discord guild member: link/unlink a game UID in the member's ivrm-web game accounts (the same store the Web portal edits), read the stored Enka showcase summary including per-character artifact scores, render build-card PNGs from the stored snapshot, and read the stored HoYoLAB exploration progress. Actions: link, unlink, list, score, card, progress, ranking. No browser CORS; no-store on every response.",
   "errors": {
     "400": "invalid_request",
     "401": "invalid_signature",
@@ -19,7 +19,12 @@
       "card_unavailable",
       "character_not_found"
     ],
-    "422": ["invalid_input", "card_not_supported", "progress_not_supported"],
+    "422": [
+      "card_not_supported",
+      "invalid_input",
+      "invalid_ranking_query",
+      "progress_not_supported"
+    ],
     "502": "game_accounts_upstream_error",
     "503": "game_accounts_unavailable"
   },
@@ -42,12 +47,34 @@
   "path": "/v2/herta/game-accounts",
   "request": {
     "actions": {
-      "card": { "optional": ["characterId"], "required": ["gameCode"] },
-      "link": { "optional": ["region"], "required": ["gameCode", "uid"] },
-      "list": { "optional": [], "required": [] },
-      "progress": { "optional": [], "required": ["gameCode"] },
-      "score": { "optional": [], "required": ["gameCode"] },
-      "unlink": { "optional": [], "required": ["gameCode"] }
+      "card": {
+        "optional": ["characterId"],
+        "required": ["gameCode"]
+      },
+      "link": {
+        "optional": ["region"],
+        "required": ["gameCode", "uid"]
+      },
+      "list": {
+        "optional": [],
+        "required": []
+      },
+      "progress": {
+        "optional": [],
+        "required": ["gameCode"]
+      },
+      "ranking": {
+        "optional": ["axis", "characterId", "slot", "formula", "limit"],
+        "required": ["gameCode"]
+      },
+      "score": {
+        "optional": [],
+        "required": ["gameCode"]
+      },
+      "unlink": {
+        "optional": [],
+        "required": ["gameCode"]
+      }
     },
     "additionalProperties": false,
     "required": ["schemaVersion", "requestId", "guildId", "discordUserId", "action"],
@@ -65,7 +92,11 @@
     "503": []
   },
   "responseStatusCodes": ["200", "400", "401", "403", "404", "422", "502", "503"],
-  "security": [{ "hertaGameAccountsHmac": [] }],
+  "security": [
+    {
+      "hertaGameAccountsHmac": []
+    }
+  ],
   "securitySchemes": {
     "hertaGameAccountsHmac": {
       "description": "See operation x-ivrm-hmac for key derivation, canonical text and other signed headers.",
