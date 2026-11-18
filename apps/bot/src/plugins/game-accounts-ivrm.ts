@@ -28,7 +28,8 @@ export interface GameAccountsConfig {
   guildId: string;
 }
 
-export type GameAccountsAction = 'link' | 'unlink' | 'list' | 'score' | 'card' | 'progress';
+export type GameAccountsAction =
+  'link' | 'unlink' | 'list' | 'score' | 'card' | 'progress' | 'ranking';
 
 export interface GameAccountsRequestInput {
   action: GameAccountsAction;
@@ -37,6 +38,11 @@ export interface GameAccountsRequestInput {
   region?: string;
   /** Card action only: which character's build card to render. */
   characterId?: string;
+  /** Ranking action only (#1196 R3): axis / slot / formula / page size. */
+  axis?: string;
+  slot?: string;
+  formula?: string;
+  limit?: number;
 }
 
 export interface GameCardPng {
@@ -127,6 +133,28 @@ export interface HoyolabProgressSnapshot {
   endgame: HoyolabEndgameEntry[];
 }
 
+export type GameRankingAxis = 'character' | 'piece' | 'formula';
+export type GameRankingFormula = 'cv' | 'rolls';
+
+export interface GameRankingEntry {
+  rank: number;
+  /** Approved display name; the API never sends a UID or member id. */
+  memberName: string;
+  isSelf: boolean;
+  characterId: string;
+  characterNameJa: string | null;
+  score: number;
+  slot: string | null;
+  rollsTotal: number;
+  fetchedAt: string | null;
+}
+
+export interface GameRankingAvailableCharacter {
+  characterId: string;
+  characterNameJa: string | null;
+  memberCount: number;
+}
+
 export type IvrmGameAccountsResult =
   | { status: 'ok'; action: 'link'; account: LinkedGameAccount; showcase: LinkShowcaseState }
   | { status: 'ok'; action: 'unlink'; gameCode: string }
@@ -160,6 +188,22 @@ export type IvrmGameAccountsResult =
       succeededAt: string | null;
       hasProgress: boolean;
       progress: HoyolabProgressSnapshot | null;
+    }
+  | {
+      status: 'ok';
+      action: 'ranking';
+      gameCode: string;
+      axis: GameRankingAxis;
+      formula: GameRankingFormula;
+      characterId: string | null;
+      slot: string | null;
+      limit: number;
+      populationSize: number;
+      viewerInPopulation: boolean;
+      entries: GameRankingEntry[];
+      selfEntries: GameRankingEntry[];
+      availableCharacters: GameRankingAvailableCharacter[];
+      availableSlots: string[];
     }
   | { status: 'card-unavailable' }
   | { status: 'progress-unsupported' }
@@ -212,6 +256,10 @@ export function buildGameAccountsRequest(
   if (input.uid !== undefined) payload.uid = input.uid;
   if (input.region !== undefined) payload.region = input.region;
   if (input.characterId !== undefined) payload.characterId = input.characterId;
+  if (input.axis !== undefined) payload.axis = input.axis;
+  if (input.slot !== undefined) payload.slot = input.slot;
+  if (input.formula !== undefined) payload.formula = input.formula;
+  if (input.limit !== undefined) payload.limit = input.limit;
   const body = JSON.stringify(payload);
   const key = createHmac('sha256', config.secret).update(GAME_ACCOUNTS_PURPOSE).digest();
   const signature = createHmac('sha256', key)
@@ -387,6 +435,49 @@ function decodePngBase64(value: string): Buffer | null {
   return png;
 }
 
+const RANKING_AXES: readonly string[] = ['character', 'piece', 'formula'];
+const RANKING_FORMULAS: readonly string[] = ['cv', 'rolls'];
+
+function parseRankingEntry(value: unknown): GameRankingEntry | undefined {
+  if (!isRecord(value)) return undefined;
+  if (
+    typeof value.rank !== 'number' ||
+    !Number.isInteger(value.rank) ||
+    value.rank < 1 ||
+    typeof value.memberName !== 'string' ||
+    typeof value.isSelf !== 'boolean' ||
+    typeof value.characterId !== 'string' ||
+    !isStringOrNull(value.characterNameJa) ||
+    !isFiniteNumber(value.score) ||
+    !isStringOrNull(value.slot) ||
+    !isFiniteNumber(value.rollsTotal) ||
+    !isStringOrNull(value.fetchedAt)
+  )
+    return undefined;
+  return {
+    rank: value.rank,
+    memberName: value.memberName,
+    isSelf: value.isSelf,
+    characterId: value.characterId,
+    characterNameJa: value.characterNameJa,
+    score: value.score,
+    slot: value.slot,
+    rollsTotal: value.rollsTotal,
+    fetchedAt: value.fetchedAt,
+  };
+}
+
+function parseRankingEntries(value: unknown): GameRankingEntry[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries: GameRankingEntry[] = [];
+  for (const entry of value) {
+    const parsed = parseRankingEntry(entry);
+    if (!parsed) return undefined;
+    entries.push(parsed);
+  }
+  return entries;
+}
+
 function parseSuccessBody(
   value: unknown,
   input: GameAccountsRequestInput,
@@ -516,6 +607,62 @@ function parseSuccessBody(
         uid: value.uid,
         fetchedAt: value.fetchedAt,
         cards,
+      };
+    }
+    case 'ranking': {
+      if (
+        typeof value.gameCode !== 'string' ||
+        typeof value.axis !== 'string' ||
+        !RANKING_AXES.includes(value.axis) ||
+        typeof value.formula !== 'string' ||
+        !RANKING_FORMULAS.includes(value.formula) ||
+        !isStringOrNull(value.characterId) ||
+        !isStringOrNull(value.slot) ||
+        !isFiniteNumber(value.limit) ||
+        !isFiniteNumber(value.populationSize) ||
+        typeof value.viewerInPopulation !== 'boolean' ||
+        !Array.isArray(value.availableSlots)
+      )
+        return { status: 'unavailable' };
+      const entries = parseRankingEntries(value.entries);
+      const selfEntries = parseRankingEntries(value.selfEntries);
+      if (!entries || !selfEntries) return { status: 'unavailable' };
+      const availableCharacters: GameRankingAvailableCharacter[] = [];
+      if (!Array.isArray(value.availableCharacters)) return { status: 'unavailable' };
+      for (const character of value.availableCharacters) {
+        if (!isRecord(character)) return { status: 'unavailable' };
+        if (
+          typeof character.characterId !== 'string' ||
+          !isStringOrNull(character.characterNameJa) ||
+          !isFiniteNumber(character.memberCount)
+        )
+          return { status: 'unavailable' };
+        availableCharacters.push({
+          characterId: character.characterId,
+          characterNameJa: character.characterNameJa,
+          memberCount: character.memberCount,
+        });
+      }
+      const availableSlots: string[] = [];
+      for (const slot of value.availableSlots) {
+        if (typeof slot !== 'string') return { status: 'unavailable' };
+        availableSlots.push(slot);
+      }
+      return {
+        status: 'ok',
+        action: 'ranking',
+        gameCode: value.gameCode,
+        axis: value.axis as GameRankingAxis,
+        formula: value.formula as GameRankingFormula,
+        characterId: value.characterId,
+        slot: value.slot,
+        limit: value.limit,
+        populationSize: value.populationSize,
+        viewerInPopulation: value.viewerInPopulation,
+        entries,
+        selfEntries,
+        availableCharacters,
+        availableSlots,
       };
     }
     case 'progress': {

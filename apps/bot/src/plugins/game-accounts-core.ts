@@ -1,5 +1,9 @@
 import type {
   GameAccountListEntry,
+  GameAccountsRequestInput,
+  GameRankingAxis,
+  GameRankingEntry,
+  GameRankingFormula,
   HoyolabEndgameEntry,
   HoyolabProgressSnapshot,
   IvrmGameAccountsResult,
@@ -804,4 +808,213 @@ export function buildUnsupportedProgressEmbed(gameCode: string): GameEmbed {
     `${gameName(gameCode)} は探索度（HoYoLAB戦績）の表示に未対応です。対応しているのは原神と崩壊：スターレイルです。`,
     'neutral',
   );
+}
+
+// ---------------------------------------------------------------------------
+// サーバー内ランキング (#1196 R3)。Web のゲームタブと同じ母集団・軸・
+// 計算式を Discord でも見せる。切替はドロップダウン (プラグイン側の
+// StringSelectMenu) で行い、ここでは選択状態の型・Embed 生成・選択肢の
+// 純粋な組み立てだけを持つ。
+// ---------------------------------------------------------------------------
+
+export type RankingSelection = {
+  axis: GameRankingAxis;
+  characterId: string | null;
+  slot: string | null;
+  formula: GameRankingFormula;
+};
+
+export const RANKING_DEFAULT_SELECTION: RankingSelection = {
+  axis: 'character',
+  characterId: null,
+  slot: null,
+  formula: 'cv',
+};
+
+/** Discord 表示は上位10件まで (API の既定20件より絞る)。 */
+export const RANKING_DISPLAY_LIMIT = 10;
+
+export const RANKING_AXIS_OPTIONS: readonly {
+  value: GameRankingAxis;
+  label: string;
+  description: string;
+}[] = [
+  { value: 'character', label: 'キャラ別', description: 'キャラクターごとの合計スコア' },
+  { value: 'piece', label: '部位別', description: '聖遺物・遺物1部位ごとのスコア' },
+  { value: 'formula', label: '計算式別', description: '計算式を変えて集計' },
+];
+
+export const RANKING_FORMULA_OPTIONS: readonly {
+  value: GameRankingFormula;
+  label: string;
+  description: string;
+}[] = [
+  { value: 'cv', label: '会心値 (CV)', description: '会心率×2＋会心ダメージの合計' },
+  { value: 'rolls', label: '有効ロール数', description: '有効サブステに乗ったロール数の合計' },
+];
+
+export function rankingAxisLabel(axis: GameRankingAxis): string {
+  return RANKING_AXIS_OPTIONS.find((option) => option.value === axis)?.label ?? axis;
+}
+
+export function rankingFormulaLabel(formula: GameRankingFormula): string {
+  return RANKING_FORMULA_OPTIONS.find((option) => option.value === formula)?.label ?? formula;
+}
+
+/** API が返すスロットキー (ShowcaseBuildArtifactSlot) の表示名。 */
+const RANKING_SLOT_LABELS: Record<string, string> = {
+  flower: '花',
+  plume: '羽',
+  sands: '砂',
+  goblet: '杯',
+  circlet: '冠',
+  head: '頭',
+  hands: '腕',
+  body: '胴',
+  feet: '脚',
+  sphere: '球',
+  rope: '縄',
+  hand: '手部',
+  edc: 'EDC',
+  edc2: 'EDC 2',
+};
+
+export function rankingSlotLabel(slot: string): string {
+  const disc = /^disc([1-6])$/.exec(slot);
+  if (disc) return `ディスク${disc[1]}`;
+  // Slot keys come from the API payload: never resolve them through the
+  // prototype chain (a key like "constructor" must stay plain text).
+  return Object.hasOwn(RANKING_SLOT_LABELS, slot) ? (RANKING_SLOT_LABELS[slot] as string) : slot;
+}
+
+/**
+ * 選択状態から ranking アクションの入力を作る。軸に関係ない条件は
+ * 送らない (API 側でも軸ごとに意味が変わるため、混ざると表示と
+ * 実条件がずれる)。
+ */
+export function rankingRequestInput(
+  gameCode: string,
+  selection: RankingSelection,
+): GameAccountsRequestInput {
+  return {
+    action: 'ranking',
+    gameCode,
+    axis: selection.axis,
+    characterId: selection.axis === 'character' ? (selection.characterId ?? undefined) : undefined,
+    slot: selection.axis === 'piece' ? (selection.slot ?? undefined) : undefined,
+    formula: selection.axis === 'formula' ? selection.formula : undefined,
+    limit: RANKING_DISPLAY_LIMIT,
+  };
+}
+
+type RankingResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'ranking' }>;
+
+/** スコアの表示形。rolls 方式だけは回数表記、それ以外は小数1桁。 */
+export function formatRankingScore(result: RankingResult, entry: GameRankingEntry): string {
+  if (result.axis === 'formula' && result.formula === 'rolls') return `${entry.score} ロール`;
+  return entry.score.toFixed(1);
+}
+
+function rankingEntryLine(result: RankingResult, entry: GameRankingEntry): string {
+  const character = entry.characterNameJa ?? `キャラクターID ${entry.characterId}`;
+  const parts = [`${entry.rank}.`, entry.memberName, '—', character];
+  if (result.axis === 'piece' && entry.slot) parts.push(`(${rankingSlotLabel(entry.slot)})`);
+  parts.push('・', formatRankingScore(result, entry));
+  const line = parts.join(' ');
+  return entry.isSelf ? `**${line}**` : line;
+}
+
+export function buildRankingEmbed(result: RankingResult, selection: RankingSelection): GameEmbed {
+  const name = gameName(result.gameCode);
+  const title = truncate(`🏆 ${name}のサーバー内ランキング`, MAX_EMBED_TITLE_CHARS);
+  const axisParts = [rankingAxisLabel(selection.axis)];
+  if (selection.axis === 'formula') axisParts.push(rankingFormulaLabel(selection.formula));
+  if (selection.axis === 'character' && selection.characterId) {
+    const character = result.availableCharacters.find(
+      (entry) => entry.characterId === selection.characterId,
+    );
+    axisParts.push(character?.characterNameJa ?? `キャラクターID ${selection.characterId}`);
+  }
+  if (selection.axis === 'piece' && selection.slot)
+    axisParts.push(rankingSlotLabel(selection.slot));
+  const descriptionLines = [
+    `${axisParts.join(' ・ ')}`,
+    `対象は公開設定をONにしたメンバー ${result.populationSize} 人です。`,
+  ];
+  if (result.entries.length === 0) {
+    const emptyLines = [...descriptionLines, 'まだスコア付きのショーケースがありません。'];
+    if (!result.viewerInPopulation) {
+      emptyLines.push(
+        'ランキングに載るには、プロフィールの公開設定で「ゲームアカウント」をONにしてください。',
+      );
+    }
+    return {
+      title,
+      description: truncate(emptyLines.join('\n'), MAX_EMBED_DESCRIPTION_CHARS),
+      color: EMBED_COLOR_NEUTRAL,
+      footer: { text: 'Webのゲームタブでも同じランキングが見られます' },
+    };
+  }
+  const fields: GameEmbedField[] = [
+    {
+      name: '順位',
+      value: truncate(
+        result.entries.map((entry) => rankingEntryLine(result, entry)).join('\n'),
+        MAX_EMBED_FIELD_VALUE_CHARS,
+      ),
+    },
+  ];
+  if (result.selfEntries.length > 0) {
+    fields.push({
+      name: 'あなたの順位',
+      value: truncate(
+        result.selfEntries
+          .slice(0, 5)
+          .map((entry) => {
+            const piece =
+              result.axis === 'piece' && entry.slot ? ` (${rankingSlotLabel(entry.slot)})` : '';
+            return `${entry.rank} 位 — ${entry.characterNameJa ?? `キャラクターID ${entry.characterId}`}${piece} ・ ${formatRankingScore(result, entry)}`;
+          })
+          .join('\n'),
+        MAX_EMBED_FIELD_VALUE_CHARS,
+      ),
+    });
+  } else if (!result.viewerInPopulation) {
+    fields.push({
+      name: 'あなたの順位',
+      value:
+        'ランキング対象に含まれていません。プロフィールの公開設定で「ゲームアカウント」をONにすると載ります。',
+    });
+  }
+  return {
+    title,
+    description: truncate(descriptionLines.join('\n'), MAX_EMBED_DESCRIPTION_CHARS),
+    color: EMBED_COLOR_PRIMARY,
+    fields,
+    footer: { text: 'Webのゲームタブでも同じランキングが見られます' },
+  };
+}
+
+/** キャラ選択ドロップダウンの選択肢 (先頭は「全キャラ」)。上限25件に収める。 */
+export function rankingCharacterOptions(
+  result: RankingResult,
+): { value: string; label: string; description: string }[] {
+  const options = [{ value: '', label: '全キャラ', description: 'キャラクターで絞り込まない' }];
+  for (const character of result.availableCharacters.slice(0, 24)) {
+    options.push({
+      value: character.characterId,
+      label: character.characterNameJa ?? `キャラクターID ${character.characterId}`,
+      description: `${character.memberCount} 人が登録`,
+    });
+  }
+  return options;
+}
+
+/** 部位選択ドロップダウンの選択肢 (先頭は「全部位」)。 */
+export function rankingSlotOptions(result: RankingResult): { value: string; label: string }[] {
+  const options = [{ value: '', label: '全部位' }];
+  for (const slot of result.availableSlots.slice(0, 24)) {
+    options.push({ value: slot, label: rankingSlotLabel(slot) });
+  }
+  return options;
 }

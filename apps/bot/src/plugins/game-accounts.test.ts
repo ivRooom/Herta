@@ -4,8 +4,10 @@ import type { PrismaClient } from '@herta/db';
 import { gameAccountsManifest } from '@herta/plugin-catalog';
 import type { PluginRuntimeContext } from '@herta/plugin-sdk';
 import {
+  buildRankingView,
   buildScoreViewReply,
   gameAccountsPlugin,
+  handleGameAccountsRankingSelect,
   handleGameAccountsScoreButton,
   handleGameAccountsUnlinkButton,
 } from './game-accounts.js';
@@ -648,5 +650,269 @@ describe('game command reply visibility (#923)', () => {
     expect(embeds).toContain('エリア別探索度');
     expect(embeds).toContain('フォンテーヌ');
     expect(embeds).toContain('合計 2,270');
+  });
+});
+
+const rankingEntryFixture = {
+  rank: 1,
+  memberName: '他の人',
+  isSelf: false,
+  characterId: '10000046',
+  characterNameJa: '胡桃',
+  score: 180.2,
+  slot: null,
+  rollsTotal: 12,
+  fetchedAt: '2026-11-18T00:00:00.000Z',
+};
+const rankingResultFixture: IvrmGameAccountsResult = {
+  status: 'ok',
+  action: 'ranking',
+  gameCode: 'genshin',
+  axis: 'character',
+  formula: 'cv',
+  characterId: null,
+  slot: null,
+  limit: 10,
+  populationSize: 2,
+  viewerInPopulation: true,
+  entries: [rankingEntryFixture],
+  selfEntries: [],
+  availableCharacters: [
+    { characterId: '10000046', characterNameJa: '胡桃', memberCount: 1 },
+    { characterId: '10000098', characterNameJa: 'クロリンデ', memberCount: 1 },
+  ],
+  availableSlots: ['flower', 'plume', 'sands', 'goblet', 'circlet'],
+};
+const rankingSelectionFixture = {
+  axis: 'character' as const,
+  characterId: null,
+  slot: null,
+  formula: 'cv' as const,
+};
+
+describe('ranking view (initial /game ranking)', () => {
+  it('builds the axis dropdown plus the character filter dropdown', () => {
+    const view = buildRankingView(user, rankingResultFixture, rankingSelectionFixture);
+    expect(view.components).toHaveLength(2);
+    const axisRow = view.components[0]?.toJSON();
+    const charRow = view.components[1]?.toJSON();
+    expect(axisRow?.components[0]?.custom_id).toBe(
+      `game-accounts:ranking:axis:${user}:genshin:character:cv`,
+    );
+    expect(charRow?.components[0]?.custom_id).toBe(
+      `game-accounts:ranking:char:${user}:genshin:character:cv`,
+    );
+    const charOptions = (
+      charRow?.components[0] as { options: { value: string; default?: boolean }[] }
+    ).options;
+    expect(charOptions[0]?.value).toBe('__all__');
+    expect(charOptions[0]?.default).toBe(true);
+    expect(charOptions.map((option) => option.value)).toContain('10000046');
+  });
+
+  it('builds the formula dropdown under the formula axis', () => {
+    const view = buildRankingView(user, rankingResultFixture, {
+      axis: 'formula',
+      characterId: null,
+      slot: null,
+      formula: 'rolls',
+    });
+    expect(view.components).toHaveLength(2);
+    const formulaRow = view.components[1]?.toJSON();
+    expect(formulaRow?.components[0]?.custom_id).toBe(
+      `game-accounts:ranking:formula:${user}:genshin:formula:rolls`,
+    );
+  });
+});
+
+interface FakeRankingInteraction {
+  calls: Array<{ method: string; options?: Record<string, unknown> }>;
+  interaction: {
+    guildId: string | null;
+    user: { id: string };
+    customId?: string;
+    values?: string[];
+    isButton(): boolean;
+    isStringSelectMenu(): boolean;
+    reply(options: { content: string; flags: number }): Promise<unknown>;
+    deferUpdate(): Promise<unknown>;
+    followUp(options: { content: string; flags: number }): Promise<unknown>;
+    editReply(options: { embeds?: unknown; components?: unknown }): Promise<unknown>;
+  };
+}
+
+function makeRankingInteraction(
+  customId: string,
+  values: string[],
+  presserId: string,
+  timeline: string[],
+): FakeRankingInteraction {
+  const calls: FakeRankingInteraction['calls'] = [];
+  const interaction: FakeRankingInteraction['interaction'] = {
+    guildId: guild,
+    user: { id: presserId },
+    customId,
+    values,
+    isButton: () => false,
+    isStringSelectMenu: () => true,
+    async reply(options) {
+      timeline.push('reply');
+      calls.push({ method: 'reply', options });
+    },
+    async deferUpdate() {
+      timeline.push('deferUpdate');
+      calls.push({ method: 'deferUpdate' });
+    },
+    async followUp(options) {
+      timeline.push('followUp');
+      calls.push({ method: 'followUp', options });
+    },
+    async editReply(options) {
+      timeline.push('editReply');
+      calls.push({ method: 'editReply', options });
+    },
+  };
+  return { calls, interaction };
+}
+
+describe('game accounts ranking dropdowns', () => {
+  it('re-reads the ranking for the view owner when anyone switches the axis', async () => {
+    const timeline: string[] = [];
+    const api = vi.fn(async () => rankingResultFixture) as unknown as Api;
+    const fake = makeRankingInteraction(
+      `game-accounts:ranking:axis:${user}:genshin:character:cv`,
+      ['piece'],
+      '999999999999999999',
+      timeline,
+    );
+    await handleGameAccountsRankingSelect(makeContext(), fake.interaction, api);
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'ranking',
+      gameCode: 'genshin',
+      axis: 'piece',
+      limit: 10,
+    });
+    expect(timeline).toEqual(['deferUpdate', 'editReply']);
+    const edit = fake.calls.find((call) => call.method === 'editReply');
+    expect(edit?.options?.embeds).toHaveLength(1);
+  });
+
+  it('applies a character filter from the dropdown', async () => {
+    const timeline: string[] = [];
+    const api = vi.fn(async () => rankingResultFixture) as unknown as Api;
+    const fake = makeRankingInteraction(
+      `game-accounts:ranking:char:${user}:genshin:character:cv`,
+      ['10000046'],
+      user,
+      timeline,
+    );
+    await handleGameAccountsRankingSelect(makeContext(), fake.interaction, api);
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'ranking',
+      gameCode: 'genshin',
+      axis: 'character',
+      characterId: '10000046',
+      limit: 10,
+    });
+  });
+
+  it('rejects a second switch while one is in flight', async () => {
+    const timeline: string[] = [];
+    const gate = deferred<IvrmGameAccountsResult>();
+    const api = vi.fn(() => gate.promise) as unknown as Api;
+    const first = makeRankingInteraction(
+      `game-accounts:ranking:axis:${user}:genshin:character:cv`,
+      ['formula'],
+      user,
+      timeline,
+    );
+    const second = makeRankingInteraction(
+      `game-accounts:ranking:axis:${user}:genshin:character:cv`,
+      ['piece'],
+      user,
+      timeline,
+    );
+    const firstPromise = handleGameAccountsRankingSelect(makeContext(), first.interaction, api);
+    await handleGameAccountsRankingSelect(makeContext(), second.interaction, api);
+    const reply = second.calls.find((call) => call.method === 'reply');
+    expect(reply?.options?.content).toContain('切り替え中');
+    gate.resolve(rankingResultFixture);
+    await firstPromise;
+  });
+
+  it('ignores malformed custom ids', async () => {
+    const timeline: string[] = [];
+    const api = vi.fn(async () => rankingResultFixture) as unknown as Api;
+    const fake = makeRankingInteraction(
+      'game-accounts:ranking:axis:bad',
+      ['piece'],
+      user,
+      timeline,
+    );
+    await handleGameAccountsRankingSelect(makeContext(), fake.interaction, api);
+    expect(api).not.toHaveBeenCalled();
+    expect(fake.calls).toEqual([]);
+  });
+
+  it('resets the formula to the default when the axis changes', async () => {
+    const timeline: string[] = [];
+    const api = vi.fn(async () => rankingResultFixture) as unknown as Api;
+    const fake = makeRankingInteraction(
+      `game-accounts:ranking:axis:${user}:genshin:formula:rolls`,
+      ['character'],
+      user,
+      timeline,
+    );
+    await handleGameAccountsRankingSelect(makeContext(), fake.interaction, api);
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'ranking',
+      gameCode: 'genshin',
+      axis: 'character',
+      limit: 10,
+    });
+    const edit = fake.calls.find((call) => call.method === 'editReply');
+    const components = edit?.options?.components as { toJSON(): unknown }[];
+    const axisRow = components[0]?.toJSON() as { components: { custom_id: string }[] };
+    expect(axisRow.components[0]?.custom_id).toBe(
+      `game-accounts:ranking:axis:${user}:genshin:character:cv`,
+    );
+  });
+
+  it('keeps the public view untouched and notifies only the presser when a switch fails', async () => {
+    const timeline: string[] = [];
+    const api = vi.fn(async () => {
+      throw new Error('down');
+    }) as unknown as Api;
+    const fake = makeRankingInteraction(
+      `game-accounts:ranking:axis:${user}:genshin:character:cv`,
+      ['piece'],
+      user,
+      timeline,
+    );
+    await handleGameAccountsRankingSelect(makeContext(), fake.interaction, api);
+    expect(timeline).toEqual(['deferUpdate', 'followUp']);
+    expect(fake.calls.find((call) => call.method === 'editReply')).toBeUndefined();
+    const followUp = fake.calls.find((call) => call.method === 'followUp');
+    expect(followUp?.options?.flags).toBe(64);
+  });
+
+  it('truncates dropdown labels longer than 100 characters', () => {
+    const longName = 'あ'.repeat(101);
+    const view = buildRankingView(
+      user,
+      {
+        ...rankingResultFixture,
+        availableCharacters: [
+          { characterId: '10000046', characterNameJa: longName, memberCount: 1 },
+        ],
+      },
+      rankingSelectionFixture,
+    );
+    const charRow = view.components[1]?.toJSON();
+    const options = (charRow?.components[0] as { options: { label: string; value: string }[] })
+      .options;
+    const longOption = options.find((option) => option.value === '10000046');
+    expect(longOption?.label.length).toBe(100);
+    expect(longOption?.label.endsWith('…')).toBe(true);
   });
 });

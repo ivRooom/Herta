@@ -95,6 +95,30 @@ export const gameAccountsManifest: PluginManifest = {
             },
           ],
         },
+        {
+          name: 'ranking',
+          description: 'サーバー内メンバーの聖遺物・遺物スコアランキングを表示します',
+          options: [
+            {
+              name: 'game',
+              description: 'ゲームタイトル',
+              type: 'string',
+              required: true,
+              choices: gameChoices,
+            },
+            {
+              name: 'axis',
+              description: 'ランキングの種類（表示後にドロップダウンでも切り替えられます）',
+              type: 'string',
+              required: false,
+              choices: [
+                { name: 'キャラ別', value: 'character' },
+                { name: '部位別', value: 'piece' },
+                { name: '計算式別', value: 'formula' },
+              ],
+            },
+          ],
+        },
       ],
     },
   ],

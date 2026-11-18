@@ -35,6 +35,10 @@ import {
   scorePieceLabel,
   scoreRollLegend,
   scoreSwitcherCharacters,
+  RANKING_DEFAULT_SELECTION,
+  buildRankingEmbed,
+  rankingRequestInput,
+  rankingSlotLabel,
 } from './game-accounts-core.js';
 import type { HoyolabProgressSnapshot, IvrmGameAccountsResult } from './game-accounts-ivrm.js';
 
@@ -775,5 +779,194 @@ describe('buildProgressEmbed', () => {
     expect(embed.fields?.filter((field) => field.name.startsWith('エリア別探索度'))).toHaveLength(
       4,
     );
+  });
+});
+
+const rankingEntry = {
+  rank: 1,
+  memberName: '他の人',
+  isSelf: false,
+  characterId: '10000046',
+  characterNameJa: '胡桃',
+  score: 180.2,
+  slot: null,
+  rollsTotal: 12,
+  fetchedAt: '2026-11-18T00:00:00.000Z',
+};
+const rankingSelfEntry = {
+  ...rankingEntry,
+  rank: 2,
+  memberName: '自分',
+  isSelf: true,
+  characterId: '10000098',
+  characterNameJa: 'クロリンデ',
+  score: 160.8,
+  rollsTotal: 9,
+};
+const rankingResult: Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'ranking' }> = {
+  status: 'ok',
+  action: 'ranking',
+  gameCode: 'genshin',
+  axis: 'character',
+  formula: 'cv',
+  characterId: null,
+  slot: null,
+  limit: 10,
+  populationSize: 2,
+  viewerInPopulation: true,
+  entries: [rankingEntry, rankingSelfEntry],
+  selfEntries: [rankingSelfEntry],
+  availableCharacters: [
+    { characterId: '10000046', characterNameJa: '胡桃', memberCount: 1 },
+    { characterId: '10000098', characterNameJa: 'クロリンデ', memberCount: 1 },
+  ],
+  availableSlots: ['flower', 'plume', 'sands', 'goblet', 'circlet'],
+};
+
+describe('buildRankingEmbed (#1196 R3)', () => {
+  it('lists entries in rank order, bolds the viewer and adds their ranks', () => {
+    const embed = buildRankingEmbed(rankingResult, RANKING_DEFAULT_SELECTION);
+    expect(embed.title).toContain('サーバー内ランキング');
+    expect(embed.description).toContain('公開設定をONにしたメンバー 2 人');
+    const lines = embed.fields?.[0]?.value.split('\n') ?? [];
+    expect(lines[0]).toContain('1.');
+    expect(lines[0]).toContain('胡桃');
+    expect(lines[0]).toContain('180.2');
+    expect(lines[1]).toContain('**');
+    expect(lines[1]).toContain('クロリンデ');
+    expect(embed.fields?.[1]?.name).toBe('あなたの順位');
+    expect(embed.fields?.[1]?.value).toContain('2 位');
+  });
+
+  it('guides a viewer who is not in the population', () => {
+    const embed = buildRankingEmbed(
+      { ...rankingResult, viewerInPopulation: false, selfEntries: [] },
+      RANKING_DEFAULT_SELECTION,
+    );
+    expect(embed.fields?.[1]?.value).toContain('ランキング対象に含まれていません');
+  });
+
+  it('shows a neutral empty embed when nobody has a score yet', () => {
+    const embed = buildRankingEmbed(
+      { ...rankingResult, entries: [], selfEntries: [], populationSize: 0 },
+      RANKING_DEFAULT_SELECTION,
+    );
+    expect(embed.color).toBe(EMBED_COLOR_NEUTRAL);
+    expect(embed.description).toContain('まだスコア付きのショーケースがありません');
+  });
+
+  it('formats the rolls formula as a count and labels piece slots', () => {
+    // The API returns the rolls total in `score` for the rolls formula.
+    const rolls = buildRankingEmbed(
+      {
+        ...rankingResult,
+        axis: 'formula',
+        formula: 'rolls',
+        entries: [{ ...rankingEntry, score: 12 }],
+        selfEntries: [],
+      },
+      { axis: 'formula', characterId: null, slot: null, formula: 'rolls' },
+    );
+    expect(rolls.fields?.[0]?.value).toContain('12 ロール');
+    const piece = buildRankingEmbed(
+      {
+        ...rankingResult,
+        axis: 'piece',
+        entries: [{ ...rankingEntry, slot: 'flower' }],
+        selfEntries: [],
+      },
+      { axis: 'piece', characterId: null, slot: 'flower', formula: 'cv' },
+    );
+    expect(piece.fields?.[0]?.value).toContain('(花)');
+    expect(piece.description).toContain('花');
+  });
+});
+
+describe('ranking helpers (#1196 R3)', () => {
+  it('sends only the condition that belongs to the axis', () => {
+    expect(
+      rankingRequestInput('genshin', {
+        axis: 'character',
+        characterId: '10000098',
+        slot: 'flower',
+        formula: 'rolls',
+      }),
+    ).toEqual({
+      action: 'ranking',
+      gameCode: 'genshin',
+      axis: 'character',
+      characterId: '10000098',
+      limit: 10,
+    });
+    expect(
+      rankingRequestInput('genshin', {
+        axis: 'piece',
+        characterId: '10000098',
+        slot: 'sands',
+        formula: 'rolls',
+      }),
+    ).toEqual({ action: 'ranking', gameCode: 'genshin', axis: 'piece', slot: 'sands', limit: 10 });
+    expect(
+      rankingRequestInput('genshin', {
+        axis: 'formula',
+        characterId: null,
+        slot: null,
+        formula: 'rolls',
+      }),
+    ).toEqual({
+      action: 'ranking',
+      gameCode: 'genshin',
+      axis: 'formula',
+      formula: 'rolls',
+      limit: 10,
+    });
+  });
+
+  it('labels slots including ZZZ discs and unknown keys', () => {
+    expect(rankingSlotLabel('flower')).toBe('花');
+    expect(rankingSlotLabel('rope')).toBe('縄');
+    expect(rankingSlotLabel('disc3')).toBe('ディスク3');
+    expect(rankingSlotLabel('mystery')).toBe('mystery');
+    // Prototype keys must never resolve through the prototype chain.
+    expect(rankingSlotLabel('constructor')).toBe('constructor');
+    expect(rankingSlotLabel('toString')).toBe('toString');
+  });
+
+  it('adds the opt-in guidance to the empty state for viewers outside the population', () => {
+    const embed = buildRankingEmbed(
+      {
+        ...rankingResult,
+        entries: [],
+        selfEntries: [],
+        populationSize: 0,
+        viewerInPopulation: false,
+      },
+      RANKING_DEFAULT_SELECTION,
+    );
+    expect(embed.description).toContain('まだスコア付きのショーケースがありません');
+    expect(embed.description).toContain('「ゲームアカウント」をON');
+    const included = buildRankingEmbed(
+      {
+        ...rankingResult,
+        entries: [],
+        selfEntries: [],
+        populationSize: 0,
+        viewerInPopulation: true,
+      },
+      RANKING_DEFAULT_SELECTION,
+    );
+    expect(included.description).not.toContain('「ゲームアカウント」をON');
+  });
+
+  it('labels the piece in personal placements on the piece axis', () => {
+    const embed = buildRankingEmbed(
+      {
+        ...rankingResult,
+        axis: 'piece',
+        selfEntries: [{ ...rankingEntry, isSelf: true, slot: 'sands' }],
+      },
+      { axis: 'piece', characterId: null, slot: null, formula: 'cv' },
+    );
+    expect(embed.fields?.[1]?.value).toContain('(砂)');
   });
 });

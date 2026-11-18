@@ -677,3 +677,108 @@ describe('progress action (HoYoLAB exploration)', () => {
     }
   });
 });
+
+describe('ranking action (#1196 R3)', () => {
+  const rankingPayload = {
+    gameCode: 'genshin',
+    axis: 'character',
+    formula: 'cv',
+    characterId: null,
+    slot: null,
+    limit: 10,
+    populationSize: 1,
+    viewerInPopulation: true,
+    entries: [
+      {
+        rank: 1,
+        memberName: '自分',
+        isSelf: true,
+        characterId: '10000098',
+        characterNameJa: 'クロリンデ',
+        score: 160.8,
+        slot: null,
+        rollsTotal: 9,
+        fetchedAt: '2026-11-18T00:00:00.000Z',
+      },
+    ],
+    selfEntries: [],
+    availableCharacters: [
+      { characterId: '10000098', characterNameJa: 'クロリンデ', memberCount: 1 },
+    ],
+    availableSlots: ['flower'],
+  };
+
+  it('sends only the contract keys for a ranking request', () => {
+    const id = '44444444-4444-4444-8444-444444444444';
+    const stamp = '2026-11-19T00:00:00.000Z';
+    const request = buildGameAccountsRequest(
+      config,
+      guild,
+      user,
+      { action: 'ranking', gameCode: 'genshin', axis: 'character', limit: 10 },
+      id,
+      stamp,
+    );
+    const actionContract = contract.request.actions.ranking;
+    // The keys this client sends must be allowed by the bundle: assert
+    // membership instead of only comparing against a hardcoded list, so
+    // dropping a key from the contract fails here too.
+    expect(actionContract.optional).toEqual(expect.arrayContaining(['axis', 'limit']));
+    const expectedKeys = [
+      ...contract.request.required,
+      ...actionContract.required,
+      'axis',
+      'limit',
+    ].sort();
+    expect(Object.keys(JSON.parse(request.init.body)).sort()).toEqual(expectedKeys);
+  });
+
+  it('parses a ranking result', async () => {
+    const fetch = mockJson(() => rankingPayload);
+    vi.stubGlobal('fetch', fetch);
+    expect(
+      await callIvrmGameAccounts(
+        guild,
+        user,
+        { action: 'ranking', gameCode: 'genshin', axis: 'character', limit: 10 },
+        config,
+      ),
+    ).toEqual({ status: 'ok', action: 'ranking', ...rankingPayload });
+  });
+
+  it('fails closed when an entry is malformed', async () => {
+    const fetch = mockJson(() => ({
+      ...rankingPayload,
+      entries: [{ ...rankingPayload.entries[0], score: 'high' }],
+    }));
+    vi.stubGlobal('fetch', fetch);
+    expect(
+      await callIvrmGameAccounts(guild, user, { action: 'ranking', gameCode: 'genshin' }, config),
+    ).toEqual({ status: 'unavailable' });
+  });
+
+  it('fails closed when a rank is not a positive integer', async () => {
+    for (const rank of [-1, 0, 1.5]) {
+      const fetch = mockJson(() => ({
+        ...rankingPayload,
+        entries: [{ ...rankingPayload.entries[0], rank }],
+      }));
+      vi.stubGlobal('fetch', fetch);
+      expect(
+        await callIvrmGameAccounts(guild, user, { action: 'ranking', gameCode: 'genshin' }, config),
+      ).toEqual({ status: 'unavailable' });
+    }
+  });
+
+  it('maps an invalid ranking query to invalid-input', async () => {
+    const fetch = mockJson(() => ({ error: 'invalid_ranking_query' }), 422);
+    vi.stubGlobal('fetch', fetch);
+    const result = await callIvrmGameAccounts(
+      guild,
+      user,
+      { action: 'ranking', gameCode: 'genshin', axis: 'bogus' },
+      config,
+    );
+    expect(result.status).toBe('invalid-input');
+  });
+});
