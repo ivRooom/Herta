@@ -42,7 +42,7 @@ import {
 } from './daily-quiz-settings.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
-import { dailyBonusActionRow, MEMBER_DAILY_URL } from './daily-bonus-buttons.js';
+import { dailyBonusActionRow } from './daily-bonus-buttons.js';
 import {
   dailySupportActionRow,
   dailySupportFailureClass,
@@ -62,6 +62,14 @@ interface Config {
   messageTemplate: string;
 }
 type Context = PluginRuntimeContext<Config, Client, PrismaClient>;
+/**
+ * Canonical Member Portal daily page, linked from the announcement
+ * embed title. This URL is a fixed system value: it must not become
+ * editable through Studio/Composer settings, so an announcement can
+ * never be turned into an arbitrary external link.
+ */
+const MEMBER_DAILY_URL = 'https://member.ivrm.jp/participation';
+
 const timers = new Map<string, NodeJS.Timeout>();
 const running = new Set<string>();
 const generations = new Map<string, number>();
