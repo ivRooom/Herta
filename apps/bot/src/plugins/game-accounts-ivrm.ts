@@ -441,7 +441,9 @@ const RANKING_FORMULAS: readonly string[] = ['cv', 'rolls'];
 function parseRankingEntry(value: unknown): GameRankingEntry | undefined {
   if (!isRecord(value)) return undefined;
   if (
-    !isFiniteNumber(value.rank) ||
+    typeof value.rank !== 'number' ||
+    !Number.isInteger(value.rank) ||
+    value.rank < 1 ||
     typeof value.memberName !== 'string' ||
     typeof value.isSelf !== 'boolean' ||
     typeof value.characterId !== 'string' ||

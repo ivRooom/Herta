@@ -448,6 +448,7 @@ interface GameSelectInteraction {
   isStringSelectMenu?(): boolean;
   reply(options: { content: string; flags: number }): Promise<unknown>;
   deferUpdate(): Promise<unknown>;
+  followUp(options: { content: string; flags: number }): Promise<unknown>;
   editReply(options: {
     embeds?: GameEmbed[];
     components: ActionRowBuilder<StringSelectMenuBuilder>[];
@@ -465,8 +466,9 @@ const pendingRankingSwitch = new Set<string>();
  * the kind being changed, the view owner, the game, and the axis /
  * formula pair. The axis-specific filter (character / slot) is NOT
  * carried: each axis has exactly one filter kind, so switching the
- * axis resets the filter, and a filter select only ever appears under
- * its own axis. That keeps the id short and the state unambiguous.
+ * axis resets the filter — and the formula too, since it only has
+ * meaning under the formula axis. That keeps the id short and the
+ * state unambiguous.
  */
 function buildRankingCustomId(
   kind: RankingSelectKind,
@@ -515,11 +517,18 @@ function rankingSelectRow(
     .setPlaceholder(placeholder)
     .addOptions(
       options.map((option) => {
+        // Discord caps option labels and descriptions at 100 characters;
+        // the values (ids and keys) stay untouched.
         const builder = new StringSelectMenuOptionBuilder()
-          .setLabel(option.label)
+          .setLabel(option.label.length > 100 ? `${option.label.slice(0, 99)}…` : option.label)
           .setValue(option.value === '' ? '__all__' : option.value)
           .setDefault(option.value === selectedValue);
-        if (option.description) builder.setDescription(option.description);
+        if (option.description)
+          builder.setDescription(
+            option.description.length > 100
+              ? `${option.description.slice(0, 99)}…`
+              : option.description,
+          );
         return builder;
       }),
     );
@@ -616,7 +625,9 @@ function nextRankingSelection(
         axis: value as GameRankingAxis,
         characterId: null,
         slot: null,
-        formula: parsed.formula,
+        // The formula only has meaning under the formula axis, so an
+        // axis switch resets it together with the filter.
+        formula: RANKING_DEFAULT_SELECTION.formula,
       };
     case 'char':
       if (value !== '' && !/^[A-Za-z0-9_-]{1,64}$/.test(value)) return null;
@@ -689,20 +700,34 @@ export async function handleGameAccountsRankingSelect(
   pendingRankingSwitch.add(pendingKey);
   try {
     await interaction.deferUpdate();
+  } catch (error) {
+    // The acknowledgement itself failed: there is no safe surface left
+    // to report on, and the shared message must stay untouched.
+    context.logger.error(
+      { error: error instanceof Error ? error.name : 'UnknownError' },
+      'Game accounts ranking switch acknowledgement failed',
+    );
+    pendingRankingSwitch.delete(pendingKey);
+    return;
+  }
+  try {
     const result = await callApi(
       interaction.guildId,
       parsed.userId,
       rankingRequestInput(parsed.gameCode, selection),
     );
     if (result.status !== 'ok' || result.action !== 'ranking') {
-      await interaction.editReply({
-        embeds: [
-          result.status !== 'ok'
-            ? buildGameAccountsErrorEmbed(result)
-            : buildNoticeEmbed('処理できませんでした。少し待ってからお試しください。', 'error'),
-        ],
-        components: [],
-      });
+      // A failed switch must not destroy the public view everyone is
+      // looking at: leave the message as-is and tell only the presser.
+      await interaction
+        .followUp({
+          content:
+            result.status !== 'ok'
+              ? 'ランキングを取得できませんでした。少し待ってから再度お試しください。'
+              : '処理できませんでした。少し待ってから再度お試しください。',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => undefined);
       return;
     }
     const view = buildRankingView(parsed.userId, result, selection);
@@ -712,12 +737,12 @@ export async function handleGameAccountsRankingSelect(
       { error: error instanceof Error ? error.name : 'UnknownError' },
       'Game accounts ranking switch failed',
     );
-    await interaction.editReply({
-      embeds: [
-        buildNoticeEmbed('表示を切り替えられませんでした。少し待ってからお試しください。', 'error'),
-      ],
-      components: [],
-    });
+    await interaction
+      .followUp({
+        content: '表示を切り替えられませんでした。少し待ってから再度お試しください。',
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => undefined);
   } finally {
     pendingRankingSwitch.delete(pendingKey);
   }

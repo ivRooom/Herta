@@ -882,7 +882,9 @@ const RANKING_SLOT_LABELS: Record<string, string> = {
 export function rankingSlotLabel(slot: string): string {
   const disc = /^disc([1-6])$/.exec(slot);
   if (disc) return `ディスク${disc[1]}`;
-  return RANKING_SLOT_LABELS[slot] ?? slot;
+  // Slot keys come from the API payload: never resolve them through the
+  // prototype chain (a key like "constructor" must stay plain text).
+  return Object.hasOwn(RANKING_SLOT_LABELS, slot) ? (RANKING_SLOT_LABELS[slot] as string) : slot;
 }
 
 /**
@@ -940,12 +942,15 @@ export function buildRankingEmbed(result: RankingResult, selection: RankingSelec
     `対象は公開設定をONにしたメンバー ${result.populationSize} 人です。`,
   ];
   if (result.entries.length === 0) {
+    const emptyLines = [...descriptionLines, 'まだスコア付きのショーケースがありません。'];
+    if (!result.viewerInPopulation) {
+      emptyLines.push(
+        'ランキングに載るには、プロフィールの公開設定で「ゲームアカウント」をONにしてください。',
+      );
+    }
     return {
       title,
-      description: truncate(
-        [...descriptionLines, 'まだスコア付きのショーケースがありません。'].join('\n'),
-        MAX_EMBED_DESCRIPTION_CHARS,
-      ),
+      description: truncate(emptyLines.join('\n'), MAX_EMBED_DESCRIPTION_CHARS),
       color: EMBED_COLOR_NEUTRAL,
       footer: { text: 'Webのゲームタブでも同じランキングが見られます' },
     };
@@ -965,10 +970,11 @@ export function buildRankingEmbed(result: RankingResult, selection: RankingSelec
       value: truncate(
         result.selfEntries
           .slice(0, 5)
-          .map(
-            (entry) =>
-              `${entry.rank} 位 — ${entry.characterNameJa ?? `キャラクターID ${entry.characterId}`} ・ ${formatRankingScore(result, entry)}`,
-          )
+          .map((entry) => {
+            const piece =
+              result.axis === 'piece' && entry.slot ? ` (${rankingSlotLabel(entry.slot)})` : '';
+            return `${entry.rank} 位 — ${entry.characterNameJa ?? `キャラクターID ${entry.characterId}`}${piece} ・ ${formatRankingScore(result, entry)}`;
+          })
           .join('\n'),
         MAX_EMBED_FIELD_VALUE_CHARS,
       ),

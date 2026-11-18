@@ -720,6 +720,10 @@ describe('ranking action (#1196 R3)', () => {
       stamp,
     );
     const actionContract = contract.request.actions.ranking;
+    // The keys this client sends must be allowed by the bundle: assert
+    // membership instead of only comparing against a hardcoded list, so
+    // dropping a key from the contract fails here too.
+    expect(actionContract.optional).toEqual(expect.arrayContaining(['axis', 'limit']));
     const expectedKeys = [
       ...contract.request.required,
       ...actionContract.required,
@@ -751,6 +755,19 @@ describe('ranking action (#1196 R3)', () => {
     expect(
       await callIvrmGameAccounts(guild, user, { action: 'ranking', gameCode: 'genshin' }, config),
     ).toEqual({ status: 'unavailable' });
+  });
+
+  it('fails closed when a rank is not a positive integer', async () => {
+    for (const rank of [-1, 0, 1.5]) {
+      const fetch = mockJson(() => ({
+        ...rankingPayload,
+        entries: [{ ...rankingPayload.entries[0], rank }],
+      }));
+      vi.stubGlobal('fetch', fetch);
+      expect(
+        await callIvrmGameAccounts(guild, user, { action: 'ranking', gameCode: 'genshin' }, config),
+      ).toEqual({ status: 'unavailable' });
+    }
   });
 
   it('maps an invalid ranking query to invalid-input', async () => {

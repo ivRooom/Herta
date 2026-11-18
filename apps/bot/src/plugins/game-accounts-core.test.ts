@@ -927,5 +927,46 @@ describe('ranking helpers (#1196 R3)', () => {
     expect(rankingSlotLabel('rope')).toBe('縄');
     expect(rankingSlotLabel('disc3')).toBe('ディスク3');
     expect(rankingSlotLabel('mystery')).toBe('mystery');
+    // Prototype keys must never resolve through the prototype chain.
+    expect(rankingSlotLabel('constructor')).toBe('constructor');
+    expect(rankingSlotLabel('toString')).toBe('toString');
+  });
+
+  it('adds the opt-in guidance to the empty state for viewers outside the population', () => {
+    const embed = buildRankingEmbed(
+      {
+        ...rankingResult,
+        entries: [],
+        selfEntries: [],
+        populationSize: 0,
+        viewerInPopulation: false,
+      },
+      RANKING_DEFAULT_SELECTION,
+    );
+    expect(embed.description).toContain('まだスコア付きのショーケースがありません');
+    expect(embed.description).toContain('「ゲームアカウント」をON');
+    const included = buildRankingEmbed(
+      {
+        ...rankingResult,
+        entries: [],
+        selfEntries: [],
+        populationSize: 0,
+        viewerInPopulation: true,
+      },
+      RANKING_DEFAULT_SELECTION,
+    );
+    expect(included.description).not.toContain('「ゲームアカウント」をON');
+  });
+
+  it('labels the piece in personal placements on the piece axis', () => {
+    const embed = buildRankingEmbed(
+      {
+        ...rankingResult,
+        axis: 'piece',
+        selfEntries: [{ ...rankingEntry, isSelf: true, slot: 'sands' }],
+      },
+      { axis: 'piece', characterId: null, slot: null, formula: 'cv' },
+    );
+    expect(embed.fields?.[1]?.value).toContain('(砂)');
   });
 });
