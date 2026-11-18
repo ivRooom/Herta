@@ -53,6 +53,7 @@ import {
 interface Config {
   enabled: boolean;
   channelId: string;
+  alertChannelId?: string;
   notificationRoleId: string;
   supportMentionId: string;
   fortuneEnabled: boolean;

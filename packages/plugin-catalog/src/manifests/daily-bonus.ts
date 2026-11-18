@@ -21,6 +21,12 @@ export const dailyBonusManifest: PluginManifest = {
         default: '',
         title: '配信チャンネル',
       },
+      alertChannelId: {
+        type: 'string',
+        pattern: '^$|^[0-9]{17,20}$',
+        default: '',
+        title: '配信遅延アラートの通知先チャンネル（空なら配信チャンネルへ送る）',
+      },
       notificationRoleId: {
         type: 'string',
         pattern: '^[0-9]{17,20}$',

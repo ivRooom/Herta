@@ -146,3 +146,47 @@ it('does not poll or warn for intentionally unsupported guilds', async () => {
   expect(mock.request).not.toHaveBeenCalled();
   expect(channel.send).not.toHaveBeenCalled();
 });
+it('routes the delay alert to the configured alert channel after repeated failures', async () => {
+  const guild = 'guild-rescue-alert-route';
+  vi.stubEnv('DAILY_PARTICIPATION_ENABLED', 'true');
+  vi.stubEnv('DAILY_BONUS_ENABLED', 'true');
+  vi.stubEnv('IVRM_INTEGRATION_GUILD_ID', guild);
+  const announcementSend = vi.fn(async (_options: unknown) => ({ id: '323456789012345678' })),
+    alertSend = vi.fn(async (_options: unknown) => ({ id: '423456789012345678' })),
+    base = {
+      isTextBased: () => true,
+      isThread: () => false,
+      permissionsFor: () => ({ has: () => true }),
+      messages: { fetch: vi.fn(async () => new Collection()) },
+    },
+    announcement = { ...base, send: announcementSend },
+    alertChannel = { ...base, send: alertSend };
+  const ctx = {
+    guildId: guild,
+    client: {
+      user: { id: '223456789012345678' },
+      guilds: {
+        fetch: async () => ({
+          channels: {
+            fetch: async (id: string) =>
+              id === '523456789012345678' ? alertChannel : announcement,
+          },
+          members: { fetchMe: async () => ({}) },
+        }),
+      },
+    },
+    config: {
+      enabled: true,
+      channelId: '423456789012345678',
+      notificationRoleId: roleId,
+      alertChannelId: '523456789012345678',
+    },
+    logger: { warn: vi.fn() },
+  };
+  mock.request.mockRejectedValue(new Error('synthetic API outage'));
+  for (let i = 0; i < 3; i++)
+    await scanRescueAnnouncements(ctx as unknown as Parameters<typeof scanRescueAnnouncements>[0]);
+  expect(alertSend).toHaveBeenCalledOnce();
+  expect((alertSend.mock.calls[0]![0] as { content: string }).content).toContain('遅延しています');
+  expect(announcementSend).not.toHaveBeenCalled();
+});

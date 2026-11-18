@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { EmbedBuilder, PermissionFlagsBits, type Client } from 'discord.js';
 import { request } from './daily-bonus-wallet.js';
+import { dailyDeliveryAlertSender } from './daily-participation-alert.js';
 import {
   dailyQuizParticipationEnabled,
   loadDailyQuizStudioSettings,
@@ -46,7 +47,7 @@ const failures = new Map<string, { count: number; lastAlert: number }>();
 interface Context {
   guildId: string;
   client: Client;
-  config: { enabled: boolean; channelId: string };
+  config: { enabled: boolean; channelId: string; alertChannelId?: string };
   logger: { warn: (message: string) => void };
   /** Studio の daily-quiz 設定を読むために使う (未配線なら env のみで判定する)。 */
   prisma?: unknown;
@@ -94,12 +95,12 @@ export async function scanParticipationResults(
     )
       return;
     if (!isCurrent()) return;
-    sendAlert = () =>
-      channel.send({
-        content:
-          '⚠️ 日次問題の集計・結果配信が遅延しています。管理者は管理画面の集計状態を確認してください。確定済みの受取・回答は保持されています。',
-        allowedMentions: { parse: [] },
-      });
+    sendAlert = async () => {
+      const send = await dailyDeliveryAlertSender(guild, me, ctx.config.alertChannelId, channel);
+      return send(
+        '⚠️ 日次問題の集計・結果配信が遅延しています。管理者は管理画面の集計状態を確認してください。確定済みの受取・回答は保持されています。',
+      );
+    };
     const raw = await request(ctx.guildId, ctx.client.user.id, '/v2/participation/herta/results');
     const response = z
       .object({
