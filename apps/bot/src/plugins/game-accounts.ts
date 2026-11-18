@@ -4,6 +4,8 @@ import {
   ButtonBuilder,
   ButtonStyle,
   MessageFlags,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
@@ -15,6 +17,8 @@ import {
 } from '@herta/plugin-sdk';
 import {
   callIvrmGameAccounts,
+  type GameRankingAxis,
+  type GameRankingFormula,
   type IvrmGameAccountsResult,
   type ShowcaseCharacterScore,
 } from './game-accounts-ivrm.js';
@@ -29,14 +33,22 @@ import {
   buildUnlinkCancelledEmbed,
   buildUnlinkConfirmEmbed,
   buildUnlinkSuccessEmbed,
+  buildRankingEmbed,
   buildUnsupportedProgressEmbed,
   buildUnsupportedScoreEmbed,
   gameDefinition,
   gameName,
   isProgressSupported,
   isShowcaseSupported,
+  RANKING_AXIS_OPTIONS,
+  RANKING_DEFAULT_SELECTION,
+  RANKING_FORMULA_OPTIONS,
+  rankingCharacterOptions,
+  rankingRequestInput,
+  rankingSlotOptions,
   scoreSwitcherCharacters,
   type GameEmbed,
+  type RankingSelection,
 } from './game-accounts-core.js';
 
 const UNLINK_CUSTOM_ID_PREFIX = 'game-accounts:unlink:';
@@ -421,6 +433,321 @@ export async function handleGameAccountsScoreButton(
   }
 }
 
+const RANKING_CUSTOM_ID_PREFIX = 'game-accounts:ranking:';
+
+type RankingSelectKind = 'axis' | 'char' | 'formula' | 'slot';
+const RANKING_SELECT_KINDS: readonly string[] = ['axis', 'char', 'formula', 'slot'];
+const RANKING_AXES: readonly string[] = ['character', 'piece', 'formula'];
+const RANKING_FORMULAS: readonly string[] = ['cv', 'rolls'];
+
+interface GameSelectInteraction {
+  guildId: string | null;
+  user: { id: string };
+  customId?: string;
+  values?: string[];
+  isStringSelectMenu?(): boolean;
+  reply(options: { content: string; flags: number }): Promise<unknown>;
+  deferUpdate(): Promise<unknown>;
+  followUp(options: { content: string; flags: number }): Promise<unknown>;
+  editReply(options: {
+    embeds?: GameEmbed[];
+    components: ActionRowBuilder<StringSelectMenuBuilder>[];
+  }): Promise<unknown>;
+}
+
+/**
+ * Ranking switches whose API calls are in flight, keyed by guild and the
+ * view owner's user id (same pattern as the score switcher).
+ */
+const pendingRankingSwitch = new Set<string>();
+
+/**
+ * The custom id carries the selection dimensions that survive a switch:
+ * the kind being changed, the view owner, the game, and the axis /
+ * formula pair. The axis-specific filter (character / slot) is NOT
+ * carried: each axis has exactly one filter kind, so switching the
+ * axis resets the filter — and the formula too, since it only has
+ * meaning under the formula axis. That keeps the id short and the
+ * state unambiguous.
+ */
+function buildRankingCustomId(
+  kind: RankingSelectKind,
+  userId: string,
+  gameCode: string,
+  selection: RankingSelection,
+) {
+  return `${RANKING_CUSTOM_ID_PREFIX}${kind}:${userId}:${gameCode}:${selection.axis}:${selection.formula}`;
+}
+
+function parseRankingCustomId(customId: string): {
+  kind: RankingSelectKind;
+  userId: string;
+  gameCode: string;
+  axis: GameRankingAxis;
+  formula: GameRankingFormula;
+} | null {
+  const parts = customId.slice(RANKING_CUSTOM_ID_PREFIX.length).split(':');
+  if (parts.length !== 5) return null;
+  const [kind, userId, gameCode, axis, formula] = parts as [string, string, string, string, string];
+  if (!RANKING_SELECT_KINDS.includes(kind)) return null;
+  if (!/^\d{17,20}$/.test(userId) || !isKnownGameCode(gameCode)) return null;
+  if (!RANKING_AXES.includes(axis) || !RANKING_FORMULAS.includes(formula)) return null;
+  return {
+    kind: kind as RankingSelectKind,
+    userId,
+    gameCode,
+    axis: axis as GameRankingAxis,
+    formula: formula as GameRankingFormula,
+  };
+}
+
+type RankingResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'ranking' }>;
+
+function rankingSelectRow(
+  kind: RankingSelectKind,
+  userId: string,
+  result: RankingResult,
+  selection: RankingSelection,
+  placeholder: string,
+  options: { value: string; label: string; description?: string }[],
+  selectedValue: string,
+): ActionRowBuilder<StringSelectMenuBuilder> {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(buildRankingCustomId(kind, userId, result.gameCode, selection))
+    .setPlaceholder(placeholder)
+    .addOptions(
+      options.map((option) => {
+        // Discord caps option labels and descriptions at 100 characters;
+        // the values (ids and keys) stay untouched.
+        const builder = new StringSelectMenuOptionBuilder()
+          .setLabel(option.label.length > 100 ? `${option.label.slice(0, 99)}…` : option.label)
+          .setValue(option.value === '' ? '__all__' : option.value)
+          .setDefault(option.value === selectedValue);
+        if (option.description)
+          builder.setDescription(
+            option.description.length > 100
+              ? `${option.description.slice(0, 99)}…`
+              : option.description,
+          );
+        return builder;
+      }),
+    );
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
+}
+
+/**
+ * The ranking view: the embed plus the dropdown rows (#1196 R3,
+ * Kanata's request). Row 1 always switches the axis; row 2 is the
+ * axis-specific filter (character / formula / slot). An empty option
+ * value travels as "__all__" because Discord rejects empty values.
+ */
+export function buildRankingView(
+  userId: string,
+  result: RankingResult,
+  selection: RankingSelection,
+): {
+  embeds: GameEmbed[];
+  components: ActionRowBuilder<StringSelectMenuBuilder>[];
+} {
+  const components = [
+    rankingSelectRow(
+      'axis',
+      userId,
+      result,
+      selection,
+      'ランキングの種類',
+      RANKING_AXIS_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        description: option.description,
+      })),
+      selection.axis,
+    ),
+  ];
+  if (selection.axis === 'character' && result.availableCharacters.length > 0) {
+    components.push(
+      rankingSelectRow(
+        'char',
+        userId,
+        result,
+        selection,
+        'キャラクターで絞り込み',
+        rankingCharacterOptions(result),
+        selection.characterId ?? '',
+      ),
+    );
+  } else if (selection.axis === 'formula') {
+    components.push(
+      rankingSelectRow(
+        'formula',
+        userId,
+        result,
+        selection,
+        '計算式',
+        RANKING_FORMULA_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.label,
+          description: option.description,
+        })),
+        selection.formula,
+      ),
+    );
+  } else if (selection.axis === 'piece' && result.availableSlots.length > 0) {
+    components.push(
+      rankingSelectRow(
+        'slot',
+        userId,
+        result,
+        selection,
+        '部位で絞り込み',
+        rankingSlotOptions(result),
+        selection.slot ?? '',
+      ),
+    );
+  }
+  return { embeds: [buildRankingEmbed(result, selection)], components };
+}
+
+function nextRankingSelection(
+  parsed: {
+    kind: RankingSelectKind;
+    axis: GameRankingAxis;
+    formula: GameRankingFormula;
+  },
+  rawValue: string | undefined,
+): RankingSelection | null {
+  const value = rawValue === '__all__' ? '' : rawValue;
+  if (value === undefined) return null;
+  switch (parsed.kind) {
+    case 'axis':
+      if (!RANKING_AXES.includes(value)) return null;
+      return {
+        axis: value as GameRankingAxis,
+        characterId: null,
+        slot: null,
+        // The formula only has meaning under the formula axis, so an
+        // axis switch resets it together with the filter.
+        formula: RANKING_DEFAULT_SELECTION.formula,
+      };
+    case 'char':
+      if (value !== '' && !/^[A-Za-z0-9_-]{1,64}$/.test(value)) return null;
+      return {
+        axis: 'character',
+        characterId: value === '' ? null : value,
+        slot: null,
+        formula: parsed.formula,
+      };
+    case 'formula':
+      if (!RANKING_FORMULAS.includes(value)) return null;
+      return {
+        axis: 'formula',
+        characterId: null,
+        slot: null,
+        formula: value as GameRankingFormula,
+      };
+    case 'slot':
+      if (value !== '' && !/^[A-Za-z0-9_-]{1,64}$/.test(value)) return null;
+      return {
+        axis: 'piece',
+        characterId: null,
+        slot: value === '' ? null : value,
+        formula: parsed.formula,
+      };
+  }
+}
+
+/**
+ * Handles the ranking dropdowns. Exported for tests; the plugin wires
+ * it through `interactionCreate` next to the button handlers.
+ *
+ * The ranking reply is public (#923), so anyone in the channel may
+ * switch the view — the same rule as the score switcher buttons. The
+ * custom id names the member who opened the ranking; the re-read
+ * always uses THAT member as the viewer (their selfEntries are what
+ * the message shows), so a presser can never surface their own data
+ * through someone else's message.
+ */
+export async function handleGameAccountsRankingSelect(
+  context: PluginRuntimeContext<GameAccountsConfig, unknown, PrismaClient>,
+  interaction: GameSelectInteraction | undefined,
+  callApi: typeof callIvrmGameAccounts = callIvrmGameAccounts,
+): Promise<void> {
+  if (
+    !interaction?.isStringSelectMenu?.() ||
+    !interaction.customId?.startsWith(RANKING_CUSTOM_ID_PREFIX)
+  )
+    return;
+  if (!interaction.guildId || interaction.guildId !== context.guildId) return;
+  const parsed = parseRankingCustomId(interaction.customId);
+  if (!parsed) return;
+  if (context.config.enabled === false) {
+    await interaction.reply({
+      content: 'ゲームアカウント連携Pluginは現在無効です。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  const selection = nextRankingSelection(parsed, interaction.values?.[0]);
+  if (!selection) return;
+  const pendingKey = `${interaction.guildId}:${parsed.userId}`;
+  if (pendingRankingSwitch.has(pendingKey)) {
+    await interaction.reply({
+      content: '表示を切り替え中です。完了するまでお待ちください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  pendingRankingSwitch.add(pendingKey);
+  try {
+    await interaction.deferUpdate();
+  } catch (error) {
+    // The acknowledgement itself failed: there is no safe surface left
+    // to report on, and the shared message must stay untouched.
+    context.logger.error(
+      { error: error instanceof Error ? error.name : 'UnknownError' },
+      'Game accounts ranking switch acknowledgement failed',
+    );
+    pendingRankingSwitch.delete(pendingKey);
+    return;
+  }
+  try {
+    const result = await callApi(
+      interaction.guildId,
+      parsed.userId,
+      rankingRequestInput(parsed.gameCode, selection),
+    );
+    if (result.status !== 'ok' || result.action !== 'ranking') {
+      // A failed switch must not destroy the public view everyone is
+      // looking at: leave the message as-is and tell only the presser.
+      await interaction
+        .followUp({
+          content:
+            result.status !== 'ok'
+              ? 'ランキングを取得できませんでした。少し待ってから再度お試しください。'
+              : '処理できませんでした。少し待ってから再度お試しください。',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => undefined);
+      return;
+    }
+    const view = buildRankingView(parsed.userId, result, selection);
+    await interaction.editReply(view);
+  } catch (error) {
+    context.logger.error(
+      { error: error instanceof Error ? error.name : 'UnknownError' },
+      'Game accounts ranking switch failed',
+    );
+    await interaction
+      .followUp({
+        content: '表示を切り替えられませんでした。少し待ってから再度お試しください。',
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => undefined);
+  } finally {
+    pendingRankingSwitch.delete(pendingKey);
+  }
+}
+
 export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, PrismaClient>({
   manifest: gameAccountsManifest,
   provideCommands(context) {
@@ -544,6 +871,36 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
               await interaction.editReply(view);
               return;
             }
+            if (subcommand === 'ranking') {
+              const gameCode = interaction.options.getString('game', true);
+              const axisOption = interaction.options.getString('axis');
+              const selection: RankingSelection = {
+                ...RANKING_DEFAULT_SELECTION,
+                axis: axisOption === 'piece' || axisOption === 'formula' ? axisOption : 'character',
+              };
+              const result = await callIvrmGameAccounts(
+                guildId,
+                userId,
+                rankingRequestInput(gameCode, selection),
+              );
+              if (result.status !== 'ok') {
+                await interaction.editReply({ embeds: [buildGameAccountsErrorEmbed(result)] });
+                return;
+              }
+              if (result.action !== 'ranking') {
+                await interaction.editReply({
+                  embeds: [
+                    buildNoticeEmbed(
+                      '処理できませんでした。少し待ってからお試しください。',
+                      'error',
+                    ),
+                  ],
+                });
+                return;
+              }
+              await interaction.editReply(buildRankingView(userId, result, selection));
+              return;
+            }
             if (subcommand === 'progress') {
               const gameCode = interaction.options.getString('game', true);
               if (!isProgressSupported(gameCode)) {
@@ -595,6 +952,10 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
           const interaction = args[0] as GameButtonInteraction | undefined;
           await handleGameAccountsUnlinkButton(context, interaction);
           await handleGameAccountsScoreButton(context, interaction);
+          await handleGameAccountsRankingSelect(
+            context,
+            args[0] as GameSelectInteraction | undefined,
+          );
         },
       },
     ] as PluginEventHandler<GameAccountsConfig, unknown, PrismaClient>[];
