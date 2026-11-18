@@ -4,12 +4,18 @@ import {
   DailyDeliveryFailureTracker,
   dailyDeliveryAlertFooter,
   dailyDeliveryAlertId,
+  dailyDeliveryAlertMessage,
   dailyDeliveryAlertSender,
 } from './daily-participation-alert.js';
 
 const ALERT_CHANNEL_ID = '523456789012345678';
 
-function setup(options: { alertChannelId?: string; sendMessages?: boolean; fetchFails?: boolean }) {
+function setup(options: {
+  alertChannelId?: string;
+  sendMessages?: boolean;
+  embedLinks?: boolean;
+  fetchFails?: boolean;
+}) {
   const fallbackSend = vi.fn(async (_options: unknown) => ({ id: 'fallback-message' }));
   const alertSend = vi.fn(async (_options: unknown) => ({ id: 'alert-message' }));
   const alertChannel = {
@@ -17,10 +23,12 @@ function setup(options: { alertChannelId?: string; sendMessages?: boolean; fetch
     isThread: () => false,
     send: alertSend,
     permissionsFor: () => ({
-      // Only SendMessages is granted: the ops channel is post-only for the
-      // bot (no ViewChannel), and the alert must still be delivered.
+      // ViewChannel is never granted: the ops channel is post-only for the
+      // bot, and the alert must still be delivered.
       has: (permission: unknown) =>
-        options.sendMessages !== false && permission === PermissionFlagsBits.SendMessages,
+        options.sendMessages !== false &&
+        (permission === PermissionFlagsBits.SendMessages ||
+          (options.embedLinks === true && permission === PermissionFlagsBits.EmbedLinks)),
     }),
   };
   const guild = {
@@ -39,7 +47,34 @@ function setup(options: { alertChannelId?: string; sendMessages?: boolean; fetch
 const asGuild = (value: unknown) => value as Parameters<typeof dailyDeliveryAlertSender>[0];
 const asMember = (value: unknown) => value as Parameters<typeof dailyDeliveryAlertSender>[1];
 
-it('sends to the configured alert channel without requiring ViewChannel', async () => {
+const T0 = Date.UTC(2026, 10, 18, 16, 18); // 2026-11-19 01:18 JST
+const MESSAGE = dailyDeliveryAlertMessage(
+  'results',
+  { id: '20261119-0118-R', firstFailureAt: T0, lastAlertAt: 0 },
+  T0 + 600_000,
+);
+
+it('sends an embed to the configured alert channel when embeds are allowed', async () => {
+  const { guild, fallback, fallbackSend, alertSend } = setup({
+    alertChannelId: ALERT_CHANNEL_ID,
+    embedLinks: true,
+  });
+  const send = await dailyDeliveryAlertSender(
+    asGuild(guild),
+    asMember({}),
+    ALERT_CHANNEL_ID,
+    fallback,
+  );
+  await send(MESSAGE);
+  expect(alertSend).toHaveBeenCalledOnce();
+  expect(alertSend.mock.calls[0]![0]).toEqual({
+    embeds: [MESSAGE.embed],
+    allowedMentions: { parse: [] },
+  });
+  expect(fallbackSend).not.toHaveBeenCalled();
+});
+
+it('sends plain text to the alert channel when embeds are not allowed there', async () => {
   const { guild, fallback, fallbackSend, alertSend } = setup({
     alertChannelId: ALERT_CHANNEL_ID,
   });
@@ -49,10 +84,10 @@ it('sends to the configured alert channel without requiring ViewChannel', async 
     ALERT_CHANNEL_ID,
     fallback,
   );
-  await send('⚠️ test alert');
+  await send(MESSAGE);
   expect(alertSend).toHaveBeenCalledOnce();
   expect(alertSend.mock.calls[0]![0]).toEqual({
-    content: '⚠️ test alert',
+    content: MESSAGE.text,
     allowedMentions: { parse: [] },
   });
   expect(fallbackSend).not.toHaveBeenCalled();
@@ -61,8 +96,12 @@ it('sends to the configured alert channel without requiring ViewChannel', async 
 it('falls back to the announcement channel when no alert channel is configured', async () => {
   const { guild, fallback, fallbackSend, alertSend } = setup({});
   const send = await dailyDeliveryAlertSender(asGuild(guild), asMember({}), undefined, fallback);
-  await send('⚠️ test alert');
+  await send(MESSAGE);
   expect(fallbackSend).toHaveBeenCalledOnce();
+  expect(fallbackSend.mock.calls[0]![0]).toEqual({
+    embeds: [MESSAGE.embed],
+    allowedMentions: { parse: [] },
+  });
   expect(alertSend).not.toHaveBeenCalled();
   expect(guild.channels.fetch).not.toHaveBeenCalled();
 });
@@ -78,7 +117,7 @@ it('falls back when the alert channel cannot be fetched', async () => {
     ALERT_CHANNEL_ID,
     fallback,
   );
-  await send('⚠️ test alert');
+  await send(MESSAGE);
   expect(fallbackSend).toHaveBeenCalledOnce();
   expect(alertSend).not.toHaveBeenCalled();
 });
@@ -94,9 +133,25 @@ it('falls back when the bot cannot send in the alert channel', async () => {
     ALERT_CHANNEL_ID,
     fallback,
   );
-  await send('⚠️ test alert');
+  await send(MESSAGE);
   expect(fallbackSend).toHaveBeenCalledOnce();
   expect(alertSend).not.toHaveBeenCalled();
+});
+
+it('alert message renders a structured embed and the equivalent plain text', () => {
+  expect(MESSAGE.embed.title).toContain('集計・結果配信が遅延しています');
+  expect(MESSAGE.embed.description).toContain('管理画面の集計状態を確認してください');
+  expect(MESSAGE.embed.fields).toEqual([
+    { name: 'アラートID', value: '20261119-0118-R', inline: true },
+    { name: '状態', value: '初回通知', inline: true },
+    { name: '発生', value: '01:18', inline: true },
+    { name: '経過', value: '10分', inline: true },
+  ]);
+  expect(MESSAGE.embed.timestamp).toBe(new Date(T0).toISOString());
+  expect(MESSAGE.text).toBe(
+    '⚠️ 日次問題の集計・結果配信が遅延しています。管理者は管理画面の集計状態を確認してください。確定済みの受取・回答は保持されています。\n' +
+      'アラートID: 20261119-0118-R（初回通知） / 発生 01:18 / 経過 10分',
+  );
 });
 
 it('alert id is derived from the JST start of the failure streak', () => {

@@ -11,7 +11,8 @@ import {
 import { request } from './daily-bonus-wallet.js';
 import {
   DailyDeliveryFailureTracker,
-  dailyDeliveryAlertFooter,
+  type DailyDeliveryAlertIncident,
+  dailyDeliveryAlertMessage,
   dailyDeliveryAlertSender,
 } from './daily-participation-alert.js';
 import { dailyBonusAllowedMentions } from './daily-bonus-policy.js';
@@ -147,7 +148,8 @@ export async function scanRescueAnnouncements(ctx: Context, isCurrent: () => boo
   )
     return;
   running.add(ctx.guildId);
-  let sendAlert: ((footer: string) => Promise<unknown>) | undefined;
+  let sendAlert:
+    ((incident: DailyDeliveryAlertIncident, now: number) => Promise<unknown>) | undefined;
   try {
     const guild = await ctx.client.guilds.fetch(ctx.guildId),
       channel = await guild.channels.fetch(ctx.config.channelId);
@@ -167,11 +169,9 @@ export async function scanRescueAnnouncements(ctx: Context, isCurrent: () => boo
     )
       return;
     if (!isCurrent()) return;
-    sendAlert = async (footer: string) => {
+    sendAlert = async (incident, now) => {
       const send = await dailyDeliveryAlertSender(guild, me, ctx.config.alertChannelId, channel);
-      return send(
-        `⚠️ 追加問題の告知配信が遅延しています。管理者は管理画面の集計状態を確認してください。確定済みの受取・回答は保持されています。\n${footer}`,
-      );
+      return send(dailyDeliveryAlertMessage('rescue', incident, now));
     };
     const raw = await request(ctx.guildId, ctx.client.user.id, '/v2/participation/herta/rescue');
     const response = z
@@ -246,7 +246,7 @@ export async function scanRescueAnnouncements(ctx: Context, isCurrent: () => boo
     const incident = tracker.recordFailure(now);
     if (incident && sendAlert && isCurrent()) {
       try {
-        await sendAlert(dailyDeliveryAlertFooter(incident, now));
+        await sendAlert(incident, now);
         tracker.recordAlertSent(Date.now());
       } catch {
         /* Discord outage: keep retryable state and operational log. */

@@ -1,7 +1,28 @@
 import { PermissionFlagsBits, type Guild, type GuildMember } from 'discord.js';
 
+export interface DailyDeliveryAlertEmbed {
+  title: string;
+  description: string;
+  color: number;
+  timestamp: string;
+  fields: { name: string; value: string; inline: boolean }[];
+  footer: { text: string };
+}
+
+export interface DailyDeliveryAlertMessage {
+  embed: DailyDeliveryAlertEmbed;
+  /** Plain-text rendering, for channels where the bot cannot post embeds. */
+  text: string;
+}
+
+interface AlertSendOptions {
+  content?: string;
+  embeds?: DailyDeliveryAlertEmbed[];
+  allowedMentions: { parse: [] };
+}
+
 interface AlertFallbackChannel {
-  send: (options: { content: string; allowedMentions: { parse: [] } }) => Promise<unknown>;
+  send: (options: AlertSendOptions) => Promise<unknown>;
 }
 
 /**
@@ -11,32 +32,36 @@ interface AlertFallbackChannel {
  * otherwise the announcement channel is used, as before.
  *
  * ViewChannel is deliberately not required for the alert channel: ops
- * channels may be post-only for the bot, and the alert is a plain text
- * message. Any failure to resolve the alert channel falls back silently —
- * an alerting path must never break the scan itself.
+ * channels may be post-only for the bot. Embeds need EmbedLinks, so a
+ * channel with SendMessages but no EmbedLinks receives the plain-text
+ * rendering instead of the embed. Any failure to resolve the alert channel
+ * falls back silently — an alerting path must never break the scan itself.
  */
 export async function dailyDeliveryAlertSender(
   guild: Guild,
   me: GuildMember,
   alertChannelId: string | undefined,
   fallback: AlertFallbackChannel,
-): Promise<(content: string) => Promise<unknown>> {
+): Promise<(message: DailyDeliveryAlertMessage) => Promise<unknown>> {
   if (alertChannelId) {
     try {
       const channel = await guild.channels.fetch(alertChannelId);
-      if (
-        channel?.isTextBased() &&
-        !channel.isThread() &&
-        'send' in channel &&
-        channel.permissionsFor(me)?.has(PermissionFlagsBits.SendMessages)
-      ) {
-        return (content) => channel.send({ content, allowedMentions: { parse: [] } });
+      if (channel?.isTextBased() && !channel.isThread() && 'send' in channel) {
+        const permissions = channel.permissionsFor(me);
+        if (permissions?.has(PermissionFlagsBits.SendMessages)) {
+          if (permissions.has(PermissionFlagsBits.EmbedLinks)) {
+            return (message) =>
+              channel.send({ embeds: [message.embed], allowedMentions: { parse: [] } });
+          }
+          return (message) =>
+            channel.send({ content: message.text, allowedMentions: { parse: [] } });
+        }
       }
     } catch {
       /* fall back to the announcement channel */
     }
   }
-  return (content) => fallback.send({ content, allowedMentions: { parse: [] } });
+  return (message) => fallback.send({ embeds: [message.embed], allowedMentions: { parse: [] } });
 }
 
 /** An alert fires only once polling failures have persisted this long. */
@@ -77,19 +102,66 @@ export function dailyDeliveryAlertId(kind: DailyDeliveryAlertKind, firstFailureA
   return `${ymd}-${hm.replace(':', '')}-${KIND_SUFFIX[kind]}`;
 }
 
+function elapsedText(firstFailureAt: number, now: number): string {
+  const elapsedMinutes = Math.max(0, Math.floor((now - firstFailureAt) / 60_000));
+  return elapsedMinutes >= 60
+    ? `${Math.floor(elapsedMinutes / 60)}時間${elapsedMinutes % 60}分`
+    : `${elapsedMinutes}分`;
+}
+
+function alertPhase(incident: DailyDeliveryAlertIncident): string {
+  return incident.lastAlertAt === 0 ? '初回通知' : '継続通知';
+}
+
 /** Footer appended to an alert message: incident id, start, and elapsed time. */
 export function dailyDeliveryAlertFooter(
   incident: DailyDeliveryAlertIncident,
   now: number,
 ): string {
   const { hm } = jstParts(incident.firstFailureAt);
-  const elapsedMinutes = Math.max(0, Math.floor((now - incident.firstFailureAt) / 60_000));
-  const elapsed =
-    elapsedMinutes >= 60
-      ? `${Math.floor(elapsedMinutes / 60)}時間${elapsedMinutes % 60}分`
-      : `${elapsedMinutes}分`;
-  const phase = incident.lastAlertAt === 0 ? '初回通知' : '継続通知';
-  return `アラートID: ${incident.id}（${phase}） / 発生 ${hm} / 経過 ${elapsed}`;
+  return `アラートID: ${incident.id}（${alertPhase(incident)}） / 発生 ${hm} / 経過 ${elapsedText(incident.firstFailureAt, now)}`;
+}
+
+const ALERT_TEXTS: Record<DailyDeliveryAlertKind, { title: string; label: string }> = {
+  results: { title: '⚠️ 日次問題の集計・結果配信が遅延しています', label: '結果配信' },
+  corrections: { title: '⚠️ 日次問題の結果訂正の通知配信が遅延しています', label: '結果訂正' },
+  rescue: { title: '⚠️ 追加問題の告知配信が遅延しています', label: '追加問題の告知' },
+};
+
+const ALERT_DESCRIPTION =
+  '管理者は管理画面の集計状態を確認してください。確定済みの受取・回答は保持されています。';
+
+/** Warning amber. */
+const ALERT_COLOR = 0xfaa61a;
+
+/**
+ * Build the alert as a structured embed (id, phase, start, and elapsed time
+ * as fields) plus the equivalent plain-text rendering for channels where
+ * the bot may not post embeds.
+ */
+export function dailyDeliveryAlertMessage(
+  kind: DailyDeliveryAlertKind,
+  incident: DailyDeliveryAlertIncident,
+  now: number,
+): DailyDeliveryAlertMessage {
+  const { title, label } = ALERT_TEXTS[kind];
+  const { hm } = jstParts(incident.firstFailureAt);
+  return {
+    embed: {
+      title,
+      description: ALERT_DESCRIPTION,
+      color: ALERT_COLOR,
+      timestamp: new Date(incident.firstFailureAt).toISOString(),
+      fields: [
+        { name: 'アラートID', value: incident.id, inline: true },
+        { name: '状態', value: alertPhase(incident), inline: true },
+        { name: '発生', value: hm, inline: true },
+        { name: '経過', value: elapsedText(incident.firstFailureAt, now), inline: true },
+      ],
+      footer: { text: `Herta 配信遅延アラート（${label}）` },
+    },
+    text: `${title}。${ALERT_DESCRIPTION}\n${dailyDeliveryAlertFooter(incident, now)}`,
+  };
 }
 
 /**

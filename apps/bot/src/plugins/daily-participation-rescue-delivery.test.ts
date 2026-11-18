@@ -200,9 +200,16 @@ it('routes the delay alert to the configured alert channel after repeated failur
     nowSpy.mockRestore();
   }
   expect(alertSend).toHaveBeenCalledOnce();
-  const content = (alertSend.mock.calls[0]![0] as { content: string }).content;
-  expect(content).toContain('遅延しています');
-  expect(content).toContain('アラートID: 20261119-1000-S');
-  expect(content).toContain('初回通知');
+  const payload = alertSend.mock.calls[0]![0] as {
+    embeds: { title: string; fields: { name: string; value: string }[] }[];
+  };
+  const embed = payload.embeds[0]!;
+  expect(embed.title).toContain('遅延しています');
+  expect(embed.fields).toContainEqual({
+    name: 'アラートID',
+    value: '20261119-1000-S',
+    inline: true,
+  });
+  expect(embed.fields).toContainEqual({ name: '状態', value: '初回通知', inline: true });
   expect(announcementSend).not.toHaveBeenCalled();
 });
