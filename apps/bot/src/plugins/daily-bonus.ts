@@ -13,7 +13,6 @@ import {
   reserveDailyAnnouncement,
   captureDailyAnnouncementPopulation,
   setDailyAnnouncement,
-  listAnniversaries,
   recordDailyClaim,
   type PrismaClient,
 } from '@herta/db';
@@ -26,7 +25,7 @@ import {
   rejectDailyBonus,
 } from './daily-bonus-policy.js';
 import { captureDailyBonusPopulation } from './daily-bonus-population.js';
-import { selectAnniversaries } from './daily-bonus-content.js';
+import { fetchTodayHistoryEvents } from './daily-today-history.js';
 import { EMPTY_FORTUNE_PROFILE } from './fortune-core.js';
 import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
 import { claimDailyBonus, dailyBonusStatus, type DailyWalletResult } from './daily-bonus-wallet.js';
@@ -240,12 +239,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
         throw new Error('DailyBonusPermissions');
       const population = await captureDailyBonusPopulation(guild, role.id);
       await captureDailyAnnouncementPopulation(ctx.prisma, ctx.guildId, date, role.id, population);
-      const events = selectAnniversaries(
-        await listAnniversaries(ctx.prisma, ctx.guildId),
-        date,
-        ctx.config.anniversaryCategories,
-        ctx.config.anniversaryLimit,
-      );
+      const events = await fetchTodayHistoryEvents(ctx.guildId, date, ctx.config.anniversaryLimit);
       const embed = new EmbedBuilder()
         .setColor(0xb9a2ff)
         .setTitle(`🎁 ${date} 本日のログインボーナス`)
