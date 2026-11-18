@@ -42,7 +42,7 @@ import {
 } from './daily-quiz-settings.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
-import { dailyBonusActionRow } from './daily-bonus-buttons.js';
+import { dailyBonusActionRow, MEMBER_DAILY_URL } from './daily-bonus-buttons.js';
 import {
   dailySupportActionRow,
   dailySupportFailureClass,
@@ -240,6 +240,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
       const embed = new EmbedBuilder()
         .setColor(0xb9a2ff)
         .setTitle(`🎁 ${date} 本日のログインボーナス`)
+        .setURL(MEMBER_DAILY_URL)
         .setDescription(
           `${ctx.config.messageTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
         )
