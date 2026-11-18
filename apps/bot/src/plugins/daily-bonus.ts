@@ -62,6 +62,14 @@ interface Config {
   messageTemplate: string;
 }
 type Context = PluginRuntimeContext<Config, Client, PrismaClient>;
+/**
+ * Canonical Member Portal daily page, linked from the announcement
+ * embed title. This URL is a fixed system value: it must not become
+ * editable through Studio/Composer settings, so an announcement can
+ * never be turned into an arbitrary external link.
+ */
+const MEMBER_DAILY_URL = 'https://member.ivrm.jp/participation';
+
 const timers = new Map<string, NodeJS.Timeout>();
 const running = new Set<string>();
 const generations = new Map<string, number>();
@@ -240,6 +248,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
       const embed = new EmbedBuilder()
         .setColor(0xb9a2ff)
         .setTitle(`🎁 ${date} 本日のログインボーナス`)
+        .setURL(MEMBER_DAILY_URL)
         .setDescription(
           `${ctx.config.messageTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
         )
