@@ -12,10 +12,6 @@ export function currentDailyBonusDate(now = new Date()): string {
 export function canOperateDailyAnnouncement(date: string, now = new Date()): boolean {
   return validDailyBonusDate(date) && date === currentDailyBonusDate(now);
 }
-export function newDailyAnniversaryIdentity() {
-  return { id: `anniversary_${globalThis.crypto.randomUUID()}`, sourceCheckedAt: '' };
-}
-
 export function dailyBonusReferenceRate(confirmed: number, eligible: number | null): string {
   if (
     eligible === null ||

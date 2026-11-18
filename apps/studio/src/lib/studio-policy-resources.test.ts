@@ -261,7 +261,7 @@ test('Daily Bonus granular permissions are grantable and match API authorization
   const options = buildStudioGranularPermissionOptions(GUILD_ID, []).filter(
     (option) => option.category === 'Daily Bonus',
   );
-  assert.equal(options.length, 4);
+  assert.equal(options.length, 2);
   const policy = createEmptyStudioAccessPolicy();
   policy.Statement = options.map((option) => ({
     Effect: 'Allow' as const,
