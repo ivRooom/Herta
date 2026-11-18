@@ -133,11 +133,25 @@ it('routes the delay alert to the configured alert channel after repeated failur
     logger: { warn: vi.fn() },
   };
   mock.request.mockRejectedValue(new Error('synthetic API outage'));
-  for (let i = 0; i < 3; i++)
-    await scanParticipationResults(
-      ctx as unknown as Parameters<typeof scanParticipationResults>[0],
-    );
+  const t0 = Date.UTC(2026, 10, 19, 1, 0, 0);
+  let now = t0;
+  const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+  try {
+    const scan = () =>
+      scanParticipationResults(ctx as unknown as Parameters<typeof scanParticipationResults>[0]);
+    await scan();
+    now = t0 + 300_000;
+    await scan();
+    expect(alertSend).not.toHaveBeenCalled();
+    now = t0 + 600_000;
+    await scan();
+  } finally {
+    nowSpy.mockRestore();
+  }
   expect(alertSend).toHaveBeenCalledOnce();
-  expect((alertSend.mock.calls[0]![0] as { content: string }).content).toContain('遅延しています');
+  const content = (alertSend.mock.calls[0]![0] as { content: string }).content;
+  expect(content).toContain('遅延しています');
+  expect(content).toContain('アラートID: 20261119-1000-R');
+  expect(content).toContain('初回通知');
   expect(announcementSend).not.toHaveBeenCalled();
 });
