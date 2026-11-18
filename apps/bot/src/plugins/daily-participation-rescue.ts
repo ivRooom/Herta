@@ -9,7 +9,11 @@ import {
   type Client,
 } from 'discord.js';
 import { request } from './daily-bonus-wallet.js';
-import { dailyDeliveryAlertSender } from './daily-participation-alert.js';
+import {
+  DailyDeliveryFailureTracker,
+  dailyDeliveryAlertFooter,
+  dailyDeliveryAlertSender,
+} from './daily-participation-alert.js';
 import { dailyBonusAllowedMentions } from './daily-bonus-policy.js';
 import {
   dailyQuizParticipationEnabled,
@@ -95,7 +99,7 @@ export const rescueDelivery = z
   .strict();
 type RescueDelivery = z.infer<typeof rescueDelivery>;
 const running = new Set<string>();
-const failures = new Map<string, { count: number; lastAlert: number }>();
+const failures = new Map<string, DailyDeliveryFailureTracker>();
 interface Context {
   guildId: string;
   client: Client;
@@ -143,7 +147,7 @@ export async function scanRescueAnnouncements(ctx: Context, isCurrent: () => boo
   )
     return;
   running.add(ctx.guildId);
-  let sendAlert: (() => Promise<unknown>) | undefined;
+  let sendAlert: ((footer: string) => Promise<unknown>) | undefined;
   try {
     const guild = await ctx.client.guilds.fetch(ctx.guildId),
       channel = await guild.channels.fetch(ctx.config.channelId);
@@ -163,10 +167,10 @@ export async function scanRescueAnnouncements(ctx: Context, isCurrent: () => boo
     )
       return;
     if (!isCurrent()) return;
-    sendAlert = async () => {
+    sendAlert = async (footer: string) => {
       const send = await dailyDeliveryAlertSender(guild, me, ctx.config.alertChannelId, channel);
       return send(
-        '⚠️ 追加問題の告知配信が遅延しています。管理者は管理画面の集計状態を確認してください。確定済みの受取・回答は保持されています。',
+        `⚠️ 追加問題の告知配信が遅延しています。管理者は管理画面の集計状態を確認してください。確定済みの受取・回答は保持されています。\n${footer}`,
       );
     };
     const raw = await request(ctx.guildId, ctx.client.user.id, '/v2/participation/herta/rescue');
@@ -230,21 +234,24 @@ export async function scanRescueAnnouncements(ctx: Context, isCurrent: () => boo
       }
     }
     if (incomplete) throw Error('Daily rescue reconciliation pending');
-    const priorFailure = failures.get(ctx.guildId);
-    if (priorFailure) failures.set(ctx.guildId, { count: 0, lastAlert: priorFailure.lastAlert });
+    failures.get(ctx.guildId)?.recordSuccess();
   } catch {
     ctx.logger.warn('Daily rescue delivery deferred; durable state retained');
-    const state = failures.get(ctx.guildId) ?? { count: 0, lastAlert: 0 };
-    state.count++;
-    if (state.count >= 3 && Date.now() - state.lastAlert > 900000 && sendAlert && isCurrent()) {
+    let tracker = failures.get(ctx.guildId);
+    if (!tracker) {
+      tracker = new DailyDeliveryFailureTracker('rescue');
+      failures.set(ctx.guildId, tracker);
+    }
+    const now = Date.now();
+    const incident = tracker.recordFailure(now);
+    if (incident && sendAlert && isCurrent()) {
       try {
-        await sendAlert();
-        state.lastAlert = Date.now();
+        await sendAlert(dailyDeliveryAlertFooter(incident, now));
+        tracker.recordAlertSent(Date.now());
       } catch {
         /* Discord outage: keep retryable state and operational log. */
       }
     }
-    failures.set(ctx.guildId, state);
   } finally {
     running.delete(ctx.guildId);
   }
