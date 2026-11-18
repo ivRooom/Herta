@@ -4,7 +4,6 @@ import {
   validDailyBonusDate,
   dailyBonusReferenceRate,
   canOperateDailyAnnouncement,
-  newDailyAnniversaryIdentity,
 } from './daily-bonus-admin-input.ts';
 test('anniversary fixed dates require real dates, including leap rules', () => {
   assert.equal(validDailyBonusDate('2026-02-30'), false);
@@ -22,15 +21,6 @@ test('delivery operation affordances expire at JST midnight and never allow past
     false,
   );
 });
-test('new anniversaries have unique IDs and require explicit source verification dates', () => {
-  const a = newDailyAnniversaryIdentity(),
-    b = newDailyAnniversaryIdentity();
-  assert.notEqual(a.id, b.id);
-  assert.equal(a.sourceCheckedAt, '');
-  assert.equal(b.sourceCheckedAt, '');
-  assert.ok(a.id.length <= 64);
-});
-
 test('reference rate preserves unknown and zero denominators and does not clamp membership changes', () => {
   assert.equal(dailyBonusReferenceRate(1, null), '—');
   assert.equal(dailyBonusReferenceRate(0, 0), '—');
