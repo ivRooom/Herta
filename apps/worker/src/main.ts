@@ -2,6 +2,11 @@ import { getPrismaClient, cleanDailyBonusHistory, anonymizeOldValorantSessions }
 import { createLogger } from '@herta/logger';
 import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import { Redis } from 'ioredis';
+import {
+  createAchievementNotificationStore,
+  startAchievementNotificationRuntime,
+  type AchievementNotificationRuntime,
+} from './achievement-notifications.js';
 import { startCommunitySeasonRuntime, type CommunitySeasonRuntime } from './community-seasons.js';
 import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';
 import {
@@ -27,6 +32,7 @@ let communitySeasonRuntime: CommunitySeasonRuntime | undefined;
 let vcRecapRetentionRuntime: VcRecapRetentionRuntime | undefined;
 let dailyContentRuntime: DailyContentRuntime | undefined;
 let discordRoleOperationRuntime: DiscordRoleOperationRuntime | undefined;
+let achievementNotificationRuntime: AchievementNotificationRuntime | undefined;
 let lfgRuntime: LfgRuntime | undefined;
 let teamSplitRuntime: TeamSplitWorkerRuntime | undefined;
 let shuttingDown = false;
@@ -148,6 +154,61 @@ async function main() {
       }
     }
 
+    // アチーブメント解除通知 (Herta #925): 既定は無効。専用ロールの
+    // IVRM_API_DATABASE_URL と IVRM_INTEGRATION_GUILD_ID が揃った場合のみ開始する。
+    // 通知先チャンネルは env が優先、無ければ Studio の GuildSettings
+    // (settingsJson.achievementNotificationChannelId) を cycle ごとに解決する。
+    // 未設定の間は outbox を一切触らない。
+    const achievementNotificationsEnabled =
+      process.env['ACHIEVEMENT_NOTIFICATIONS_ENABLED']?.trim() === 'true';
+    const ivrmApiDatabaseUrl = process.env['IVRM_API_DATABASE_URL']?.trim();
+    const ivrmIntegrationGuildId = process.env['IVRM_INTEGRATION_GUILD_ID']?.trim();
+    if (!achievementNotificationsEnabled) {
+      logger.info(
+        'ACHIEVEMENT_NOTIFICATIONS_ENABLEDが有効でないためアチーブメント通知Workerを開始しません',
+      );
+    } else if (!ivrmApiDatabaseUrl || !ivrmIntegrationGuildId || !discordBotToken) {
+      logger.warn(
+        'IVRM_API_DATABASE_URL / IVRM_INTEGRATION_GUILD_ID / DISCORD_BOT_TOKEN のいずれかが未設定のためアチーブメント通知Workerを開始しません',
+      );
+    } else {
+      try {
+        const configuredScanInterval = Number.parseInt(
+          process.env['ACHIEVEMENT_NOTIFICATION_SCAN_INTERVAL_SECONDS'] ?? '',
+          10,
+        );
+        const envChannelId = process.env['ACHIEVEMENT_NOTIFICATION_CHANNEL_ID']?.trim();
+        achievementNotificationRuntime = await startAchievementNotificationRuntime({
+          logger,
+          store: createAchievementNotificationStore(ivrmApiDatabaseUrl),
+          discordBotToken,
+          guildId: ivrmIntegrationGuildId,
+          scanIntervalSeconds: Number.isFinite(configuredScanInterval)
+            ? configuredScanInterval
+            : undefined,
+          resolveChannelId: async () => {
+            if (envChannelId) return envChannelId;
+            const settings = await getPrismaClient().guildSettings.findUnique({
+              where: { guildId: ivrmIntegrationGuildId },
+              select: { settingsJson: true },
+            });
+            const json = settings?.settingsJson;
+            if (typeof json === 'object' && json !== null && !Array.isArray(json)) {
+              const value = (json as Record<string, unknown>)['achievementNotificationChannelId'];
+              return typeof value === 'string' && value.trim() ? value.trim() : null;
+            }
+            return null;
+          },
+        });
+        logger.info('アチーブメント通知Workerを開始しました');
+      } catch (error) {
+        logger.error(
+          { errorName: resolveErrorName(error) },
+          'アチーブメント通知Workerの開始に失敗しました (Worker 自体は継続します)',
+        );
+      }
+    }
+
     if (!discordBotToken) {
       logger.warn('DISCORD_BOT_TOKENが未設定のためDiscord依存Plugin Workerを開始しません');
     } else {
@@ -256,6 +317,16 @@ async function shutdown(signal: string): Promise<void> {
     logger.error(
       { errorName: resolveErrorName(error) },
       'Discord Role Operation Workerの終了処理に失敗しました',
+    );
+  }
+
+  try {
+    await achievementNotificationRuntime?.close();
+    achievementNotificationRuntime = undefined;
+  } catch (error) {
+    logger.error(
+      { errorName: resolveErrorName(error) },
+      'アチーブメント通知Workerの終了処理に失敗しました',
     );
   }
 
