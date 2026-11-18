@@ -1,6 +1,11 @@
 import { PermissionFlagsBits } from 'discord.js';
 import { expect, it, vi } from 'vitest';
-import { dailyDeliveryAlertSender } from './daily-participation-alert.js';
+import {
+  DailyDeliveryFailureTracker,
+  dailyDeliveryAlertFooter,
+  dailyDeliveryAlertId,
+  dailyDeliveryAlertSender,
+} from './daily-participation-alert.js';
 
 const ALERT_CHANNEL_ID = '523456789012345678';
 
@@ -92,4 +97,64 @@ it('falls back when the bot cannot send in the alert channel', async () => {
   await send('⚠️ test alert');
   expect(fallbackSend).toHaveBeenCalledOnce();
   expect(alertSend).not.toHaveBeenCalled();
+});
+
+it('alert id is derived from the JST start of the failure streak', () => {
+  const started = Date.UTC(2026, 10, 18, 16, 18); // 2026-11-19 01:18 JST
+  expect(dailyDeliveryAlertId('results', started)).toBe('20261119-0118-R');
+  expect(dailyDeliveryAlertId('corrections', started)).toBe('20261119-0118-C');
+  expect(dailyDeliveryAlertId('rescue', started)).toBe('20261119-0118-S');
+});
+
+it('tracker stays silent until failures persist for ten minutes', () => {
+  const tracker = new DailyDeliveryFailureTracker('results');
+  const t0 = Date.UTC(2026, 10, 19, 0, 0, 0);
+  expect(tracker.recordFailure(t0)).toBeNull();
+  expect(tracker.recordFailure(t0 + 599_000)).toBeNull();
+  const incident = tracker.recordFailure(t0 + 600_000);
+  expect(incident?.id).toBe('20261119-0900-R');
+  expect(incident?.firstFailureAt).toBe(t0);
+});
+
+it('tracker keeps returning the incident until the alert is recorded as sent', () => {
+  const tracker = new DailyDeliveryFailureTracker('rescue');
+  const t0 = Date.UTC(2026, 10, 19, 0, 0, 0);
+  tracker.recordFailure(t0);
+  const due = tracker.recordFailure(t0 + 600_000);
+  expect(due).not.toBeNull();
+  expect(tracker.recordFailure(t0 + 660_000)?.id).toBe(due?.id);
+});
+
+it('tracker repeats the same incident every three hours while failures continue', () => {
+  const tracker = new DailyDeliveryFailureTracker('corrections');
+  const t0 = Date.UTC(2026, 10, 19, 0, 0, 0);
+  tracker.recordFailure(t0);
+  const first = tracker.recordFailure(t0 + 600_000);
+  expect(first).not.toBeNull();
+  tracker.recordAlertSent(t0 + 600_000);
+  expect(tracker.recordFailure(t0 + 600_000 + 10_799_000)).toBeNull();
+  const repeat = tracker.recordFailure(t0 + 600_000 + 10_800_000);
+  expect(repeat?.id).toBe(first?.id);
+  expect(dailyDeliveryAlertFooter(repeat!, t0 + 600_000 + 10_800_000)).toContain('継続通知');
+  expect(dailyDeliveryAlertFooter(repeat!, t0 + 600_000 + 10_800_000)).toContain('経過 3時間10分');
+});
+
+it('a success ends the incident and the next streak gets a new id', () => {
+  const tracker = new DailyDeliveryFailureTracker('results');
+  const t0 = Date.UTC(2026, 10, 19, 0, 0, 0);
+  tracker.recordFailure(t0);
+  const first = tracker.recordFailure(t0 + 600_000);
+  tracker.recordSuccess();
+  const t1 = t0 + 20_000_000;
+  expect(tracker.recordFailure(t1)).toBeNull();
+  const next = tracker.recordFailure(t1 + 600_000);
+  expect(next?.id).not.toBe(first?.id);
+});
+
+it('footer shows the id, first/repeat phase, start time, and elapsed time', () => {
+  const t0 = Date.UTC(2026, 10, 18, 16, 18); // 01:18 JST
+  const incident = { id: '20261119-0118-R', firstFailureAt: t0, lastAlertAt: 0 };
+  expect(dailyDeliveryAlertFooter(incident, t0 + 600_000)).toBe(
+    'アラートID: 20261119-0118-R（初回通知） / 発生 01:18 / 経過 10分',
+  );
 });
