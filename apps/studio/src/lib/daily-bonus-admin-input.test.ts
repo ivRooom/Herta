@@ -131,6 +131,18 @@ test('resolveSpecialDayOverride prefers a date rule over an annual rule', () => 
   });
 });
 
+test('resolveSpecialDayOverride falls back to an annual rule when the date rule has no usable content', () => {
+  const rules = [
+    rule({ id: 'annual', title: '年次タイトル' }),
+    rule({ id: 'date', kind: 'date', exact_date: '2026-12-25', month_day: null, title: ' ' }),
+  ];
+  assert.deepEqual(resolveSpecialDayOverride(rules, '2026-12-25'), {
+    title: '年次タイトル',
+    intro: null,
+    source: 'annual',
+  });
+});
+
 test('resolveSpecialDayOverride skips disabled rules and requires content', () => {
   assert.equal(
     resolveSpecialDayOverride([rule({ enabled: false, title: 'x' })], '2026-12-25'),

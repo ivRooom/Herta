@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 
 export interface DailyAnnouncement {
@@ -136,7 +136,9 @@ export interface DailySpecialDayRuleInput {
   enabled: boolean;
   createdBy: string;
 }
-export async function listDailySpecialDayRules(db: PrismaClient, guild: string) {
+/** 特別日ルールの読み書きは通常のクライアントでも対話的トランザクション内でも行える。 */
+export type DailySpecialDayRuleDbClient = PrismaClient | Prisma.TransactionClient;
+export async function listDailySpecialDayRules(db: DailySpecialDayRuleDbClient, guild: string) {
   return db.$queryRaw<
     DailySpecialDayRuleRow[]
   >`SELECT * FROM daily_special_day_rules WHERE guild_id=${guild} ORDER BY kind DESC, exact_date, month_day, id`;
@@ -147,7 +149,7 @@ export async function listDailySpecialDayRules(db: PrismaClient, guild: string) 
  * guild can never be hijacked; the read-back returns null then.
  */
 export async function saveDailySpecialDayRule(
-  db: PrismaClient,
+  db: DailySpecialDayRuleDbClient,
   guild: string,
   rule: DailySpecialDayRuleInput,
 ) {
@@ -157,7 +159,11 @@ export async function saveDailySpecialDayRule(
   >`SELECT * FROM daily_special_day_rules WHERE id=${rule.id} AND guild_id=${guild}`;
   return rows[0] ?? null;
 }
-export async function deleteDailySpecialDayRule(db: PrismaClient, guild: string, id: string) {
+export async function deleteDailySpecialDayRule(
+  db: DailySpecialDayRuleDbClient,
+  guild: string,
+  id: string,
+) {
   return db.$executeRaw`DELETE FROM daily_special_day_rules WHERE id=${id} AND guild_id=${guild}`;
 }
 export async function hasDailyBonusSchema(db: PrismaClient) {

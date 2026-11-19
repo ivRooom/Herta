@@ -118,7 +118,9 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
   async function deleteRule(rule: SpecialDayRuleView) {
     const target = rule.kind === 'date' ? rule.exact_date : `毎年 ${rule.month_day}`;
     if (!window.confirm(`特別日ルール（${target}）を削除しますか？`)) return;
-    await mutate({ action: 'delete-special-day-rule', ruleId: rule.id });
+    const ok = await mutate({ action: 'delete-special-day-rule', ruleId: rule.id });
+    // 編集中のルール自体を削除したら、フォームに残った内容で再作成されないようクリアする。
+    if (ok && ruleForm.id === rule.id) setRuleForm(emptyRuleForm);
   }
   const field = 'rounded border border-white/20 bg-transparent px-3 py-2';
   return (
@@ -251,6 +253,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
             種別
             <select
               className={field}
+              disabled={busy}
               value={ruleForm.kind}
               onChange={(e) =>
                 setRuleForm({ ...ruleForm, kind: e.target.value as 'date' | 'annual' })
@@ -265,6 +268,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
               日付
               <input
                 className={field}
+                disabled={busy}
                 type="date"
                 value={ruleForm.exactDate}
                 onChange={(e) => setRuleForm({ ...ruleForm, exactDate: e.target.value })}
@@ -275,6 +279,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
               月日（MM-DD）
               <input
                 className={field}
+                disabled={busy}
                 placeholder="12-25"
                 value={ruleForm.monthDay}
                 onChange={(e) => setRuleForm({ ...ruleForm, monthDay: e.target.value })}
@@ -285,6 +290,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
             タイトル（空欄なら通常タイトル）
             <input
               className={field}
+              disabled={busy}
               value={ruleForm.title}
               onChange={(e) => setRuleForm({ ...ruleForm, title: e.target.value })}
             />
@@ -293,6 +299,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
             冒頭文（空欄なら通常の冒頭文）
             <textarea
               className={field}
+              disabled={busy}
               value={ruleForm.intro}
               onChange={(e) => setRuleForm({ ...ruleForm, intro: e.target.value })}
             />
@@ -300,6 +307,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
           <label className="block">
             <input
               type="checkbox"
+              disabled={busy}
               checked={ruleForm.enabled}
               onChange={(e) => setRuleForm({ ...ruleForm, enabled: e.target.checked })}
             />

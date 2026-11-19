@@ -126,7 +126,11 @@ export function resolveSpecialDayOverride(
   const dateRule = rules.find(
     (rule) => rule.enabled && rule.kind === 'date' && rule.exact_date === dateJst,
   );
-  if (dateRule) return toOverride(dateRule);
+  if (dateRule) {
+    // 内容が使えない個別日ルールは年次ルールへフォールバックする（Bot の解決と同一）。
+    const dateOverride = toOverride(dateRule);
+    if (dateOverride) return dateOverride;
+  }
   const annualRule = rules.find(
     (rule) => rule.enabled && rule.kind === 'annual' && rule.month_day === monthDay,
   );

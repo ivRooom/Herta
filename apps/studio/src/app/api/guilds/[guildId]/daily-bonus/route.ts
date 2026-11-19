@@ -23,23 +23,29 @@ async function access(request: Request, context: Context) {
   const { guildId } = await context.params;
   const resolved = await resolveStudioAccess(guildId, session.user.id);
   if (!resolved.ok) return { response: resolved.response };
-  if (
-    request.method === 'GET' &&
-    !hasEffectivePluginPermission(
+  const canReadHistory = hasEffectivePluginPermission(
+    resolved.access,
+    'studio.settings.read',
+    studioDailyBonusResource(guildId, 'history'),
+  );
+  if (request.method === 'GET' && !canReadHistory) {
+    // 特別日ルールの書き込み権限だけを持つ利用者も、管理に必要なルール一覧は読める。
+    const canManageSpecialDays = hasEffectivePluginPermission(
       resolved.access,
-      'studio.settings.read',
-      studioDailyBonusResource(guildId, 'history'),
-    )
-  )
-    return { response: reply({ error: 'forbidden' }, 403) };
-  return { guildId, actor: session.user.id, policyAccess: resolved.access };
+      'studio.settings.write',
+      studioDailyBonusResource(guildId, 'special-days'),
+    );
+    if (!canManageSpecialDays) return { response: reply({ error: 'forbidden' }, 403) };
+  }
+  return { guildId, actor: session.user.id, policyAccess: resolved.access, canReadHistory };
 }
 export async function GET(request: Request, context: Context) {
   const allowed = await access(request, context);
   if ('response' in allowed) return allowed.response;
   try {
-    const announcements =
-      await prisma.$queryRaw`SELECT a.*,COUNT(c.discord_user_id)::int AS claims,COUNT(c.discord_user_id) FILTER(WHERE c.status='confirmed')::int AS confirmed FROM daily_bonus_announcements a LEFT JOIN daily_bonus_claims c ON c.guild_id=a.guild_id AND c.target_date=a.target_date WHERE a.guild_id=${allowed.guildId} GROUP BY a.guild_id,a.target_date ORDER BY a.target_date DESC LIMIT 60`;
+    const announcements = allowed.canReadHistory
+      ? await prisma.$queryRaw`SELECT a.*,COUNT(c.discord_user_id)::int AS claims,COUNT(c.discord_user_id) FILTER(WHERE c.status='confirmed')::int AS confirmed FROM daily_bonus_announcements a LEFT JOIN daily_bonus_claims c ON c.guild_id=a.guild_id AND c.target_date=a.target_date WHERE a.guild_id=${allowed.guildId} GROUP BY a.guild_id,a.target_date ORDER BY a.target_date DESC LIMIT 60`
+      : [];
     let specialDayRules: Awaited<ReturnType<typeof listDailySpecialDayRules>> = [];
     let specialDayRulesAvailable = true;
     try {
@@ -71,45 +77,55 @@ export async function POST(request: Request, context: Context) {
       if (body.action === 'save-special-day-rule') {
         const input = parseSpecialDayRuleInput(body.rule);
         if (!input) return reply({ error: 'invalid_request' }, 422);
-        const saved = await saveDailySpecialDayRule(prisma, allowed.guildId, {
-          id: input.id ?? crypto.randomUUID(),
-          kind: input.kind,
-          exactDate: input.exactDate,
-          monthDay: input.monthDay,
-          title: input.title,
-          intro: input.intro,
-          enabled: input.enabled,
-          createdBy: allowed.actor,
+        // ルール変更と監査記録は同一トランザクションで確定する（監査失敗時は変更も戻す）。
+        const saved = await prisma.$transaction(async (tx) => {
+          const row = await saveDailySpecialDayRule(tx, allowed.guildId, {
+            id: input.id ?? crypto.randomUUID(),
+            kind: input.kind,
+            exactDate: input.exactDate,
+            monthDay: input.monthDay,
+            title: input.title,
+            intro: input.intro,
+            enabled: input.enabled,
+            createdBy: allowed.actor,
+          });
+          if (!row) return null;
+          await tx.auditLog.create({
+            data: {
+              guildId: allowed.guildId,
+              actorId: allowed.actor,
+              event: 'daily_bonus.special_day_rule.saved',
+              metadata: {
+                ruleId: row.id,
+                kind: row.kind,
+                exactDate: row.exact_date,
+                monthDay: row.month_day,
+                enabled: row.enabled,
+              },
+            },
+          });
+          return row;
         });
         if (!saved) return reply({ error: 'rule_not_found' }, 404);
-        await prisma.auditLog.create({
-          data: {
-            guildId: allowed.guildId,
-            actorId: allowed.actor,
-            event: 'daily_bonus.special_day_rule.saved',
-            metadata: {
-              ruleId: saved.id,
-              kind: saved.kind,
-              exactDate: saved.exact_date,
-              monthDay: saved.month_day,
-              enabled: saved.enabled,
-            },
-          },
-        });
         return reply({ status: 'saved', rule: saved });
       }
       if (typeof body.ruleId !== 'string' || body.ruleId.length === 0 || body.ruleId.length > 128)
         return reply({ error: 'invalid_request' }, 422);
-      const deleted = await deleteDailySpecialDayRule(prisma, allowed.guildId, body.ruleId);
-      if (deleted === 0) return reply({ error: 'rule_not_found' }, 404);
-      await prisma.auditLog.create({
-        data: {
-          guildId: allowed.guildId,
-          actorId: allowed.actor,
-          event: 'daily_bonus.special_day_rule.deleted',
-          metadata: { ruleId: body.ruleId },
-        },
+      const ruleId = body.ruleId;
+      const deleted = await prisma.$transaction(async (tx) => {
+        const count = await deleteDailySpecialDayRule(tx, allowed.guildId, ruleId);
+        if (count === 0) return 0;
+        await tx.auditLog.create({
+          data: {
+            guildId: allowed.guildId,
+            actorId: allowed.actor,
+            event: 'daily_bonus.special_day_rule.deleted',
+            metadata: { ruleId },
+          },
+        });
+        return count;
       });
+      if (deleted === 0) return reply({ error: 'rule_not_found' }, 404);
       return reply({ status: 'deleted' });
     }
     const delivery = body.action === 'retry' || body.action === 'reconcile';
