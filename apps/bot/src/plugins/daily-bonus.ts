@@ -10,6 +10,7 @@ import {
 } from 'discord.js';
 import {
   getDailyAnnouncement,
+  listDailySpecialDayRules,
   reserveDailyAnnouncement,
   captureDailyAnnouncementPopulation,
   setDailyAnnouncement,
@@ -26,6 +27,7 @@ import {
 } from './daily-bonus-policy.js';
 import { captureDailyBonusPopulation } from './daily-bonus-population.js';
 import { fetchDailyTodayHistory, type DailyBundleThemeKey } from './daily-today-history.js';
+import { resolveSpecialDayOverride, type SpecialDayOverride } from './daily-special-days.js';
 
 /** Accent colors for the daily bundle themes (ivrm-web #1304). */
 const DAILY_BUNDLE_THEME_COLORS: Record<DailyBundleThemeKey, number> = {
@@ -81,6 +83,23 @@ type Context = PluginRuntimeContext<Config, Client, PrismaClient>;
  * never be turned into an arbitrary external link.
  */
 const MEMBER_DAILY_URL = 'https://member.ivrm.jp/participation';
+
+/**
+ * Load the day's special-day override (#705). The rules table is
+ * applied by a separate migration gate, so any failure (including a
+ * missing table) degrades to the standard announcement.
+ */
+async function loadSpecialDayOverride(
+  prisma: PrismaClient,
+  guildId: string,
+  date: string,
+): Promise<SpecialDayOverride | null> {
+  try {
+    return resolveSpecialDayOverride(await listDailySpecialDayRules(prisma, guildId), date);
+  } catch {
+    return null;
+  }
+}
 
 const timers = new Map<string, NodeJS.Timeout>();
 const running = new Set<string>();
@@ -258,12 +277,13 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
       );
       const events = todayHistory?.events ?? [];
       const bundle = todayHistory?.bundle ?? null;
+      const specialDay = await loadSpecialDayOverride(ctx.prisma, ctx.guildId, date);
       const embed = new EmbedBuilder()
         .setColor(bundle?.themeKey ? DAILY_BUNDLE_THEME_COLORS[bundle.themeKey] : 0xb9a2ff)
-        .setTitle(`🎁 ${date} 本日のログインボーナス`)
+        .setTitle(specialDay?.title ?? `🎁 ${date} 本日のログインボーナス`)
         .setURL(MEMBER_DAILY_URL)
         .setDescription(
-          `${ctx.config.messageTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
+          `${specialDay?.intro ?? ctx.config.messageTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
         )
         .setFooter({ text: '受取と今日の運勢は本人にだけ表示します' });
       if (bundle?.image) embed.setImage(bundle.image.url);
