@@ -1,4 +1,4 @@
-import type { DailySpecialDayRule } from '@herta/db';
+import type { DailySpecialDayRuleRow } from '@herta/db';
 
 /**
  * Special-day overrides for the 09:00 announcement (#705): a rule
@@ -29,7 +29,7 @@ function normalizeText(value: string | null, max: number): string | null {
   return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
 }
 
-function toOverride(rule: DailySpecialDayRule): SpecialDayOverride | null {
+function toOverride(rule: DailySpecialDayRuleRow): SpecialDayOverride | null {
   const title = normalizeText(rule.title, TITLE_MAX);
   const intro = normalizeText(rule.intro, INTRO_MAX);
   if (title === null && intro === null) return null;
@@ -37,7 +37,7 @@ function toOverride(rule: DailySpecialDayRule): SpecialDayOverride | null {
 }
 
 export function resolveSpecialDayOverride(
-  rules: readonly DailySpecialDayRule[],
+  rules: readonly DailySpecialDayRuleRow[],
   dateJst: string,
 ): SpecialDayOverride | null {
   if (!JST_DATE.test(dateJst)) return null;

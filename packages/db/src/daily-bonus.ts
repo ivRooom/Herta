@@ -113,7 +113,7 @@ export async function dailyFortuneSnapshot<T>(
   >`SELECT result_json FROM daily_fortune_results WHERE guild_id=${guild} AND discord_user_id=${user} AND target_date=${date}`;
   return saved[0]!.result_json;
 }
-export interface DailySpecialDayRule {
+export interface DailySpecialDayRuleRow {
   id: string;
   guild_id: string;
   kind: 'date' | 'annual';
@@ -138,7 +138,7 @@ export interface DailySpecialDayRuleInput {
 }
 export async function listDailySpecialDayRules(db: PrismaClient, guild: string) {
   return db.$queryRaw<
-    DailySpecialDayRule[]
+    DailySpecialDayRuleRow[]
   >`SELECT * FROM daily_special_day_rules WHERE guild_id=${guild} ORDER BY kind DESC, exact_date, month_day, id`;
 }
 /**
@@ -153,7 +153,7 @@ export async function saveDailySpecialDayRule(
 ) {
   await db.$executeRaw`INSERT INTO daily_special_day_rules(id,guild_id,kind,exact_date,month_day,title,intro,enabled,created_by) VALUES(${rule.id},${guild},${rule.kind},${rule.exactDate},${rule.monthDay},${rule.title},${rule.intro},${rule.enabled},${rule.createdBy}) ON CONFLICT(id) DO UPDATE SET kind=EXCLUDED.kind,exact_date=EXCLUDED.exact_date,month_day=EXCLUDED.month_day,title=EXCLUDED.title,intro=EXCLUDED.intro,enabled=EXCLUDED.enabled,updated_at=NOW() WHERE daily_special_day_rules.guild_id=EXCLUDED.guild_id`;
   const rows = await db.$queryRaw<
-    DailySpecialDayRule[]
+    DailySpecialDayRuleRow[]
   >`SELECT * FROM daily_special_day_rules WHERE id=${rule.id} AND guild_id=${guild}`;
   return rows[0] ?? null;
 }

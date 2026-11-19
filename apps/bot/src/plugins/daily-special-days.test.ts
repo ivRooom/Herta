@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import type { DailySpecialDayRule } from '@herta/db';
+import type { DailySpecialDayRuleRow } from '@herta/db';
 import { resolveSpecialDayOverride } from './daily-special-days.js';
 
-function rule(partial: Partial<DailySpecialDayRule>): DailySpecialDayRule {
+function rule(partial: Partial<DailySpecialDayRuleRow>): DailySpecialDayRuleRow {
   return {
     id: 'rule-1',
     guild_id: '964326043420872704',
