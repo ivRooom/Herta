@@ -15,6 +15,43 @@ export interface TodayHistoryConfig {
   guildId: string;
 }
 
+/** Theme keys of the daily bundle contract (ivrm-web #1304). */
+export const DAILY_BUNDLE_THEME_KEYS = [
+  'standard',
+  'halloween',
+  'christmas',
+  'new_year',
+  'sakura',
+  'summer',
+  'autumn',
+  'anniversary',
+] as const;
+
+export type DailyBundleThemeKey = (typeof DAILY_BUNDLE_THEME_KEYS)[number];
+
+export interface DailyBundleImage {
+  url: string;
+  width: number;
+  height: number;
+  alt: string | null;
+}
+
+/**
+ * The day's delivery bundle resolved by the Web side (#1304): a
+ * banner image and a theme key, each resolved date > annual >
+ * default. The bot only renders what the bundle carries; content
+ * management lives in the Web Admin calendar.
+ */
+export interface DailyBundle {
+  themeKey: DailyBundleThemeKey | null;
+  image: DailyBundleImage | null;
+}
+
+export interface TodayHistoryPayload {
+  events: TodayHistoryEvent[];
+  bundle: DailyBundle | null;
+}
+
 /**
  * The anniversary bank lives in ivrm-web (Today-in-History, ivrm-web
  * #866); this client only renders the day's confirmed selection that
@@ -121,6 +158,74 @@ export function parseTodayHistoryResponse(
   return events.slice(0, cap);
 }
 
+const DAILY_BUNDLE_SOURCES = new Set(['default', 'annual', 'date']);
+
+/**
+ * Full URL validation for the banner image: EmbedBuilder.setImage
+ * rejects values like "https://" and the throw would fail the whole
+ * announcement, so anything the URL parser cannot accept as an
+ * https URL with a host is rejected here instead.
+ */
+function isHttpsUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate the bundle block of a today-history response. The bundle
+ * degrades independently of the anniversary items: a missing or
+ * malformed bundle yields null (the announcement renders without a
+ * banner/theme) and never invalidates a good selection.
+ */
+export function parseDailyBundle(value: unknown): DailyBundle | null {
+  if (!isRecord(value) || value.contractVersion !== 1) return null;
+  const { themeKey, themeSource, image } = value;
+  if (themeKey !== null && !(DAILY_BUNDLE_THEME_KEYS as readonly unknown[]).includes(themeKey))
+    return null;
+  if (themeSource !== null && !DAILY_BUNDLE_SOURCES.has(themeSource as string)) return null;
+  if (image === null) return { themeKey: themeKey as DailyBundleThemeKey | null, image: null };
+  if (!isRecord(image)) return null;
+  const { url, width, height, alt, source } = image;
+  if (typeof url !== 'string' || url.length > 2048 || !isHttpsUrl(url)) return null;
+  if (!Number.isSafeInteger(width) || (width as number) < 1 || (width as number) > 8192)
+    return null;
+  if (!Number.isSafeInteger(height) || (height as number) < 1 || (height as number) > 8192)
+    return null;
+  if (alt !== null && (typeof alt !== 'string' || alt.length > 300)) return null;
+  if (!DAILY_BUNDLE_SOURCES.has(source as string)) return null;
+  return {
+    themeKey: themeKey as DailyBundleThemeKey | null,
+    image: {
+      url,
+      width: width as number,
+      height: height as number,
+      alt: alt as string | null,
+    },
+  };
+}
+
+/**
+ * Parse the full confirm payload: anniversary events plus bundle.
+ * The envelope (date + confirmation) gates the whole payload, but
+ * the two sections then degrade independently: an invalid item
+ * selection yields an empty event list without discarding a valid
+ * bundle, and vice versa.
+ */
+export function parseTodayHistoryPayload(
+  value: unknown,
+  date: string,
+  limit: number,
+): TodayHistoryPayload | null {
+  if (!isRecord(value) || value.date !== date || value.confirmed !== true) return null;
+  const events = parseTodayHistoryResponse(value, date, limit) ?? [];
+  const bundle = parseDailyBundle(value.bundle);
+  return { events, bundle };
+}
+
 /**
  * Fetch the day's anniversaries from the Web bank. Every failure
  * (unconfigured, unreachable, rejected, malformed) degrades to an
@@ -134,7 +239,22 @@ export async function fetchTodayHistoryEvents(
   limit: number,
   config = resolveTodayHistoryConfig(process.env),
 ): Promise<TodayHistoryEvent[]> {
-  if (!config || config.guildId !== guildId) return [];
+  const payload = await fetchDailyTodayHistory(guildId, date, limit, config);
+  return payload?.events ?? [];
+}
+
+/**
+ * Fetch the day's anniversaries and delivery bundle in one confirm
+ * call. Failures degrade exactly like fetchTodayHistoryEvents: null
+ * means "render the announcement without either section".
+ */
+export async function fetchDailyTodayHistory(
+  guildId: string,
+  date: string,
+  limit: number,
+  config = resolveTodayHistoryConfig(process.env),
+): Promise<TodayHistoryPayload | null> {
+  if (!config || config.guildId !== guildId) return null;
   const requestId = randomUUID();
   const request = buildTodayHistoryRequest(
     config,
@@ -152,11 +272,11 @@ export async function fetchTodayHistoryEvents(
     });
     if (!response.ok) {
       await response.body?.cancel();
-      return [];
+      return null;
     }
     if (!response.headers.get('content-type')?.includes('application/json') || !response.body) {
       await response.body?.cancel();
-      return [];
+      return null;
     }
     const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
@@ -168,7 +288,7 @@ export async function fetchTodayHistoryEvents(
         size += next.value.byteLength;
         if (size > 16384) {
           await reader.cancel();
-          return [];
+          return null;
         }
         chunks.push(next.value);
       }
@@ -176,8 +296,8 @@ export async function fetchTodayHistoryEvents(
       reader.releaseLock();
     }
     const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    return parseTodayHistoryResponse(value, date, limit) ?? [];
+    return parseTodayHistoryPayload(value, date, limit);
   } catch {
-    return [];
+    return null;
   } // Never log URLs, response bodies or entry contents.
 }

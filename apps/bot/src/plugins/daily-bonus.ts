@@ -25,7 +25,19 @@ import {
   rejectDailyBonus,
 } from './daily-bonus-policy.js';
 import { captureDailyBonusPopulation } from './daily-bonus-population.js';
-import { fetchTodayHistoryEvents } from './daily-today-history.js';
+import { fetchDailyTodayHistory, type DailyBundleThemeKey } from './daily-today-history.js';
+
+/** Accent colors for the daily bundle themes (ivrm-web #1304). */
+const DAILY_BUNDLE_THEME_COLORS: Record<DailyBundleThemeKey, number> = {
+  standard: 0xb9a2ff,
+  halloween: 0xf4900c,
+  christmas: 0xc0392b,
+  new_year: 0xd4af37,
+  sakura: 0xf2a7bb,
+  summer: 0x38a3d1,
+  autumn: 0xb5651d,
+  anniversary: 0xffb300,
+};
 import { EMPTY_FORTUNE_PROFILE } from './fortune-core.js';
 import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
 import { claimDailyBonus, dailyBonusStatus, type DailyWalletResult } from './daily-bonus-wallet.js';
@@ -239,15 +251,22 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
         throw new Error('DailyBonusPermissions');
       const population = await captureDailyBonusPopulation(guild, role.id);
       await captureDailyAnnouncementPopulation(ctx.prisma, ctx.guildId, date, role.id, population);
-      const events = await fetchTodayHistoryEvents(ctx.guildId, date, ctx.config.anniversaryLimit);
+      const todayHistory = await fetchDailyTodayHistory(
+        ctx.guildId,
+        date,
+        ctx.config.anniversaryLimit,
+      );
+      const events = todayHistory?.events ?? [];
+      const bundle = todayHistory?.bundle ?? null;
       const embed = new EmbedBuilder()
-        .setColor(0xb9a2ff)
+        .setColor(bundle?.themeKey ? DAILY_BUNDLE_THEME_COLORS[bundle.themeKey] : 0xb9a2ff)
         .setTitle(`🎁 ${date} 本日のログインボーナス`)
         .setURL(MEMBER_DAILY_URL)
         .setDescription(
           `${ctx.config.messageTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
         )
         .setFooter({ text: '受取と今日の運勢は本人にだけ表示します' });
+      if (bundle?.image) embed.setImage(bundle.image.url);
       if (events.length)
         embed.addFields({
           name: dailyAnniversaryHeading(events.length),

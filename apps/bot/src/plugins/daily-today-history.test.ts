@@ -2,6 +2,8 @@ import { createHmac } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import {
   buildTodayHistoryRequest,
+  parseDailyBundle,
+  parseTodayHistoryPayload,
   parseTodayHistoryResponse,
   resolveTodayHistoryConfig,
   TODAY_HISTORY_PATH,
@@ -117,6 +119,120 @@ describe('today-history response parsing', () => {
         3,
       ),
     ).toBeNull();
+  });
+  it('parses the daily bundle alongside the events', () => {
+    const payload = parseTodayHistoryPayload(
+      {
+        date: '2026-10-31',
+        confirmed: true,
+        items: [item],
+        bundle: {
+          contractVersion: 1,
+          themeKey: 'halloween',
+          themeSource: 'annual',
+          image: {
+            url: 'https://example.test/banner.png',
+            width: 1920,
+            height: 1080,
+            alt: 'ハロウィン',
+            source: 'annual',
+          },
+        },
+      },
+      '2026-10-31',
+      3,
+    );
+    expect(payload?.events).toHaveLength(1);
+    expect(payload?.bundle).toEqual({
+      themeKey: 'halloween',
+      image: {
+        url: 'https://example.test/banner.png',
+        width: 1920,
+        height: 1080,
+        alt: 'ハロウィン',
+      },
+    });
+  });
+  it('keeps events when the bundle is absent or malformed', () => {
+    const base = { date: '2026-10-30', confirmed: true, items: [item] };
+    expect(parseTodayHistoryPayload(base, '2026-10-30', 3)?.bundle).toBeNull();
+    expect(
+      parseTodayHistoryPayload(
+        { ...base, bundle: { contractVersion: 2, themeKey: null, themeSource: null, image: null } },
+        '2026-10-30',
+        3,
+      )?.bundle,
+    ).toBeNull();
+    expect(
+      parseDailyBundle({
+        contractVersion: 1,
+        themeKey: 'unknown-theme',
+        themeSource: null,
+        image: null,
+      }),
+    ).toBeNull();
+    expect(
+      parseDailyBundle({
+        contractVersion: 1,
+        themeKey: null,
+        themeSource: null,
+        image: {
+          url: 'http://example.test/banner.png',
+          width: 1920,
+          height: 1080,
+          alt: null,
+          source: 'default',
+        },
+      }),
+    ).toBeNull();
+  });
+  it('rejects a hostless image URL that EmbedBuilder would throw on', () => {
+    expect(
+      parseDailyBundle({
+        contractVersion: 1,
+        themeKey: null,
+        themeSource: null,
+        image: { url: 'https://', width: 1920, height: 1080, alt: null, source: 'default' },
+      }),
+    ).toBeNull();
+  });
+  it('keeps a valid bundle when the item selection is invalid', () => {
+    const payload = parseTodayHistoryPayload(
+      {
+        date: '2026-10-30',
+        confirmed: true,
+        items: [{ ...item, summary: 42 }],
+        bundle: { contractVersion: 1, themeKey: 'sakura', themeSource: 'date', image: null },
+      },
+      '2026-10-30',
+      3,
+    );
+    expect(payload).toEqual({ events: [], bundle: { themeKey: 'sakura', image: null } });
+    expect(
+      parseTodayHistoryPayload(
+        {
+          date: '2026-10-31',
+          confirmed: true,
+          items: [item],
+          bundle: { contractVersion: 1, themeKey: 'sakura', themeSource: 'date', image: null },
+        },
+        '2026-10-30',
+        3,
+      ),
+    ).toBeNull();
+  });
+  it('accepts a theme-only bundle and an empty bundle', () => {
+    expect(
+      parseDailyBundle({
+        contractVersion: 1,
+        themeKey: 'sakura',
+        themeSource: 'date',
+        image: null,
+      }),
+    ).toEqual({ themeKey: 'sakura', image: null });
+    expect(
+      parseDailyBundle({ contractVersion: 1, themeKey: null, themeSource: null, image: null }),
+    ).toEqual({ themeKey: null, image: null });
   });
   it('caps at three and keeps an empty day empty', () => {
     const many = [item, item, item, item].map((e, i) => ({ ...e, id: `e${i}` }));
