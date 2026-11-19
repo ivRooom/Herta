@@ -186,6 +186,41 @@ describe('today-history response parsing', () => {
       }),
     ).toBeNull();
   });
+  it('rejects a hostless image URL that EmbedBuilder would throw on', () => {
+    expect(
+      parseDailyBundle({
+        contractVersion: 1,
+        themeKey: null,
+        themeSource: null,
+        image: { url: 'https://', width: 1920, height: 1080, alt: null, source: 'default' },
+      }),
+    ).toBeNull();
+  });
+  it('keeps a valid bundle when the item selection is invalid', () => {
+    const payload = parseTodayHistoryPayload(
+      {
+        date: '2026-10-30',
+        confirmed: true,
+        items: [{ ...item, summary: 42 }],
+        bundle: { contractVersion: 1, themeKey: 'sakura', themeSource: 'date', image: null },
+      },
+      '2026-10-30',
+      3,
+    );
+    expect(payload).toEqual({ events: [], bundle: { themeKey: 'sakura', image: null } });
+    expect(
+      parseTodayHistoryPayload(
+        {
+          date: '2026-10-31',
+          confirmed: true,
+          items: [item],
+          bundle: { contractVersion: 1, themeKey: 'sakura', themeSource: 'date', image: null },
+        },
+        '2026-10-30',
+        3,
+      ),
+    ).toBeNull();
+  });
   it('accepts a theme-only bundle and an empty bundle', () => {
     expect(
       parseDailyBundle({

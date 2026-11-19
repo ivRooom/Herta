@@ -161,6 +161,21 @@ export function parseTodayHistoryResponse(
 const DAILY_BUNDLE_SOURCES = new Set(['default', 'annual', 'date']);
 
 /**
+ * Full URL validation for the banner image: EmbedBuilder.setImage
+ * rejects values like "https://" and the throw would fail the whole
+ * announcement, so anything the URL parser cannot accept as an
+ * https URL with a host is rejected here instead.
+ */
+function isHttpsUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Validate the bundle block of a today-history response. The bundle
  * degrades independently of the anniversary items: a missing or
  * malformed bundle yields null (the announcement renders without a
@@ -175,7 +190,7 @@ export function parseDailyBundle(value: unknown): DailyBundle | null {
   if (image === null) return { themeKey: themeKey as DailyBundleThemeKey | null, image: null };
   if (!isRecord(image)) return null;
   const { url, width, height, alt, source } = image;
-  if (typeof url !== 'string' || url.length > 2048 || !/^https:\/\//.test(url)) return null;
+  if (typeof url !== 'string' || url.length > 2048 || !isHttpsUrl(url)) return null;
   if (!Number.isSafeInteger(width) || (width as number) < 1 || (width as number) > 8192)
     return null;
   if (!Number.isSafeInteger(height) || (height as number) < 1 || (height as number) > 8192)
@@ -193,15 +208,21 @@ export function parseDailyBundle(value: unknown): DailyBundle | null {
   };
 }
 
-/** Parse the full confirm payload: anniversary events plus bundle. */
+/**
+ * Parse the full confirm payload: anniversary events plus bundle.
+ * The envelope (date + confirmation) gates the whole payload, but
+ * the two sections then degrade independently: an invalid item
+ * selection yields an empty event list without discarding a valid
+ * bundle, and vice versa.
+ */
 export function parseTodayHistoryPayload(
   value: unknown,
   date: string,
   limit: number,
 ): TodayHistoryPayload | null {
-  const events = parseTodayHistoryResponse(value, date, limit);
-  if (events === null) return null;
-  const bundle = isRecord(value) ? parseDailyBundle(value.bundle) : null;
+  if (!isRecord(value) || value.date !== date || value.confirmed !== true) return null;
+  const events = parseTodayHistoryResponse(value, date, limit) ?? [];
+  const bundle = parseDailyBundle(value.bundle);
   return { events, bundle };
 }
 
