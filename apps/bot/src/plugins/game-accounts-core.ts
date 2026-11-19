@@ -241,6 +241,8 @@ export function formatGameAccountsError(
         : `入力を確認してください（${result.message}）`;
     case 'card-unavailable':
       return 'カード画像は現在表示できません。';
+    case 'ranking-card-unavailable':
+      return 'ランキング画像は現在表示できません。';
     case 'progress-unsupported':
       return 'そのゲームは探索度表示に未対応です。対応しているのは原神と崩壊：スターレイルです。';
     case 'ineligible-guild':
@@ -904,6 +906,24 @@ export function rankingRequestInput(
     slot: selection.axis === 'piece' ? (selection.slot ?? undefined) : undefined,
     formula: selection.axis === 'formula' ? selection.formula : undefined,
     limit: RANKING_DISPLAY_LIMIT,
+  };
+}
+
+/**
+ * 選択状態から ranking_card アクションの入力を作る。条件は ranking
+ * と同じだが、カードは上位10件固定で描くので limit は送らない。
+ */
+export function rankingCardRequestInput(
+  gameCode: string,
+  selection: RankingSelection,
+): GameAccountsRequestInput {
+  return {
+    action: 'ranking_card',
+    gameCode,
+    axis: selection.axis,
+    characterId: selection.axis === 'character' ? (selection.characterId ?? undefined) : undefined,
+    slot: selection.axis === 'piece' ? (selection.slot ?? undefined) : undefined,
+    formula: selection.axis === 'formula' ? selection.formula : undefined,
   };
 }
 

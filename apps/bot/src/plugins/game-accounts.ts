@@ -43,6 +43,7 @@ import {
   RANKING_AXIS_OPTIONS,
   RANKING_DEFAULT_SELECTION,
   RANKING_FORMULA_OPTIONS,
+  rankingCardRequestInput,
   rankingCharacterOptions,
   rankingRequestInput,
   rankingSlotOptions,
@@ -452,6 +453,9 @@ interface GameSelectInteraction {
   editReply(options: {
     embeds?: GameEmbed[];
     components: ActionRowBuilder<StringSelectMenuBuilder>[];
+    files?: AttachmentBuilder[];
+    /** Empty array clears attachments left over from a previous view. */
+    attachments?: never[];
   }): Promise<unknown>;
 }
 
@@ -608,6 +612,47 @@ export function buildRankingView(
   return { embeds: [buildRankingEmbed(result, selection)], components };
 }
 
+export interface RankingViewReply {
+  embeds: GameEmbed[];
+  components: ActionRowBuilder<StringSelectMenuBuilder>[];
+  files?: AttachmentBuilder[];
+}
+
+/**
+ * Builds the ranking view with its image card (#1402 S3): the same
+ * selection's ranking rendered as a PNG when the API renders one,
+ * with the text embed and the dropdowns in both cases. Any card
+ * failure (empty ranking, renderer down) silently degrades to the
+ * text-only view; the dropdowns keep working so another selection
+ * may still produce a card. Exported for tests; the command and the
+ * select handler share it.
+ */
+export async function buildRankingViewReply(
+  guildId: string,
+  userId: string,
+  result: RankingResult,
+  selection: RankingSelection,
+  callApi: typeof callIvrmGameAccounts = callIvrmGameAccounts,
+): Promise<RankingViewReply> {
+  const view = buildRankingView(userId, result, selection);
+  try {
+    const card = await callApi(
+      guildId,
+      userId,
+      rankingCardRequestInput(result.gameCode, selection),
+    );
+    if (card.status === 'ok' && card.action === 'ranking_card') {
+      return {
+        ...view,
+        files: [new AttachmentBuilder(card.png, { name: 'ranking-card.png' })],
+      };
+    }
+  } catch {
+    // A failed card call is just the text view; never fail the ranking reply.
+  }
+  return view;
+}
+
 function nextRankingSelection(
   parsed: {
     kind: RankingSelectKind;
@@ -730,8 +775,20 @@ export async function handleGameAccountsRankingSelect(
         .catch(() => undefined);
       return;
     }
-    const view = buildRankingView(parsed.userId, result, selection);
-    await interaction.editReply(view);
+    const view = await buildRankingViewReply(
+      interaction.guildId,
+      parsed.userId,
+      result,
+      selection,
+      callApi,
+    );
+    // When the new view has no PNG, `attachments: []` clears the
+    // previous card (same pattern as the score switcher).
+    await interaction.editReply(
+      view.files
+        ? { embeds: view.embeds, components: view.components, files: view.files }
+        : { embeds: view.embeds, components: view.components, attachments: [] },
+    );
   } catch (error) {
     context.logger.error(
       { error: error instanceof Error ? error.name : 'UnknownError' },
@@ -898,7 +955,18 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
                 });
                 return;
               }
-              await interaction.editReply(buildRankingView(userId, result, selection));
+              // Ranking as an image card (#1402 S3): the PNG when
+              // available, the text embed and the dropdowns in both
+              // cases. Falls back to the text view when the card
+              // cannot be rendered.
+              const view = await buildRankingViewReply(
+                guildId,
+                userId,
+                result,
+                selection,
+                callIvrmGameAccounts,
+              );
+              await interaction.editReply(view);
               return;
             }
             if (subcommand === 'progress') {
