@@ -214,6 +214,88 @@ describe('private ivrm-web game accounts client', () => {
       expect(result.characters[1]?.artifactScore).toBeNull();
     }
   });
+  it('parses the role-optimized score stored next to the CV score (#1366)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockJson(() => ({
+        gameCode: 'genshin',
+        uid: '812468719',
+        showcaseStatus: 'ok',
+        fetchedAt: '2026-11-15T14:43:29.060Z',
+        hasSnapshot: true,
+        characters: [
+          {
+            id: 10000098,
+            name: 'クロリンデ',
+            level: 80,
+            artifactScore: {
+              total: 160.8,
+              version: 1,
+              perPiece: [{ cv: 34.9, rolls: { critRate: 3, critDmg: 3, energyRecharge: 1 } }],
+              roleScore: {
+                total: 20.7,
+                perPiece: [7.0],
+                role: 'attacker',
+                profile: 'atk',
+                version: 1,
+              },
+            },
+          },
+        ],
+      })),
+    );
+    const result = await callIvrmGameAccounts(
+      guild,
+      user,
+      { action: 'score', gameCode: 'genshin' },
+      config,
+    );
+    expect(result).toMatchObject({ status: 'ok', action: 'score' });
+    if (result.status === 'ok' && result.action === 'score') {
+      expect(result.characters[0]?.artifactScore?.roleScore).toEqual({
+        total: 20.7,
+        perPiece: [7.0],
+        role: 'attacker',
+        profile: 'atk',
+        version: 1,
+      });
+    }
+  });
+  it('fails closed when a present roleScore block is malformed', async () => {
+    for (const roleScore of [
+      { total: 'high', perPiece: [7.0], role: 'attacker', version: 1 },
+      { total: 20.7, perPiece: [7.0], role: 'dps', version: 1 },
+      { total: 20.7, perPiece: ['7'], role: 'attacker', version: 1 },
+      { total: 20.7, perPiece: [7.0], role: 'attacker', profile: 'speed', version: 1 },
+    ]) {
+      vi.stubGlobal(
+        'fetch',
+        mockJson(() => ({
+          gameCode: 'genshin',
+          uid: '812468719',
+          showcaseStatus: 'ok',
+          fetchedAt: null,
+          hasSnapshot: true,
+          characters: [
+            {
+              id: 10000098,
+              name: 'クロリンデ',
+              level: 80,
+              artifactScore: {
+                total: 160.8,
+                version: 1,
+                perPiece: [{ cv: 34.9, rolls: { critRate: 3 } }],
+                roleScore,
+              },
+            },
+          ],
+        })),
+      );
+      expect(
+        await callIvrmGameAccounts(guild, user, { action: 'score', gameCode: 'genshin' }, config),
+      ).toEqual({ status: 'unavailable' });
+    }
+  });
   it('maps API errors to result statuses', async () => {
     const cases: Array<[number, unknown, unknown]> = [
       [404, { status: 'error', error: 'member_not_linked' }, { status: 'not-linked' }],
@@ -340,6 +422,32 @@ describe('card action (build-card PNG)', () => {
     );
   });
 
+  it('sends formula in the signed body, within the contract keys (#1366 S3)', () => {
+    const id = '44444444-4444-4444-8444-444444444444';
+    const stamp = '2026-11-19T00:00:00.000Z';
+    const request = buildGameAccountsRequest(
+      config,
+      guild,
+      user,
+      { action: 'card', gameCode: 'genshin', characterId: '10000098', formula: 'role' },
+      id,
+      stamp,
+    );
+    const actionContract = contract.request.actions.card;
+    // Same membership assertion style as the ranking test: dropping
+    // formula from the bundle must fail here too.
+    expect(actionContract.optional).toEqual(expect.arrayContaining(['characterId', 'formula']));
+    const expectedKeys = [
+      ...contract.request.required,
+      ...actionContract.required,
+      'characterId',
+      'formula',
+    ].sort();
+    const body = JSON.parse(request.init.body) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(expectedKeys);
+    expect(body.formula).toBe('role');
+  });
+
   it('parses a card result and decodes the PNG', async () => {
     vi.stubGlobal(
       'fetch',
@@ -394,6 +502,7 @@ describe('card action (build-card PNG)', () => {
       [404, { status: 'error', error: 'card_unavailable' }, { status: 'card-unavailable' }],
       [404, { status: 'error', error: 'character_not_found' }, { status: 'card-unavailable' }],
       [422, { status: 'error', error: 'card_not_supported' }, { status: 'card-unavailable' }],
+      [422, { status: 'error', error: 'invalid_formula' }, { status: 'card-unavailable' }],
       [404, { status: 'error', error: 'member_not_linked' }, { status: 'not-linked' }],
       [
         404,
