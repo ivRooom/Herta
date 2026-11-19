@@ -73,6 +73,9 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
   async function mutate(body: unknown): Promise<boolean> {
     setBusy(true);
     setError('');
+    // 戻り値は POST 自体の成否。再読み込みの失敗はエラー表示だけに留め、
+    // 成功した変更（削除など）の後処理を取り消さない。
+    let posted = false;
     try {
       const result = await fetch(endpoint, {
         method: 'POST',
@@ -80,11 +83,12 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
         body: JSON.stringify(body),
       });
       if (!result.ok) throw new Error('入力・権限・安全な再試行条件を確認してください。');
+      posted = true;
       await load();
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : '操作に失敗しました。');
-      return false;
+      return posted;
     } finally {
       setBusy(false);
     }
