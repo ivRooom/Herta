@@ -1,7 +1,16 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { currentDailyBonusDate, dailyBonusReferenceRate } from '@/lib/daily-bonus-admin-input';
+import {
+  currentDailyBonusDate,
+  dailyBonusReferenceRate,
+  findConflictingSpecialDayRule,
+  resolveSpecialDayOverride,
+  validDailyBonusDate,
+  validMonthDay,
+  type SpecialDayRuleInput,
+  type SpecialDayRuleView,
+} from '@/lib/daily-bonus-admin-input';
 
 interface Announcement {
   target_date: string;
@@ -13,13 +22,27 @@ interface Announcement {
   eligible_captured_at: string | null;
   confirmed: number;
 }
+interface DailyBonusData {
+  announcements: Announcement[];
+  specialDayRules?: SpecialDayRuleView[];
+  specialDayRulesAvailable?: boolean;
+}
+const emptyRuleForm = {
+  id: '',
+  kind: 'annual' as 'date' | 'annual',
+  exactDate: '',
+  monthDay: '',
+  title: '',
+  intro: '',
+  enabled: true,
+};
 export function DailyBonusManager({ guildId }: { guildId: string }) {
   const [today, setToday] = useState('');
-  const [data, setData] = useState<{
-      announcements: Announcement[];
-    } | null>(null),
+  const [data, setData] = useState<DailyBonusData | null>(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const [ruleForm, setRuleForm] = useState(emptyRuleForm);
+  const [previewDate, setPreviewDate] = useState('');
   const endpoint = `/api/guilds/${guildId}/daily-bonus`;
   async function load() {
     const response = await fetch(endpoint, { cache: 'no-store' });
@@ -29,7 +52,9 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
   }
   useEffect(() => {
     let active = true;
-    setToday(currentDailyBonusDate());
+    const initialToday = currentDailyBonusDate();
+    setToday(initialToday);
+    setPreviewDate(initialToday);
     const timer = window.setInterval(() => setToday(currentDailyBonusDate()), 30000);
     void fetch(endpoint, { cache: 'no-store' })
       .then(async (response) => {
@@ -45,7 +70,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
       window.clearInterval(timer);
     };
   }, [endpoint]);
-  async function mutate(body: unknown) {
+  async function mutate(body: unknown): Promise<boolean> {
     setBusy(true);
     setError('');
     try {
@@ -56,11 +81,44 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
       });
       if (!result.ok) throw new Error('入力・権限・安全な再試行条件を確認してください。');
       await load();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : '操作に失敗しました。');
+      return false;
     } finally {
       setBusy(false);
     }
+  }
+  const rules = data?.specialDayRules ?? [];
+  const formInput: SpecialDayRuleInput = {
+    id: ruleForm.id || undefined,
+    kind: ruleForm.kind,
+    exactDate: ruleForm.kind === 'date' ? ruleForm.exactDate : null,
+    monthDay: ruleForm.kind === 'annual' ? ruleForm.monthDay : null,
+    title: ruleForm.title.trim() || null,
+    intro: ruleForm.intro.trim() || null,
+    enabled: ruleForm.enabled,
+  };
+  const conflict = findConflictingSpecialDayRule(rules, formInput);
+  const formValid =
+    (formInput.title !== null || formInput.intro !== null) &&
+    (ruleForm.kind === 'date'
+      ? validDailyBonusDate(ruleForm.exactDate)
+      : validMonthDay(ruleForm.monthDay)) &&
+    ruleForm.title.trim().length <= 256 &&
+    ruleForm.intro.trim().length <= 1000;
+  const preview = previewDate ? resolveSpecialDayOverride(rules, previewDate) : null;
+  async function saveRule() {
+    const ok = await mutate({
+      action: 'save-special-day-rule',
+      rule: { ...formInput, id: conflict ? conflict.id : formInput.id },
+    });
+    if (ok) setRuleForm(emptyRuleForm);
+  }
+  async function deleteRule(rule: SpecialDayRuleView) {
+    const target = rule.kind === 'date' ? rule.exact_date : `毎年 ${rule.month_day}`;
+    if (!window.confirm(`特別日ルール（${target}）を削除しますか？`)) return;
+    await mutate({ action: 'delete-special-day-rule', ruleId: rule.id });
   }
   const field = 'rounded border border-white/20 bg-transparent px-3 py-2';
   return (
@@ -137,6 +195,155 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
             </table>
           </div>
         )}
+      </section>
+      <section className="space-y-3">
+        <h2 className="text-xl">特別日ルール</h2>
+        <p>
+          09:00のログインボーナス通知のタイトルと冒頭文を、特定の日（個別日）または毎年の日付（年次）で差し替えます。個別日が年次より優先されます。タイトルのリンク先は常に固定です。配信画像とテーマは
+          Web のデイリーカレンダー（バンドル）側で管理します。
+        </p>
+        {data && data.specialDayRulesAvailable === false && (
+          <p role="alert">特別日ルールを取得できませんでした。DBの準備状況を確認してください。</p>
+        )}
+        {!data ? (
+          <p>読み込み中…</p>
+        ) : rules.length === 0 ? (
+          <p>特別日ルールはありません。</p>
+        ) : (
+          <ul className="space-y-2">
+            {rules.map((rule) => (
+              <li key={rule.id} className="rounded border border-white/20 p-3">
+                <p>
+                  {rule.kind === 'date' ? `個別日 ${rule.exact_date}` : `毎年 ${rule.month_day}`}
+                  {' ／ '}
+                  {rule.enabled ? '有効' : '無効'}
+                </p>
+                {rule.title && <p>タイトル: {rule.title}</p>}
+                {rule.intro && <p>冒頭文: {rule.intro}</p>}
+                <div className="space-x-3">
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      setRuleForm({
+                        id: rule.id,
+                        kind: rule.kind,
+                        exactDate: rule.exact_date ?? '',
+                        monthDay: rule.month_day ?? '',
+                        title: rule.title ?? '',
+                        intro: rule.intro ?? '',
+                        enabled: rule.enabled,
+                      })
+                    }
+                  >
+                    編集
+                  </button>
+                  <button disabled={busy} onClick={() => void deleteRule(rule)}>
+                    削除
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="space-y-2 rounded border border-white/20 p-3">
+          <h3>{ruleForm.id ? 'ルールを編集' : 'ルールを追加'}</h3>
+          <label className="block">
+            種別
+            <select
+              className={field}
+              value={ruleForm.kind}
+              onChange={(e) =>
+                setRuleForm({ ...ruleForm, kind: e.target.value as 'date' | 'annual' })
+              }
+            >
+              <option value="annual">年次（毎年）</option>
+              <option value="date">個別日（1回だけ）</option>
+            </select>
+          </label>
+          {ruleForm.kind === 'date' ? (
+            <label className="block">
+              日付
+              <input
+                className={field}
+                type="date"
+                value={ruleForm.exactDate}
+                onChange={(e) => setRuleForm({ ...ruleForm, exactDate: e.target.value })}
+              />
+            </label>
+          ) : (
+            <label className="block">
+              月日（MM-DD）
+              <input
+                className={field}
+                placeholder="12-25"
+                value={ruleForm.monthDay}
+                onChange={(e) => setRuleForm({ ...ruleForm, monthDay: e.target.value })}
+              />
+            </label>
+          )}
+          <label className="block">
+            タイトル（空欄なら通常タイトル）
+            <input
+              className={field}
+              value={ruleForm.title}
+              onChange={(e) => setRuleForm({ ...ruleForm, title: e.target.value })}
+            />
+          </label>
+          <label className="block">
+            冒頭文（空欄なら通常の冒頭文）
+            <textarea
+              className={field}
+              value={ruleForm.intro}
+              onChange={(e) => setRuleForm({ ...ruleForm, intro: e.target.value })}
+            />
+          </label>
+          <label className="block">
+            <input
+              type="checkbox"
+              checked={ruleForm.enabled}
+              onChange={(e) => setRuleForm({ ...ruleForm, enabled: e.target.checked })}
+            />
+            有効
+          </label>
+          {conflict && (
+            <p role="alert">
+              同じ対象のルールが既にあります。保存すると、その既存ルールを更新します。
+            </p>
+          )}
+          <div className="space-x-3">
+            <button disabled={busy || !formValid} onClick={() => void saveRule()}>
+              保存
+            </button>
+            <button disabled={busy} onClick={() => setRuleForm(emptyRuleForm)}>
+              新規入力に戻す
+            </button>
+          </div>
+        </div>
+        <div className="space-y-2 rounded border border-white/20 p-3">
+          <h3>プレビュー（送信しません）</h3>
+          <label className="block">
+            日付
+            <input
+              className={field}
+              type="date"
+              value={previewDate}
+              onChange={(e) => setPreviewDate(e.target.value)}
+            />
+          </label>
+          <p>
+            タイトル: {preview?.title ?? `🎁 ${previewDate} 本日のログインボーナス`}
+            （Webのマイページへリンクします）
+          </p>
+          <p>冒頭文: {preview?.intro ?? '（通常の冒頭文が使われます）'}</p>
+          <p>
+            適用ルール:{' '}
+            {preview
+              ? preview.source === 'date'
+                ? '個別日ルール'
+                : '年次ルール'
+              : 'なし（通常表示）'}
+          </p>
+        </div>
       </section>
       <section className="space-y-3">
         <h2 className="text-xl">記念日（今日は何の日）</h2>
