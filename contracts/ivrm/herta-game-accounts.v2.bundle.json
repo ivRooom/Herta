@@ -49,7 +49,7 @@
   "request": {
     "actions": {
       "card": {
-        "optional": ["characterId"],
+        "optional": ["characterId", "formula"],
         "required": ["gameCode"]
       },
       "link": {

@@ -39,7 +39,7 @@ export interface GameAccountsRequestInput {
   region?: string;
   /** Card action only: which character's build card to render. */
   characterId?: string;
-  /** Ranking / ranking_card actions only (#1196 R3, card #1402 S2): axis / slot / formula / page size. */
+  /** Ranking / ranking_card actions (#1196 R3, card #1402 S2): axis / slot / formula / page size. The card action also takes formula (#1366 S3): which score formula the PNG is rendered with. */
   axis?: string;
   slot?: string;
   formula?: string;
@@ -74,10 +74,25 @@ export interface ArtifactScorePiece {
   rolls: Record<string, number>;
 }
 
+/**
+ * Role-optimized score (#1366 S1), stored next to the CV score in the
+ * same artifactScore object. Additive and optional: snapshots taken
+ * before it existed simply have no role score.
+ */
+export interface ArtifactRoleScore {
+  total: number;
+  /** Per-piece roll values, in the same order as ArtifactScore.perPiece. */
+  perPiece: number[];
+  role: string;
+  profile?: string;
+  version: number;
+}
+
 export interface ArtifactScore {
   total: number;
   perPiece: ArtifactScorePiece[];
   version: number;
+  roleScore?: ArtifactRoleScore;
 }
 
 export interface ShowcaseCharacterScore {
@@ -137,6 +152,14 @@ export interface HoyolabProgressSnapshot {
 
 export type GameRankingAxis = 'character' | 'piece' | 'formula';
 export type GameRankingFormula = 'cv' | 'rolls';
+
+/**
+ * Build-card score formulas (#1366): the card action accepts one of
+ * these in `formula` (omitted means 'cv'). 'role' is the role-optimized
+ * score; the ranking formulas above have no 'role' because rankings
+ * still aggregate CV / rolls only.
+ */
+export type GameScoreFormula = 'cv' | 'rolls' | 'role';
 
 export interface GameRankingEntry {
   rank: number;
@@ -329,6 +352,40 @@ function parseLinkedAccount(value: unknown): LinkedGameAccount | null {
   };
 }
 
+const ROLE_SCORE_ROLES: readonly string[] = ['attacker', 'subAttacker', 'supporter', 'sustain'];
+const ROLE_SCORE_PROFILES: readonly string[] = ['atk', 'hp', 'def', 'break'];
+
+/**
+ * Parses the optional roleScore block. Absent (undefined) is the
+ * pre-#1366 shape and stays valid; a present-but-malformed block is
+ * an upstream malfunction, so the whole score fails closed like
+ * every other field here.
+ */
+function parseArtifactRoleScore(value: unknown): ArtifactRoleScore | null | undefined {
+  if (value === undefined) return null;
+  if (!isRecord(value)) return undefined;
+  if (!isFiniteNumber(value.total) || !isFiniteNumber(value.version)) return undefined;
+  if (typeof value.role !== 'string' || !ROLE_SCORE_ROLES.includes(value.role)) return undefined;
+  if (
+    value.profile !== undefined &&
+    (typeof value.profile !== 'string' || !ROLE_SCORE_PROFILES.includes(value.profile))
+  )
+    return undefined;
+  if (!Array.isArray(value.perPiece)) return undefined;
+  const perPiece: number[] = [];
+  for (const entry of value.perPiece) {
+    if (!isFiniteNumber(entry)) return undefined;
+    perPiece.push(entry);
+  }
+  return {
+    total: value.total,
+    perPiece,
+    role: value.role,
+    ...(value.profile !== undefined ? { profile: value.profile as string } : {}),
+    version: value.version,
+  };
+}
+
 function parseArtifactScore(value: unknown): ArtifactScore | null | undefined {
   if (value === null) return null;
   if (!isRecord(value)) return undefined;
@@ -344,7 +401,14 @@ function parseArtifactScore(value: unknown): ArtifactScore | null | undefined {
     }
     perPiece.push({ cv: piece.cv, rolls });
   }
-  return { total: value.total, perPiece, version: value.version };
+  const roleScore = parseArtifactRoleScore(value.roleScore);
+  if (roleScore === undefined) return undefined;
+  return {
+    total: value.total,
+    perPiece,
+    version: value.version,
+    ...(roleScore ? { roleScore } : {}),
+  };
 }
 
 function isNumberOrNull(value: unknown): value is number | null {
@@ -792,10 +856,13 @@ function mapErrorResponse(
   // Card-specific failures (no snapshot/build for the character, an
   // unsupported game, a render failure) are not user-facing errors: the
   // caller falls back to the text score view, so they share one status.
+  // An invalid_formula 422 can only mean this client sent a formula the
+  // API does not know — a client bug, not a member mistake — so it
+  // degrades the same way instead of surfacing as an input error.
   if (input.action === 'card') {
     if (
       (status === 404 && (error === 'card_unavailable' || error === 'character_not_found')) ||
-      (status === 422 && error === 'card_not_supported')
+      (status === 422 && (error === 'card_not_supported' || error === 'invalid_formula'))
     )
       return { status: 'card-unavailable' };
   }

@@ -4,6 +4,7 @@ import type {
   GameRankingAxis,
   GameRankingEntry,
   GameRankingFormula,
+  GameScoreFormula,
   HoyolabEndgameEntry,
   HoyolabProgressSnapshot,
   IvrmGameAccountsResult,
@@ -439,6 +440,7 @@ export function buildListEmbed(
 function buildCharacterScoreField(
   gameCode: string,
   character: ShowcaseCharacterScore,
+  formula: GameScoreFormula = 'cv',
 ): GameEmbedField {
   const label = character.name ?? `キャラクターID ${character.id}`;
   if (!character.artifactScore)
@@ -446,6 +448,8 @@ function buildCharacterScoreField(
       name: truncate(`${label} Lv.${character.level}`, MAX_EMBED_FIELD_NAME_CHARS),
       value: 'スコアなし',
     };
+  if (formula === 'rolls') return buildCharacterRollsField(gameCode, character);
+  if (formula === 'role') return buildCharacterRoleField(gameCode, character);
   const lines = [formatScoreBar(character.artifactScore.total, gameCode)];
   if (character.artifactScore.perPiece.length === 0) {
     lines.push('部位別の内訳はありません');
@@ -459,6 +463,100 @@ function buildCharacterScoreField(
   return {
     name: truncate(
       `${label} Lv.${character.level} ・ スコア ${character.artifactScore.total.toFixed(1)}`,
+      MAX_EMBED_FIELD_NAME_CHARS,
+    ),
+    value: truncate(lines.join('\n'), MAX_EMBED_FIELD_VALUE_CHARS),
+  };
+}
+
+/** 1部位あたりのロール数の上限 (カード側の ROLLS 合計/9 と同じ)。 */
+export const SCORE_ROLLS_PER_PIECE_MAX = 9;
+
+/** ロール系スコア (有効ロール数・ロール最適化) のバーをロール上限で割る。 */
+export function formatRollsBar(total: number, pieceCount: number): string {
+  const max = SCORE_ROLLS_PER_PIECE_MAX * Math.max(1, pieceCount);
+  const ratio = Math.min(1, Math.max(0, total / max));
+  const filled = Math.round(ratio * SCORE_BAR_SEGMENTS);
+  return '▰'.repeat(filled) + '▱'.repeat(SCORE_BAR_SEGMENTS - filled);
+}
+
+/** 有効ロール数の合計 (ランキングの rolls 方式と同じ数え方)。 */
+export function scoreRollsTotal(character: ShowcaseCharacterScore): number | null {
+  if (!character.artifactScore) return null;
+  let total = 0;
+  for (const piece of character.artifactScore.perPiece) {
+    for (const count of Object.values(piece.rolls)) total += count;
+  }
+  return total;
+}
+
+function buildCharacterRollsField(
+  gameCode: string,
+  character: ShowcaseCharacterScore,
+): GameEmbedField {
+  const label = character.name ?? `キャラクターID ${character.id}`;
+  const score = character.artifactScore!;
+  const total = scoreRollsTotal(character) ?? 0;
+  const lines = [formatRollsBar(total, score.perPiece.length)];
+  if (score.perPiece.length === 0) {
+    lines.push('部位別の内訳はありません');
+  } else {
+    score.perPiece.forEach((piece, index) => {
+      const pieceTotal = Object.values(piece.rolls).reduce((sum, count) => sum + count, 0);
+      lines.push(
+        `${scorePieceLabel(gameCode, index)} ${pieceTotal} ロール（${formatRollsShort(piece.rolls)}）`,
+      );
+    });
+  }
+  return {
+    name: truncate(
+      `${label} Lv.${character.level} ・ 有効ロール数 ${total}`,
+      MAX_EMBED_FIELD_NAME_CHARS,
+    ),
+    value: truncate(lines.join('\n'), MAX_EMBED_FIELD_VALUE_CHARS),
+  };
+}
+
+const SCORE_ROLE_LABELS: Record<string, string> = {
+  attacker: 'アタッカー',
+  subAttacker: 'サブアタッカー',
+  supporter: 'サポーター',
+  sustain: 'サステイン',
+};
+
+export function scoreRoleLabel(role: string): string {
+  return Object.hasOwn(SCORE_ROLE_LABELS, role) ? (SCORE_ROLE_LABELS[role] as string) : role;
+}
+
+function buildCharacterRoleField(
+  gameCode: string,
+  character: ShowcaseCharacterScore,
+): GameEmbedField {
+  const label = character.name ?? `キャラクターID ${character.id}`;
+  const roleScore = character.artifactScore?.roleScore;
+  if (!roleScore) {
+    return {
+      name: truncate(
+        `${label} Lv.${character.level} ・ ロール最適化 未計算`,
+        MAX_EMBED_FIELD_NAME_CHARS,
+      ),
+      value: 'ロール最適化スコアはまだ計算されていません。ショーケースの再取得後に表示されます。',
+    };
+  }
+  const lines = [
+    `役割：${scoreRoleLabel(roleScore.role)}`,
+    formatRollsBar(roleScore.total, roleScore.perPiece.length),
+  ];
+  if (roleScore.perPiece.length === 0) {
+    lines.push('部位別の内訳はありません');
+  } else {
+    roleScore.perPiece.forEach((value, index) => {
+      lines.push(`${scorePieceLabel(gameCode, index)} ${value.toFixed(1)}`);
+    });
+  }
+  return {
+    name: truncate(
+      `${label} Lv.${character.level} ・ ロール最適化 ${roleScore.total.toFixed(1)}`,
       MAX_EMBED_FIELD_NAME_CHARS,
     ),
     value: truncate(lines.join('\n'), MAX_EMBED_FIELD_VALUE_CHARS),
@@ -546,6 +644,7 @@ export function scoreSwitcherCharacters(
 export function buildScoreCharacterEmbed(
   result: Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'score' }>,
   characterId: string,
+  formula: GameScoreFormula = 'cv',
 ): GameEmbed | null {
   if (!result.hasSnapshot) return null;
   const character = result.characters.find((entry) => entry.id === characterId);
@@ -555,13 +654,17 @@ export function buildScoreCharacterEmbed(
   const switcher = scoreSwitcherCharacters(result);
   const position = switcher.findIndex((entry) => entry.id === characterId);
   const footerParts = [`UID ${result.uid}`, `取得：${formatJstDateTime(result.fetchedAt)}`];
-  if (character.artifactScore) footerParts.push(`凡例：${scoreRollLegend(result.gameCode)}`);
+  // The roll legend explains the short labels in the CV / rolls fields;
+  // the role field shows plain per-piece values instead.
+  if (character.artifactScore && formula !== 'role')
+    footerParts.push(`凡例：${scoreRollLegend(result.gameCode)}`);
+  if (formula !== 'cv') footerParts.push(`計算方法：${scoreFormulaLabel(formula)}`);
   if (position >= 0 && switcher.length > 1)
     footerParts.push(`${position + 1} / ${switcher.length}`);
   return {
     title,
     color: EMBED_COLOR_PRIMARY,
-    fields: [buildCharacterScoreField(result.gameCode, character)],
+    fields: [buildCharacterScoreField(result.gameCode, character, formula)],
     footer: { text: truncate(footerParts.join(' ・ '), MAX_EMBED_FOOTER_CHARS) },
   };
 }
@@ -571,6 +674,50 @@ export function buildUnsupportedScoreEmbed(gameCode: string): GameEmbed {
     `${gameName(gameCode)} はショーケース取得に未対応のため、スコアを表示できません。UIDの登録・確認は /game list を使ってください。`,
     'neutral',
   );
+}
+
+// ---------------------------------------------------------------------------
+// スコア計算方法の切替 (#1366 S2/S3)。ビルドカード PNG は API 側が
+// formula を受けて描き分ける。切替 UI はプラグイン側の StringSelectMenu
+// で、ここでは選択肢・既定値・カード要求の組み立てだけを持つ。
+// ランキングの formula (cv/rolls) とは別物で、こちらにはロール最適化
+// (role) がある。
+// ---------------------------------------------------------------------------
+
+export const SCORE_FORMULA_OPTIONS: readonly {
+  value: GameScoreFormula;
+  label: string;
+  description: string;
+}[] = [
+  { value: 'cv', label: '会心値 (CV)', description: '会心率×2＋会心ダメージの合計' },
+  { value: 'rolls', label: '有効ロール数', description: '有効サブステに乗ったロール数の合計' },
+  {
+    value: 'role',
+    label: 'ロール最適化',
+    description: 'キャラの役割に合った有効サブステで計算',
+  },
+];
+
+export const SCORE_DEFAULT_FORMULA: GameScoreFormula = 'cv';
+
+export function scoreFormulaLabel(formula: GameScoreFormula): string {
+  return SCORE_FORMULA_OPTIONS.find((option) => option.value === formula)?.label ?? formula;
+}
+
+export function isScoreFormula(value: string): value is GameScoreFormula {
+  return SCORE_FORMULA_OPTIONS.some((option) => option.value === value);
+}
+
+/**
+ * card アクションの入力。formula は常時明示する (API の既定は cv だが、
+ * 表示中の計算方法と要求がずれないよう状態をそのまま送る)。
+ */
+export function scoreCardRequestInput(
+  gameCode: string,
+  characterId: string,
+  formula: GameScoreFormula,
+): GameAccountsRequestInput {
+  return { action: 'card', gameCode, characterId, formula };
 }
 
 // ---------------------------------------------------------------------------

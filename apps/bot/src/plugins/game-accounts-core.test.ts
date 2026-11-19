@@ -30,10 +30,14 @@ import {
   formatScoreBar,
   gameName,
   isProgressSupported,
+  isScoreFormula,
   isShowcaseSupported,
+  scoreCardRequestInput,
+  scoreFormulaLabel,
   scoreLabel,
   scorePieceLabel,
   scoreRollLegend,
+  scoreRollsTotal,
   scoreSwitcherCharacters,
   RANKING_DEFAULT_SELECTION,
   buildRankingEmbed,
@@ -558,6 +562,73 @@ describe('score switcher (one character at a time)', () => {
     const result = resultWith([scored('10000098', 'クロリンデ', 160.8)]);
     expect(buildScoreCharacterEmbed(result, '10000099')).toBeNull();
     expect(buildScoreCharacterEmbed({ ...result, hasSnapshot: false }, '10000098')).toBeNull();
+  });
+
+  it('shows roll counts instead of CV under the rolls formula (#1366)', () => {
+    const result = resultWith([
+      {
+        id: '10000098',
+        name: 'クロリンデ',
+        level: 80,
+        artifactScore: {
+          total: 160.8,
+          version: 1,
+          perPiece: [
+            { cv: 34.9, rolls: { critRate: 3, critDmg: 3, energyRecharge: 1 } },
+            { cv: 30.3, rolls: { critDmg: 2 } },
+          ],
+        },
+      },
+    ]);
+    expect(scoreRollsTotal(result.characters[0]!)).toBe(9);
+    const embed = buildScoreCharacterEmbed(result, '10000098', 'rolls');
+    expect(embed?.fields?.[0]?.name).toBe('クロリンデ Lv.80 ・ 有効ロール数 9');
+    expect(embed?.fields?.[0]?.value).toContain('花 7 ロール（率×3・ダメ×3・チャージ×1）');
+    expect(embed?.fields?.[0]?.value).toContain('羽 2 ロール（ダメ×2）');
+    expect(embed?.fields?.[0]?.value).not.toContain('CV');
+    expect(embed?.footer?.text).toContain('計算方法：有効ロール数');
+  });
+
+  it('shows the role-optimized score under the role formula (#1366)', () => {
+    const result = resultWith([
+      {
+        id: '10000098',
+        name: 'クロリンデ',
+        level: 80,
+        artifactScore: {
+          total: 160.8,
+          version: 1,
+          perPiece: [{ cv: 34.9, rolls: { critRate: 3 } }],
+          roleScore: { total: 20.7, perPiece: [7.0], role: 'attacker', profile: 'atk', version: 1 },
+        },
+      },
+    ]);
+    const embed = buildScoreCharacterEmbed(result, '10000098', 'role');
+    expect(embed?.fields?.[0]?.name).toBe('クロリンデ Lv.80 ・ ロール最適化 20.7');
+    expect(embed?.fields?.[0]?.value).toContain('役割：アタッカー');
+    expect(embed?.fields?.[0]?.value).toContain('花 7.0');
+    expect(embed?.footer?.text).toContain('計算方法：ロール最適化');
+    expect(embed?.footer?.text).not.toContain('凡例：');
+  });
+
+  it('marks the role score as not-yet-computed when the snapshot predates it', () => {
+    const result = resultWith([scored('10000098', 'クロリンデ', 160.8)]);
+    const embed = buildScoreCharacterEmbed(result, '10000098', 'role');
+    expect(embed?.fields?.[0]?.name).toBe('クロリンデ Lv.80 ・ ロール最適化 未計算');
+    expect(embed?.fields?.[0]?.value).toContain('まだ計算されていません');
+  });
+
+  it('builds the card request with an explicit formula', () => {
+    expect(scoreCardRequestInput('genshin', '10000098', 'role')).toEqual({
+      action: 'card',
+      gameCode: 'genshin',
+      characterId: '10000098',
+      formula: 'role',
+    });
+    expect(isScoreFormula('cv')).toBe(true);
+    expect(isScoreFormula('role')).toBe(true);
+    expect(isScoreFormula('bogus')).toBe(false);
+    expect(scoreFormulaLabel('role')).toBe('ロール最適化');
   });
 });
 
