@@ -43,6 +43,13 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     assert local['services']['bot']['environment'].pop('DAILY_PARTICIPATION_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('DAILY_QUESTION_CARD_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('DAILY_RESULT_CARD_ENABLED') == 'false'
+    # Achievement notification settings are not a database topology change.
+    # The drain stays off by default; only an explicit env-file value enables it.
+    assert local['services']['worker']['environment'].pop('ACHIEVEMENT_NOTIFICATIONS_ENABLED') == 'false'
+    assert local['services']['worker']['environment'].pop('IVRM_API_DATABASE_URL') == values.get('IVRM_API_DATABASE_URL', '')
+    assert local['services']['worker']['environment'].pop('IVRM_INTEGRATION_GUILD_ID') == values.get('IVRM_INTEGRATION_GUILD_ID', '')
+    assert local['services']['worker']['environment'].pop('ACHIEVEMENT_NOTIFICATION_CHANNEL_ID') == values.get('ACHIEVEMENT_NOTIFICATION_CHANNEL_ID', '')
+    assert local['services']['worker']['environment'].pop('ACHIEVEMENT_NOTIFICATION_SCAN_INTERVAL_SECONDS') == '60'
     # Activity XP emitter flag is not a database topology change. It must
     # remain off by default; only an explicit env-file value enables it.
     assert local['services']['bot']['environment'].pop('HERTA_XP_EMITTER_ENABLED') == 'false'
