@@ -28,6 +28,7 @@ model Guild {
   birthdayCardAssets      BirthdayCardAsset[]
   fortuneProfiles         FortuneProfile[]
   dailyBonusAnnouncements DailyBonusAnnouncement[]
+  dailySpecialDayRules    DailySpecialDayRule[]
   dailyBonusClaims        DailyBonusClaim[]
   dailyBonusQuizSessions  DailyBonusQuizSession[]
   dailyFortuneResults     DailyFortuneResult[]
@@ -1472,6 +1473,31 @@ model DailyBonusAnnouncement {
 
   @@id([guildId, targetDate])
   @@map("daily_bonus_announcements")
+}
+
+/**
+ * Special-day title/intro overrides for the 09:00 announcement (#705):
+ * kind 'date' pins an exact JST date, kind 'annual' repeats on a
+ * month-day. Resolution (date > annual) lives in the bot.
+ */
+model DailySpecialDayRule {
+  id        String   @id
+  guildId   String   @map("guild_id")
+  kind      String
+  exactDate String?  @map("exact_date")
+  monthDay  String?  @map("month_day")
+  title     String?
+  intro     String?
+  enabled   Boolean  @default(true)
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  guild     Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([guildId, exactDate], map: "daily_special_day_rules_guild_exact_date_key")
+  @@unique([guildId, monthDay], map: "daily_special_day_rules_guild_month_day_key")
+  @@index([guildId], map: "daily_special_day_rules_guild_id_idx")
+  @@map("daily_special_day_rules")
 }
 
 model DailyBonusClaim {

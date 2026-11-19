@@ -14,6 +14,9 @@ import {
   dailyFortuneSnapshot,
   recordDailyClaim,
   cleanDailyBonusHistory,
+  listDailySpecialDayRules,
+  saveDailySpecialDayRule,
+  deleteDailySpecialDayRule,
 } from './daily-bonus.js';
 
 test(
@@ -165,6 +168,157 @@ test(
       assert.deepEqual(
         remaining.map((row) => row.discord_user_id),
         ['fresh-pending'],
+      );
+    } finally {
+      await db?.$disconnect();
+      if (created) {
+        const metadata = JSON.parse(docker('inspect', name))[0];
+        assert.equal(metadata.Config.Labels['herta.daily.fixture'], name);
+        docker('rm', '-f', '-v', name);
+        assert.equal(docker('ps', '-aq', '--filter', `label=herta.daily.fixture=${name}`), '');
+      }
+    }
+  },
+);
+
+test(
+  'isolated PG: special-day rules save, uniqueness, guild guard and delete',
+  {
+    skip: process.env.HERTA_RUN_PG_DAILY_TESTS !== '1',
+    timeout: 120000,
+  },
+  async () => {
+    const name = `herta-special-day-test-${randomUUID()}`;
+    let created = false,
+      db: PrismaClient | undefined;
+    const docker = (...args: string[]) =>
+      execFileSync('docker', args, {
+        encoding: 'utf8',
+        timeout: 30000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    try {
+      docker(
+        'create',
+        '--pull',
+        'never',
+        '--name',
+        name,
+        '--label',
+        `herta.daily.fixture=${name}`,
+        '--memory',
+        '384m',
+        '--memory-swap',
+        '384m',
+        '--pids-limit',
+        '128',
+        '--tmpfs',
+        '/var/lib/postgresql/data:rw,size=256m',
+        '-p',
+        '127.0.0.1::5432',
+        '-e',
+        'POSTGRES_PASSWORD=synthetic-test-only',
+        'postgres:17-alpine',
+      );
+      created = true;
+      docker('start', name);
+      const metadata = JSON.parse(docker('inspect', name))[0],
+        port = Number(metadata.NetworkSettings.Ports['5432/tcp'][0].HostPort);
+      let ready = false;
+      for (let index = 0; index < 60; index++) {
+        try {
+          docker('exec', name, 'pg_isready', '-U', 'postgres');
+          ready = true;
+          break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      assert.ok(ready);
+      const sql = `CREATE TABLE guilds(id TEXT PRIMARY KEY); INSERT INTO guilds VALUES('guild'),('other');\n${readFileSync(new URL('../prisma/migrations/20261119230000_daily_special_day_rules/migration.sql', import.meta.url), 'utf8')}`;
+      execFileSync(
+        'docker',
+        ['exec', '-i', name, 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres'],
+        { input: sql, encoding: 'utf8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] },
+      );
+      db = new PrismaClient({
+        datasources: {
+          db: { url: `postgresql://postgres:synthetic-test-only@127.0.0.1:${port}/postgres` },
+        },
+      });
+      const annual = await saveDailySpecialDayRule(db, 'guild', {
+        id: 'halloween',
+        kind: 'annual',
+        exactDate: null,
+        monthDay: '10-31',
+        title: '🎃 Happy Halloween!',
+        intro: null,
+        enabled: true,
+        createdBy: 'tester',
+      });
+      assert.equal(annual?.month_day, '10-31');
+      const dated = await saveDailySpecialDayRule(db, 'guild', {
+        id: 'halloween-2026',
+        kind: 'date',
+        exactDate: '2026-10-31',
+        monthDay: null,
+        title: null,
+        intro: '今年だけの本文',
+        enabled: true,
+        createdBy: 'tester',
+      });
+      assert.equal(dated?.exact_date, '2026-10-31');
+      assert.equal((await listDailySpecialDayRules(db, 'guild')).length, 2);
+      assert.equal((await listDailySpecialDayRules(db, 'other')).length, 0);
+      // Same guild + same target under a different id violates the unique index.
+      await assert.rejects(
+        saveDailySpecialDayRule(db, 'guild', {
+          id: 'halloween-copy',
+          kind: 'annual',
+          exactDate: null,
+          monthDay: '10-31',
+          title: '複製',
+          intro: null,
+          enabled: true,
+          createdBy: 'tester',
+        }),
+      );
+      // A rule id owned by another guild cannot be hijacked by an upsert.
+      const hijack = await saveDailySpecialDayRule(db, 'other', {
+        id: 'halloween',
+        kind: 'annual',
+        exactDate: null,
+        monthDay: '12-25',
+        title: '乗っ取り',
+        intro: null,
+        enabled: true,
+        createdBy: 'attacker',
+      });
+      assert.equal(hijack, null);
+      assert.equal(
+        (await listDailySpecialDayRules(db, 'guild')).find((row) => row.id === 'halloween')
+          ?.month_day,
+        '10-31',
+      );
+      // Re-saving the same id in its own guild updates in place.
+      const updated = await saveDailySpecialDayRule(db, 'guild', {
+        id: 'halloween',
+        kind: 'annual',
+        exactDate: null,
+        monthDay: '10-31',
+        title: '🎃 更新後のタイトル',
+        intro: null,
+        enabled: false,
+        createdBy: 'tester',
+      });
+      assert.equal(updated?.title, '🎃 更新後のタイトル');
+      assert.equal(updated?.enabled, false);
+      await deleteDailySpecialDayRule(db, 'other', 'halloween');
+      assert.equal((await listDailySpecialDayRules(db, 'guild')).length, 2);
+      await deleteDailySpecialDayRule(db, 'guild', 'halloween');
+      assert.deepEqual(
+        (await listDailySpecialDayRules(db, 'guild')).map((row) => row.id),
+        ['halloween-2026'],
       );
     } finally {
       await db?.$disconnect();
