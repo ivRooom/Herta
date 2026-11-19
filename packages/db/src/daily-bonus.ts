@@ -158,7 +158,7 @@ export async function saveDailySpecialDayRule(
   return rows[0] ?? null;
 }
 export async function deleteDailySpecialDayRule(db: PrismaClient, guild: string, id: string) {
-  await db.$executeRaw`DELETE FROM daily_special_day_rules WHERE id=${id} AND guild_id=${guild}`;
+  return db.$executeRaw`DELETE FROM daily_special_day_rules WHERE id=${id} AND guild_id=${guild}`;
 }
 export async function hasDailyBonusSchema(db: PrismaClient) {
   const rows = await db.$queryRaw<

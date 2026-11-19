@@ -101,7 +101,7 @@ export async function POST(request: Request, context: Context) {
       if (typeof body.ruleId !== 'string' || body.ruleId.length === 0 || body.ruleId.length > 128)
         return reply({ error: 'invalid_request' }, 422);
       const deleted = await deleteDailySpecialDayRule(prisma, allowed.guildId, body.ruleId);
-      if (!deleted) return reply({ error: 'rule_not_found' }, 404);
+      if (deleted === 0) return reply({ error: 'rule_not_found' }, 404);
       await prisma.auditLog.create({
         data: {
           guildId: allowed.guildId,
