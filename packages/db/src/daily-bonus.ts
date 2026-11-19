@@ -13,33 +13,6 @@ export interface DailyAnnouncement {
   message_id: string | null;
   error_code: string | null;
 }
-export interface AnniversaryEvent {
-  id: string;
-  title: string;
-  summary: string;
-  category: string;
-  month: number;
-  day: number;
-  base_year: number | null;
-  work_name: string;
-  character_name: string;
-  source_url: string;
-  source_checked_at: Date;
-  approved: boolean;
-  public: boolean;
-  priority: number;
-  pinned_date: string | null;
-  anniversary_mode: 'annual' | 'elapsed';
-}
-export async function saveDailyAnniversary(
-  db: Pick<PrismaClient, '$executeRaw'>,
-  guild: string,
-  event: AnniversaryEvent,
-) {
-  const count =
-    await db.$executeRaw`INSERT INTO anniversary_events(id,guild_id,title,summary,category,month,day,base_year,work_name,character_name,source_url,source_checked_at,approved,public,priority,pinned_date,anniversary_mode) VALUES(${event.id},${guild},${event.title},${event.summary},${event.category},${event.month},${event.day},${event.base_year},${event.work_name},${event.character_name},${event.source_url},${event.source_checked_at},${event.approved},${event.public},${event.priority},${event.pinned_date},${event.anniversary_mode}) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,category=EXCLUDED.category,month=EXCLUDED.month,day=EXCLUDED.day,base_year=EXCLUDED.base_year,work_name=EXCLUDED.work_name,character_name=EXCLUDED.character_name,source_url=EXCLUDED.source_url,source_checked_at=EXCLUDED.source_checked_at,approved=EXCLUDED.approved,public=EXCLUDED.public,priority=EXCLUDED.priority,pinned_date=EXCLUDED.pinned_date,anniversary_mode=EXCLUDED.anniversary_mode,updated_at=NOW() WHERE anniversary_events.guild_id=EXCLUDED.guild_id`;
-  if (count !== 1) throw new Error('AnniversaryGuildConflict');
-}
 export async function getDailyAnnouncement(db: PrismaClient, guild: string, date: string) {
   const rows = await db.$queryRaw<
     DailyAnnouncement[]
@@ -77,11 +50,6 @@ export async function setDailyAnnouncement(
   error: string | null,
 ) {
   await db.$executeRaw`UPDATE daily_bonus_announcements SET status=${status},message_id=${message},error_code=${error},updated_at=NOW() WHERE guild_id=${guild} AND target_date=${date}`;
-}
-export async function listAnniversaries(db: PrismaClient, guild: string) {
-  return db.$queryRaw<
-    AnniversaryEvent[]
-  >`SELECT * FROM anniversary_events WHERE guild_id=${guild} ORDER BY priority DESC,title LIMIT 1000`;
 }
 export async function recordDailyClaim(
   db: PrismaClient,
