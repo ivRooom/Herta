@@ -19,6 +19,7 @@ import {
   callIvrmGameAccounts,
   type GameRankingAxis,
   type GameRankingFormula,
+  type GameScoreFormula,
   type IvrmGameAccountsResult,
   type ShowcaseCharacterScore,
 } from './game-accounts-ivrm.js';
@@ -39,14 +40,18 @@ import {
   gameDefinition,
   gameName,
   isProgressSupported,
+  isScoreFormula,
   isShowcaseSupported,
   RANKING_AXIS_OPTIONS,
   RANKING_DEFAULT_SELECTION,
   RANKING_FORMULA_OPTIONS,
+  SCORE_DEFAULT_FORMULA,
+  SCORE_FORMULA_OPTIONS,
   rankingCardRequestInput,
   rankingCharacterOptions,
   rankingRequestInput,
   rankingSlotOptions,
+  scoreCardRequestInput,
   scoreSwitcherCharacters,
   type GameEmbed,
   type RankingSelection,
@@ -54,6 +59,7 @@ import {
 
 const UNLINK_CUSTOM_ID_PREFIX = 'game-accounts:unlink:';
 const SCORE_CUSTOM_ID_PREFIX = 'game-accounts:score:';
+const SCORE_FORMULA_CUSTOM_ID_PREFIX = 'game-accounts:score-formula:';
 
 const inFlight = new Set<string>();
 
@@ -77,12 +83,12 @@ interface GameButtonInteraction {
   reply(options: { content: string; flags: number }): Promise<unknown>;
   update(options: {
     embeds?: GameEmbed[];
-    components: ActionRowBuilder<ButtonBuilder>[] | never[];
+    components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] | never[];
   }): Promise<unknown>;
   deferUpdate(): Promise<unknown>;
   editReply(options: {
     embeds?: GameEmbed[];
-    components?: ActionRowBuilder<ButtonBuilder>[] | never[];
+    components?: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] | never[];
     files?: AttachmentBuilder[];
     /** Empty array clears attachments left over from a previous view. */
     attachments?: never[];
@@ -243,19 +249,53 @@ const MAX_BUTTON_LABEL_CHARS = 80;
  */
 const pendingScoreSwitch = new Set<string>();
 
-function buildScoreCustomId(userId: string, gameCode: string, characterId: string) {
-  return `${SCORE_CUSTOM_ID_PREFIX}${userId}:${gameCode}:${characterId}`;
+/**
+ * The button id carries the current score formula (#1366 S3) next to
+ * the character, so switching characters keeps the formula the viewer
+ * picked. Messages posted before the formula existed have a 3-part
+ * id; those still parse, with the default formula.
+ */
+function buildScoreCustomId(
+  userId: string,
+  gameCode: string,
+  characterId: string,
+  formula: GameScoreFormula,
+) {
+  return `${SCORE_CUSTOM_ID_PREFIX}${userId}:${gameCode}:${characterId}:${formula}`;
 }
 
 function parseScoreCustomId(
   customId: string,
-): { userId: string; gameCode: string; characterId: string } | null {
+): { userId: string; gameCode: string; characterId: string; formula: GameScoreFormula } | null {
   const parts = customId.slice(SCORE_CUSTOM_ID_PREFIX.length).split(':');
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3 && parts.length !== 4) return null;
   const [userId, gameCode, characterId] = parts as [string, string, string];
   if (!/^\d{17,20}$/.test(userId) || !isKnownGameCode(gameCode)) return null;
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(characterId)) return null;
-  return { userId, gameCode, characterId };
+  const formula = parts[3] ?? SCORE_DEFAULT_FORMULA;
+  if (!isScoreFormula(formula)) return null;
+  return { userId, gameCode, characterId, formula };
+}
+
+function buildScoreFormulaCustomId(
+  userId: string,
+  gameCode: string,
+  characterId: string,
+  formula: GameScoreFormula,
+) {
+  return `${SCORE_FORMULA_CUSTOM_ID_PREFIX}${userId}:${gameCode}:${characterId}:${formula}`;
+}
+
+function parseScoreFormulaCustomId(
+  customId: string,
+): { userId: string; gameCode: string; characterId: string; formula: GameScoreFormula } | null {
+  const parts = customId.slice(SCORE_FORMULA_CUSTOM_ID_PREFIX.length).split(':');
+  if (parts.length !== 4) return null;
+  const [userId, gameCode, characterId, formula] = parts as [string, string, string, string];
+  if (!/^\d{17,20}$/.test(userId) || !isKnownGameCode(gameCode)) return null;
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(characterId)) return null;
+  if (!isScoreFormula(formula)) return null;
+  return { userId, gameCode, characterId, formula };
 }
 
 function scoreButtonLabel(character: ShowcaseCharacterScore): string {
@@ -269,6 +309,7 @@ function scoreSwitcherRows(
   gameCode: string,
   characters: ShowcaseCharacterScore[],
   selectedId: string,
+  formula: GameScoreFormula,
 ): ActionRowBuilder<ButtonBuilder>[] {
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
   for (let index = 0; index < characters.length; index += SCORE_BUTTONS_PER_ROW) {
@@ -277,7 +318,7 @@ function scoreSwitcherRows(
       const selected = character.id === selectedId;
       row.addComponents(
         new ButtonBuilder()
-          .setCustomId(buildScoreCustomId(userId, gameCode, character.id))
+          .setCustomId(buildScoreCustomId(userId, gameCode, character.id, formula))
           .setLabel(scoreButtonLabel(character))
           .setStyle(selected ? ButtonStyle.Primary : ButtonStyle.Secondary)
           .setDisabled(selected),
@@ -288,9 +329,37 @@ function scoreSwitcherRows(
   return rows;
 }
 
+/**
+ * The formula dropdown (#1366 S3) sits on its own row under the
+ * character buttons: at most 2 button rows (6 characters, 5 per row)
+ * plus this row stays well inside Discord's 5-row cap. The current
+ * formula is the default option, and the id carries it too, so the
+ * state survives in the message itself like the ranking dropdowns.
+ */
+function scoreFormulaSelectRow(
+  userId: string,
+  gameCode: string,
+  characterId: string,
+  formula: GameScoreFormula,
+): ActionRowBuilder<StringSelectMenuBuilder> {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(buildScoreFormulaCustomId(userId, gameCode, characterId, formula))
+    .setPlaceholder('スコアの計算方法')
+    .addOptions(
+      SCORE_FORMULA_OPTIONS.map((option) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(option.label)
+          .setDescription(option.description)
+          .setValue(option.value)
+          .setDefault(option.value === formula),
+      ),
+    );
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
+}
+
 export interface ScoreViewReply {
   embeds: GameEmbed[];
-  components: ActionRowBuilder<ButtonBuilder>[];
+  components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[];
   files?: AttachmentBuilder[];
 }
 
@@ -305,26 +374,34 @@ type ScoreResult = Extract<IvrmGameAccountsResult, { status: 'ok'; action: 'scor
  * working so another character may still produce a card. When no
  * character carries a score there is nothing to switch between, so
  * the classic all-characters embed is returned without buttons.
- * Exported for tests; the command and the button handler share it.
+ *
+ * The formula (#1366 S3) selects which score the card renders and
+ * which numbers the embed shows; the formula dropdown rides under
+ * the character buttons so either control rebuilds the whole view.
+ * Exported for tests; the command and the switch handlers share it.
  */
 export async function buildScoreViewReply(
   guildId: string,
   userId: string,
   result: ScoreResult,
   selectedId: string | undefined,
+  formula: GameScoreFormula = SCORE_DEFAULT_FORMULA,
   callApi: typeof callIvrmGameAccounts = callIvrmGameAccounts,
 ): Promise<ScoreViewReply> {
   const characters = scoreSwitcherCharacters(result);
   if (characters.length === 0) return { embeds: [buildScoreEmbed(result)], components: [] };
   const selected = characters.find((character) => character.id === selectedId) ?? characters[0]!;
-  const embed = buildScoreCharacterEmbed(result, selected.id) ?? buildScoreEmbed(result);
-  const components = scoreSwitcherRows(userId, result.gameCode, characters, selected.id);
+  const embed = buildScoreCharacterEmbed(result, selected.id, formula) ?? buildScoreEmbed(result);
+  const components: ScoreViewReply['components'] = [
+    ...scoreSwitcherRows(userId, result.gameCode, characters, selected.id, formula),
+    scoreFormulaSelectRow(userId, result.gameCode, selected.id, formula),
+  ];
   try {
-    const card = await callApi(guildId, userId, {
-      action: 'card',
-      gameCode: result.gameCode,
-      characterId: selected.id,
-    });
+    const card = await callApi(
+      guildId,
+      userId,
+      scoreCardRequestInput(result.gameCode, selected.id, formula),
+    );
     if (card.status === 'ok' && card.action === 'card') {
       const png = card.cards.find((entry) => entry.characterId === selected.id) ?? card.cards[0];
       if (png) {
@@ -410,6 +487,7 @@ export async function handleGameAccountsScoreButton(
       parsed.userId,
       result,
       parsed.characterId,
+      parsed.formula,
       callApi,
     );
     await interaction.editReply(
@@ -429,6 +507,136 @@ export async function handleGameAccountsScoreButton(
       components: [],
       attachments: [],
     });
+  } finally {
+    pendingScoreSwitch.delete(pendingKey);
+  }
+}
+
+interface GameScoreSelectInteraction {
+  guildId: string | null;
+  user: { id: string };
+  customId?: string;
+  values?: string[];
+  isStringSelectMenu?(): boolean;
+  reply(options: { content: string; flags: number }): Promise<unknown>;
+  deferUpdate(): Promise<unknown>;
+  followUp(options: { content: string; flags: number }): Promise<unknown>;
+  editReply(options: {
+    embeds?: GameEmbed[];
+    components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[];
+    files?: AttachmentBuilder[];
+    /** Empty array clears attachments left over from a previous view. */
+    attachments?: never[];
+  }): Promise<unknown>;
+}
+
+/**
+ * Handles the score formula dropdown (#1366 S3). Exported for tests;
+ * the plugin wires it through `interactionCreate` next to the score
+ * button handler.
+ *
+ * The score reply is public (#923), so anyone in the channel may
+ * switch the formula — the same rule as the character buttons and
+ * the ranking dropdowns. The custom id names the member whose
+ * showcase this is plus the character on display; the re-read always
+ * uses THAT member, and the new formula comes from the selected
+ * value. The in-flight guard is shared with the character buttons
+ * (same key), because both rebuild the same message.
+ *
+ * Failure handling follows the ranking dropdown: a failed re-read
+ * leaves the public message untouched and tells only the presser
+ * (ephemeral followUp). A failed card render is softer — the view
+ * builder already degrades to the text view for the new formula.
+ */
+export async function handleGameAccountsScoreFormulaSelect(
+  context: PluginRuntimeContext<GameAccountsConfig, unknown, PrismaClient>,
+  interaction: GameScoreSelectInteraction | undefined,
+  callApi: typeof callIvrmGameAccounts = callIvrmGameAccounts,
+): Promise<void> {
+  if (
+    !interaction?.isStringSelectMenu?.() ||
+    !interaction.customId?.startsWith(SCORE_FORMULA_CUSTOM_ID_PREFIX)
+  )
+    return;
+  if (!interaction.guildId || interaction.guildId !== context.guildId) return;
+  const parsed = parseScoreFormulaCustomId(interaction.customId);
+  if (!parsed) return;
+  if (context.config.enabled === false) {
+    await interaction.reply({
+      content: 'ゲームアカウント連携Pluginは現在無効です。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  const rawFormula = interaction.values?.[0];
+  if (!rawFormula || !isScoreFormula(rawFormula)) return;
+  const formula: GameScoreFormula = rawFormula;
+  const pendingKey = `${interaction.guildId}:${parsed.userId}`;
+  if (pendingScoreSwitch.has(pendingKey)) {
+    await interaction.reply({
+      content: '表示を切り替え中です。完了するまでお待ちください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  pendingScoreSwitch.add(pendingKey);
+  try {
+    await interaction.deferUpdate();
+  } catch (error) {
+    // The acknowledgement itself failed: there is no safe surface left
+    // to report on, and the shared message must stay untouched.
+    context.logger.error(
+      { error: error instanceof Error ? error.name : 'UnknownError' },
+      'Game accounts score formula switch acknowledgement failed',
+    );
+    pendingScoreSwitch.delete(pendingKey);
+    return;
+  }
+  try {
+    const result = await callApi(interaction.guildId, parsed.userId, {
+      action: 'score',
+      gameCode: parsed.gameCode,
+    });
+    if (result.status !== 'ok' || result.action !== 'score') {
+      // A failed switch must not destroy the public view everyone is
+      // looking at: leave the message as-is and tell only the presser.
+      await interaction
+        .followUp({
+          content:
+            result.status !== 'ok'
+              ? 'スコアを取得できませんでした。少し待ってから再度お試しください。'
+              : '処理できませんでした。少し待ってから再度お試しください。',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => undefined);
+      return;
+    }
+    const view = await buildScoreViewReply(
+      interaction.guildId,
+      parsed.userId,
+      result,
+      parsed.characterId,
+      formula,
+      callApi,
+    );
+    // When the new view has no PNG, `attachments: []` clears the
+    // previous card (same pattern as the character buttons).
+    await interaction.editReply(
+      view.files
+        ? { embeds: view.embeds, components: view.components, files: view.files }
+        : { embeds: view.embeds, components: view.components, attachments: [] },
+    );
+  } catch (error) {
+    context.logger.error(
+      { error: error instanceof Error ? error.name : 'UnknownError' },
+      'Game accounts score formula switch failed',
+    );
+    await interaction
+      .followUp({
+        content: '表示を切り替えられませんでした。少し待ってから再度お試しください。',
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => undefined);
   } finally {
     pendingScoreSwitch.delete(pendingKey);
   }
@@ -917,12 +1125,15 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
               // One character at a time (#1147 S3c): the build-card PNG
               // when available, the single-character embed, and the
               // switcher buttons. Falls back to the classic embed when
-              // no character carries a score.
+              // no character carries a score. The formula starts at
+              // the default; the dropdown in the view switches it
+              // (#1366 S3).
               const view = await buildScoreViewReply(
                 guildId,
                 userId,
                 result,
                 undefined,
+                SCORE_DEFAULT_FORMULA,
                 callIvrmGameAccounts,
               );
               await interaction.editReply(view);
@@ -1020,6 +1231,10 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
           const interaction = args[0] as GameButtonInteraction | undefined;
           await handleGameAccountsUnlinkButton(context, interaction);
           await handleGameAccountsScoreButton(context, interaction);
+          await handleGameAccountsScoreFormulaSelect(
+            context,
+            args[0] as GameScoreSelectInteraction | undefined,
+          );
           await handleGameAccountsRankingSelect(
             context,
             args[0] as GameSelectInteraction | undefined,

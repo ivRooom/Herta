@@ -10,6 +10,7 @@ import {
   gameAccountsPlugin,
   handleGameAccountsRankingSelect,
   handleGameAccountsScoreButton,
+  handleGameAccountsScoreFormulaSelect,
   handleGameAccountsUnlinkButton,
 } from './game-accounts.js';
 import type { GameAccountsRequestInput, IvrmGameAccountsResult } from './game-accounts-ivrm.js';
@@ -281,13 +282,17 @@ function componentsJson(components: unknown): Array<Record<string, unknown>> {
 }
 
 function rowButtons(row: Record<string, unknown>): Array<Record<string, unknown>> {
-  return (row.components as Array<Record<string, unknown>>) ?? [];
+  // Rows may also hold the formula select menu (#1366 S3); only the
+  // button components carry a label.
+  return ((row.components as Array<Record<string, unknown>>) ?? []).filter(
+    (component) => typeof component.label === 'string',
+  );
 }
 
 describe('score view reply (initial /game score)', () => {
   it('shows only the first scored character, with its PNG card attached', async () => {
     const api = makeScoreApi();
-    const view = await buildScoreViewReply(guild, user, scoreResult, undefined, api);
+    const view = await buildScoreViewReply(guild, user, scoreResult, undefined, 'cv', api);
 
     expect(api).toHaveBeenCalledWith(
       guild,
@@ -304,12 +309,12 @@ describe('score view reply (initial /game score)', () => {
     const buttons = componentsJson(view.components).flatMap(rowButtons);
     expect(buttons).toHaveLength(2);
     expect(buttons[0]).toMatchObject({
-      custom_id: `game-accounts:score:${user}:genshin:10000098`,
+      custom_id: `game-accounts:score:${user}:genshin:10000098:cv`,
       label: 'クロリンデ',
       disabled: true,
     });
     expect(buttons[1]).toMatchObject({
-      custom_id: `game-accounts:score:${user}:genshin:10000046`,
+      custom_id: `game-accounts:score:${user}:genshin:10000046:cv`,
       label: '胡桃',
     });
     expect(buttons[1]?.disabled).toBeFalsy();
@@ -317,7 +322,7 @@ describe('score view reply (initial /game score)', () => {
 
   it('falls back to the text view (no file) when the card cannot be rendered', async () => {
     const api = makeScoreApi(true);
-    const view = await buildScoreViewReply(guild, user, scoreResult, undefined, api);
+    const view = await buildScoreViewReply(guild, user, scoreResult, undefined, 'cv', api);
 
     expect(view.files).toBeUndefined();
     expect(view.embeds[0]?.fields).toHaveLength(1);
@@ -334,7 +339,7 @@ describe('score view reply (initial /game score)', () => {
         artifactScore: null,
       })),
     };
-    const view = await buildScoreViewReply(guild, user, unscored, undefined, api);
+    const view = await buildScoreViewReply(guild, user, unscored, undefined, 'cv', api);
 
     expect(api).not.toHaveBeenCalled();
     expect(view.files).toBeUndefined();
@@ -449,7 +454,7 @@ describe('game accounts score switcher buttons', () => {
     expect(JSON.stringify(result?.options?.embeds)).toContain('胡桃');
     const buttons = componentsJson(result?.options?.components).flatMap(rowButtons);
     expect(buttons[1]).toMatchObject({
-      custom_id: `game-accounts:score:${user}:genshin:10000046`,
+      custom_id: `game-accounts:score:${user}:genshin:10000046:cv`,
       disabled: true,
     });
   });
@@ -565,6 +570,266 @@ function lastEditEmbedsJson(calls: FakeCommandInteraction['calls']): string {
   const edit = calls.filter((call) => call.method === 'editReply').at(-1);
   return JSON.stringify((edit?.options as { embeds?: unknown })?.embeds ?? null);
 }
+
+describe('score view formula dropdown (#1366 S3)', () => {
+  function selectRowJson(components: unknown): Record<string, unknown> | undefined {
+    const rows = componentsJson(components);
+    const last = rows.at(-1);
+    const menu = (last?.components as Array<Record<string, unknown>> | undefined)?.[0];
+    return menu;
+  }
+
+  it('renders the card with the chosen formula and carries it in every control', async () => {
+    const api = makeScoreApi();
+    const view = await buildScoreViewReply(guild, user, scoreResult, undefined, 'role', api);
+
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'card',
+      gameCode: 'genshin',
+      characterId: '10000098',
+      formula: 'role',
+    });
+    expect(view.files).toHaveLength(1);
+    // The character buttons carry the formula so a character switch
+    // keeps it; the dropdown shows it as the current selection.
+    const buttons = componentsJson(view.components).flatMap(rowButtons);
+    expect(buttons.map((button) => button.custom_id)).toEqual([
+      `game-accounts:score:${user}:genshin:10000098:role`,
+      `game-accounts:score:${user}:genshin:10000046:role`,
+    ]);
+    const menu = selectRowJson(view.components);
+    expect(menu?.custom_id).toBe(`game-accounts:score-formula:${user}:genshin:10000098:role`);
+    const options = menu?.options as Array<{ value: string; default?: boolean }>;
+    expect(options.map((option) => option.value)).toEqual(['cv', 'rolls', 'role']);
+    expect(options.find((option) => option.default)?.value).toBe('role');
+    // The embed follows the formula too: without a stored role score
+    // it says so instead of showing CV numbers.
+    expect(JSON.stringify(view.embeds)).toContain('ロール最適化 未計算');
+  });
+
+  it('stays within the five-row cap with six scored characters', async () => {
+    const api = makeScoreApi();
+    const sixScored: ScoreResult = {
+      ...scoreResult,
+      characters: Array.from({ length: 6 }, (_, index) => ({
+        id: `1000000${index}`,
+        name: `キャラ${index}`,
+        level: 80,
+        artifactScore: { total: 10, version: 1, perPiece: [{ cv: 10, rolls: { critRate: 1 } }] },
+      })),
+    };
+    const view = await buildScoreViewReply(guild, user, sixScored, undefined, 'cv', api);
+    // Two button rows (5 + 1) plus the formula dropdown row.
+    expect(view.components).toHaveLength(3);
+    expect(componentsJson(view.components).flatMap(rowButtons)).toHaveLength(6);
+  });
+
+  it('keeps the formula when a character button is pressed', async () => {
+    const timeline: string[] = [];
+    const api = makeScoreApi();
+    const { calls, interaction } = makeScoreInteraction('10000046', user, timeline);
+    interaction.customId = `game-accounts:score:${user}:genshin:10000046:rolls`;
+
+    await handleGameAccountsScoreButton(makeContext(), interaction, api);
+
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'card',
+      gameCode: 'genshin',
+      characterId: '10000046',
+      formula: 'rolls',
+    });
+    const result = calls.filter((call) => call.method === 'editReply').at(-1);
+    expect(JSON.stringify(result?.options?.embeds)).toContain('有効ロール数 3');
+    const menu = selectRowJson(result?.options?.components);
+    expect(menu?.custom_id).toBe(`game-accounts:score-formula:${user}:genshin:10000046:rolls`);
+  });
+
+  it('treats a legacy three-part button id as the default formula', async () => {
+    const timeline: string[] = [];
+    const api = makeScoreApi();
+    const { interaction } = makeScoreInteraction('10000046', user, timeline);
+
+    await handleGameAccountsScoreButton(makeContext(), interaction, api);
+
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'card',
+      gameCode: 'genshin',
+      characterId: '10000046',
+      formula: 'cv',
+    });
+  });
+});
+
+interface FakeScoreSelectInteraction {
+  calls: Array<{ method: string; options?: Record<string, unknown> }>;
+  interaction: {
+    guildId: string | null;
+    user: { id: string };
+    customId?: string;
+    values?: string[];
+    isButton(): boolean;
+    isStringSelectMenu(): boolean;
+    reply(options: { content: string; flags: number }): Promise<unknown>;
+    deferUpdate(): Promise<unknown>;
+    followUp(options: { content: string; flags: number }): Promise<unknown>;
+    editReply(options: {
+      embeds?: unknown;
+      components?: unknown;
+      files?: unknown;
+      attachments?: unknown;
+    }): Promise<unknown>;
+  };
+}
+
+function makeScoreSelectInteraction(
+  characterId: string,
+  currentFormula: string,
+  values: string[],
+  presserId: string,
+  timeline: string[],
+): FakeScoreSelectInteraction {
+  const calls: FakeScoreSelectInteraction['calls'] = [];
+  const interaction: FakeScoreSelectInteraction['interaction'] = {
+    guildId: guild,
+    user: { id: presserId },
+    customId: `game-accounts:score-formula:${user}:genshin:${characterId}:${currentFormula}`,
+    values,
+    isButton: () => false,
+    isStringSelectMenu: () => true,
+    async reply(options) {
+      timeline.push('reply');
+      calls.push({ method: 'reply', options });
+    },
+    async deferUpdate() {
+      timeline.push('deferUpdate');
+      calls.push({ method: 'deferUpdate' });
+    },
+    async followUp(options) {
+      timeline.push('followUp');
+      calls.push({ method: 'followUp', options });
+    },
+    async editReply(options) {
+      timeline.push('editReply');
+      calls.push({ method: 'editReply', options });
+    },
+  };
+  return { calls, interaction };
+}
+
+describe('game accounts score formula dropdown handler', () => {
+  it('re-renders the same character with the selected formula, for the view owner', async () => {
+    const timeline: string[] = [];
+    const api = makeScoreApi();
+    const fake = makeScoreSelectInteraction(
+      '10000098',
+      'cv',
+      ['rolls'],
+      '999999999999999999',
+      timeline,
+    );
+
+    await handleGameAccountsScoreFormulaSelect(makeContext(), fake.interaction, api);
+
+    expect(api).toHaveBeenCalledWith(guild, user, { action: 'score', gameCode: 'genshin' });
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'card',
+      gameCode: 'genshin',
+      characterId: '10000098',
+      formula: 'rolls',
+    });
+    expect(timeline).toEqual(['deferUpdate', 'editReply']);
+    const edit = fake.calls.find((call) => call.method === 'editReply');
+    expect((edit?.options?.files as unknown[])?.length).toBe(1);
+    expect(JSON.stringify(edit?.options?.embeds)).toContain('有効ロール数 3');
+  });
+
+  it('falls back to the text view and clears the old attachment when the card fails', async () => {
+    const timeline: string[] = [];
+    const api = makeScoreApi(true);
+    const fake = makeScoreSelectInteraction('10000098', 'cv', ['role'], user, timeline);
+
+    await handleGameAccountsScoreFormulaSelect(makeContext(), fake.interaction, api);
+
+    expect(timeline).toEqual(['deferUpdate', 'editReply']);
+    const edit = fake.calls.find((call) => call.method === 'editReply');
+    expect(edit?.options?.files).toBeUndefined();
+    expect(edit?.options?.attachments).toEqual([]);
+    expect(JSON.stringify(edit?.options?.embeds)).toContain('クロリンデ');
+  });
+
+  it('keeps the public view untouched and notifies only the presser when the re-read fails', async () => {
+    const timeline: string[] = [];
+    const api = vi.fn(async () => {
+      throw new Error('down');
+    }) as unknown as ScoreApi;
+    const fake = makeScoreSelectInteraction('10000098', 'cv', ['rolls'], user, timeline);
+
+    await handleGameAccountsScoreFormulaSelect(makeContext(), fake.interaction, api);
+
+    expect(timeline).toEqual(['deferUpdate', 'followUp']);
+    expect(fake.calls.find((call) => call.method === 'editReply')).toBeUndefined();
+    const followUp = fake.calls.find((call) => call.method === 'followUp');
+    expect(followUp?.options?.flags).toBe(64);
+  });
+
+  it('rejects a second switch while one is in flight', async () => {
+    const timeline: string[] = [];
+    const cardStarted = deferred<void>();
+    const cardGate = deferred<IvrmGameAccountsResult>();
+    const base = makeScoreApi();
+    const api = vi.fn(
+      async (
+        guildId: string,
+        userId: string,
+        input: GameAccountsRequestInput,
+      ): Promise<IvrmGameAccountsResult> => {
+        if (input.action === 'card') {
+          cardStarted.resolve();
+          return cardGate.promise;
+        }
+        return (base as unknown as ScoreApi)(guildId, userId, input);
+      },
+    ) as unknown as ScoreApi;
+    const first = makeScoreSelectInteraction('10000098', 'cv', ['rolls'], user, timeline);
+    const second = makeScoreSelectInteraction('10000098', 'cv', ['role'], user, timeline);
+
+    const firstPromise = handleGameAccountsScoreFormulaSelect(
+      makeContext(),
+      first.interaction,
+      api,
+    );
+    await cardStarted.promise;
+    await handleGameAccountsScoreFormulaSelect(makeContext(), second.interaction, api);
+
+    expect(second.calls).toHaveLength(1);
+    expect(second.calls[0]?.method).toBe('reply');
+    expect(second.calls[0]?.options?.content).toContain('切り替え中です');
+
+    cardGate.resolve({
+      status: 'ok',
+      action: 'card',
+      gameCode: 'genshin',
+      uid: '812468719',
+      fetchedAt: null,
+      cards: [{ characterId: '10000098', name: null, score: null, png: tinyPng }],
+    });
+    await firstPromise;
+  });
+
+  it('ignores malformed custom ids and unknown formula values', async () => {
+    const timeline: string[] = [];
+    const api = makeScoreApi();
+    const malformed = makeScoreSelectInteraction('10000098', 'cv', ['rolls'], user, timeline);
+    malformed.interaction.customId = 'game-accounts:score-formula:bad';
+    await handleGameAccountsScoreFormulaSelect(makeContext(), malformed.interaction, api);
+    expect(malformed.calls).toEqual([]);
+
+    const bogusValue = makeScoreSelectInteraction('10000098', 'cv', ['bogus'], user, timeline);
+    await handleGameAccountsScoreFormulaSelect(makeContext(), bogusValue.interaction, api);
+    expect(bogusValue.calls).toEqual([]);
+    expect(api).not.toHaveBeenCalled();
+  });
+});
 
 describe('game command reply visibility (#923)', () => {
   beforeEach(() => {
