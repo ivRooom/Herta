@@ -5,6 +5,7 @@ import { gameAccountsManifest } from '@herta/plugin-catalog';
 import type { PluginRuntimeContext } from '@herta/plugin-sdk';
 import {
   buildRankingView,
+  buildRankingViewReply,
   buildScoreViewReply,
   gameAccountsPlugin,
   handleGameAccountsRankingSelect,
@@ -690,6 +691,73 @@ const rankingSelectionFixture = {
   formula: 'cv' as const,
 };
 
+function makeRankingApi(cardFails = false) {
+  return vi.fn(
+    async (
+      _guildId: string,
+      _userId: string,
+      input: GameAccountsRequestInput,
+    ): Promise<IvrmGameAccountsResult> => {
+      if (input.action === 'ranking') return rankingResultFixture;
+      if (input.action === 'ranking_card') {
+        if (cardFails) return { status: 'ranking-card-unavailable' };
+        return {
+          status: 'ok',
+          action: 'ranking_card',
+          gameCode: 'genshin',
+          axis: 'character',
+          formula: 'cv',
+          characterId: null,
+          slot: null,
+          populationSize: 2,
+          entryCount: 1,
+          selfRank: null,
+          png: tinyPng,
+        };
+      }
+      throw new Error(`unexpected action: ${input.action}`);
+    },
+  ) as unknown as Api;
+}
+
+describe('ranking view with image card (#1402 S3)', () => {
+  it('attaches the ranking card PNG next to the text embed and dropdowns', async () => {
+    const api = makeRankingApi();
+    const view = await buildRankingViewReply(
+      guild,
+      user,
+      rankingResultFixture,
+      rankingSelectionFixture,
+      api,
+    );
+
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'ranking_card',
+      gameCode: 'genshin',
+      axis: 'character',
+    });
+    expect(view.files).toHaveLength(1);
+    expect(view.files?.[0]?.name).toBe('ranking-card.png');
+    expect(view.embeds).toHaveLength(1);
+    expect(view.components).toHaveLength(2);
+  });
+
+  it('falls back to the text view (no file) when the card cannot be rendered', async () => {
+    const api = makeRankingApi(true);
+    const view = await buildRankingViewReply(
+      guild,
+      user,
+      rankingResultFixture,
+      rankingSelectionFixture,
+      api,
+    );
+
+    expect(view.files).toBeUndefined();
+    expect(view.embeds).toHaveLength(1);
+    expect(view.components).toHaveLength(2);
+  });
+});
+
 describe('ranking view (initial /game ranking)', () => {
   it('builds the axis dropdown plus the character filter dropdown', () => {
     const view = buildRankingView(user, rankingResultFixture, rankingSelectionFixture);
@@ -814,6 +882,49 @@ describe('game accounts ranking dropdowns', () => {
       characterId: '10000046',
       limit: 10,
     });
+  });
+
+  it('attaches the ranking card when anyone switches the axis', async () => {
+    const timeline: string[] = [];
+    const api = makeRankingApi();
+    const fake = makeRankingInteraction(
+      `game-accounts:ranking:axis:${user}:genshin:character:cv`,
+      ['piece'],
+      '999999999999999999',
+      timeline,
+    );
+    await handleGameAccountsRankingSelect(makeContext(), fake.interaction, api);
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'ranking',
+      gameCode: 'genshin',
+      axis: 'piece',
+      limit: 10,
+    });
+    expect(api).toHaveBeenCalledWith(guild, user, {
+      action: 'ranking_card',
+      gameCode: 'genshin',
+      axis: 'piece',
+    });
+    expect(timeline).toEqual(['deferUpdate', 'editReply']);
+    const edit = fake.calls.find((call) => call.method === 'editReply');
+    expect((edit?.options?.files as unknown[])?.length).toBe(1);
+  });
+
+  it('clears the previous card attachment when the new card cannot be rendered', async () => {
+    const timeline: string[] = [];
+    const api = makeRankingApi(true);
+    const fake = makeRankingInteraction(
+      `game-accounts:ranking:axis:${user}:genshin:character:cv`,
+      ['piece'],
+      user,
+      timeline,
+    );
+    await handleGameAccountsRankingSelect(makeContext(), fake.interaction, api);
+    expect(timeline).toEqual(['deferUpdate', 'editReply']);
+    const edit = fake.calls.find((call) => call.method === 'editReply');
+    expect(edit?.options?.files).toBeUndefined();
+    expect(edit?.options?.attachments).toEqual([]);
+    expect(edit?.options?.embeds).toHaveLength(1);
   });
 
   it('rejects a second switch while one is in flight', async () => {

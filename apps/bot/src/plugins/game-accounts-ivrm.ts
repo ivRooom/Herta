@@ -11,10 +11,11 @@ export const GAME_ACCOUNTS_PURPOSE = 'herta-game-accounts-v2';
 const MAX_RESPONSE_BYTES = 65_536;
 
 /**
- * Card responses carry one base64 PNG (1600x900, roughly 1.5 MiB raw), so
- * the cap is sized for a single card plus JSON overhead. The client only
- * ever requests one character's card at a time; anything larger than this
- * is treated as an upstream malfunction, not parsed.
+ * Card responses carry one base64 PNG (1600x900 for a build card,
+ * 1600x960 for a ranking card, roughly 1.5 MiB raw), so the cap is
+ * sized for a single card plus JSON overhead. The client only ever
+ * requests one card at a time; anything larger than this is treated
+ * as an upstream malfunction, not parsed.
  */
 const MAX_CARD_RESPONSE_BYTES = 4 * 1024 * 1024;
 
@@ -29,7 +30,7 @@ export interface GameAccountsConfig {
 }
 
 export type GameAccountsAction =
-  'link' | 'unlink' | 'list' | 'score' | 'card' | 'progress' | 'ranking';
+  'link' | 'unlink' | 'list' | 'score' | 'card' | 'progress' | 'ranking' | 'ranking_card';
 
 export interface GameAccountsRequestInput {
   action: GameAccountsAction;
@@ -38,10 +39,11 @@ export interface GameAccountsRequestInput {
   region?: string;
   /** Card action only: which character's build card to render. */
   characterId?: string;
-  /** Ranking action only (#1196 R3): axis / slot / formula / page size. */
+  /** Ranking / ranking_card actions only (#1196 R3, card #1402 S2): axis / slot / formula / page size. */
   axis?: string;
   slot?: string;
   formula?: string;
+  /** Ranking action only: the card renders the same top entries, so it takes no limit. */
   limit?: number;
 }
 
@@ -205,7 +207,23 @@ export type IvrmGameAccountsResult =
       availableCharacters: GameRankingAvailableCharacter[];
       availableSlots: string[];
     }
+  | {
+      status: 'ok';
+      action: 'ranking_card';
+      gameCode: string;
+      axis: GameRankingAxis;
+      formula: GameRankingFormula;
+      characterId: string | null;
+      slot: string | null;
+      populationSize: number;
+      /** How many entries the rendered card shows (top 10). */
+      entryCount: number;
+      /** The viewer's best rank, null when outside the population. */
+      selfRank: number | null;
+      png: Buffer;
+    }
   | { status: 'card-unavailable' }
+  | { status: 'ranking-card-unavailable' }
   | { status: 'progress-unsupported' }
   | { status: 'not-linked' }
   | { status: 'not-found'; error: 'game_not_found' | 'game_account_not_found' }
@@ -665,6 +683,46 @@ function parseSuccessBody(
         availableSlots,
       };
     }
+    case 'ranking_card': {
+      if (
+        typeof value.gameCode !== 'string' ||
+        typeof value.axis !== 'string' ||
+        !RANKING_AXES.includes(value.axis) ||
+        typeof value.formula !== 'string' ||
+        !RANKING_FORMULAS.includes(value.formula) ||
+        !isStringOrNull(value.characterId) ||
+        !isStringOrNull(value.slot) ||
+        !isFiniteNumber(value.populationSize) ||
+        !Number.isInteger(value.populationSize) ||
+        value.populationSize < 0 ||
+        !isFiniteNumber(value.entryCount) ||
+        !Number.isInteger(value.entryCount) ||
+        value.entryCount < 0 ||
+        !(
+          value.selfRank === null ||
+          (isFiniteNumber(value.selfRank) &&
+            Number.isInteger(value.selfRank) &&
+            value.selfRank >= 1)
+        ) ||
+        typeof value.pngBase64 !== 'string'
+      )
+        return { status: 'unavailable' };
+      const png = decodePngBase64(value.pngBase64);
+      if (!png) return { status: 'unavailable' };
+      return {
+        status: 'ok',
+        action: 'ranking_card',
+        gameCode: value.gameCode,
+        axis: value.axis as GameRankingAxis,
+        formula: value.formula as GameRankingFormula,
+        characterId: value.characterId,
+        slot: value.slot,
+        populationSize: value.populationSize,
+        entryCount: value.entryCount,
+        selfRank: value.selfRank,
+        png,
+      };
+    }
     case 'progress': {
       if (
         typeof value.gameCode !== 'string' ||
@@ -745,6 +803,18 @@ function mapErrorResponse(
   // not an input error: the plugin answers with its unsupported embed.
   if (input.action === 'progress' && status === 422 && error === 'progress_not_supported')
     return { status: 'progress-unsupported' };
+  // Ranking-card failures (empty ranking, renderer down) are not
+  // user-facing errors: the caller falls back to the text ranking
+  // view, so they share one status. A member error (not-linked)
+  // keeps its own status via the generic branches below.
+  if (input.action === 'ranking_card') {
+    if (
+      (status === 404 && error === 'ranking_empty') ||
+      (status === 502 && error === 'card_render_failed') ||
+      (status === 503 && error === 'card_renderer_unavailable')
+    )
+      return { status: 'ranking-card-unavailable' };
+  }
   if (status === 404) {
     if (error === 'game_not_found' || error === 'game_account_not_found')
       return { status: 'not-found', error };
@@ -782,11 +852,13 @@ export async function callIvrmGameAccounts(
     requestId,
     new Date().toISOString(),
   );
-  const isCard = input.action === 'card';
+  // Both card actions render on the API side, so both get the
+  // longer timeout and the larger response cap.
+  const isImage = input.action === 'card' || input.action === 'ranking_card';
   try {
     const response = await fetch(request.url, {
       ...request.init,
-      signal: AbortSignal.timeout(isCard ? CARD_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(isImage ? CARD_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS),
       redirect: 'error',
       cache: 'no-store',
     });
@@ -796,7 +868,7 @@ export async function callIvrmGameAccounts(
     }
     const { parsed, value } = await readBoundedJson(
       response,
-      isCard ? MAX_CARD_RESPONSE_BYTES : MAX_RESPONSE_BYTES,
+      isImage ? MAX_CARD_RESPONSE_BYTES : MAX_RESPONSE_BYTES,
     );
     if (!parsed) return { status: 'unavailable' };
     return parseSuccessBody(value, input, requestId, userId);
