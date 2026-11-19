@@ -782,3 +782,189 @@ describe('ranking action (#1196 R3)', () => {
     expect(result.status).toBe('invalid-input');
   });
 });
+
+describe('ranking_card action (#1402 S3)', () => {
+  // A real 1x1 PNG, so the magic-byte check sees an actual PNG payload.
+  const pngBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  const rankingCardPayload = {
+    gameCode: 'genshin',
+    axis: 'character',
+    formula: 'cv',
+    characterId: null,
+    slot: null,
+    populationSize: 2,
+    entryCount: 10,
+    selfRank: 2,
+    pngBase64,
+  };
+
+  it('sends only the contract keys for a ranking_card request (no limit)', () => {
+    const id = '44444444-4444-4444-8444-444444444444';
+    const stamp = '2026-11-19T00:00:00.000Z';
+    const request = buildGameAccountsRequest(
+      config,
+      guild,
+      user,
+      { action: 'ranking_card', gameCode: 'genshin', axis: 'character', formula: 'cv' },
+      id,
+      stamp,
+    );
+    const actionContract = contract.request.actions.ranking_card;
+    expect(actionContract.optional).toEqual(
+      expect.arrayContaining(['axis', 'characterId', 'slot', 'formula']),
+    );
+    expect(actionContract.optional).not.toContain('limit');
+    const expectedKeys = [
+      ...contract.request.required,
+      ...actionContract.required,
+      'axis',
+      'formula',
+    ].sort();
+    expect(Object.keys(JSON.parse(request.init.body)).sort()).toEqual(expectedKeys);
+  });
+
+  it('parses a ranking_card result and decodes the PNG', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockJson(() => rankingCardPayload),
+    );
+    const result = await callIvrmGameAccounts(
+      guild,
+      user,
+      { action: 'ranking_card', gameCode: 'genshin', axis: 'character', formula: 'cv' },
+      config,
+    );
+    expect(result).toMatchObject({
+      status: 'ok',
+      action: 'ranking_card',
+      gameCode: 'genshin',
+      populationSize: 2,
+      entryCount: 10,
+      selfRank: 2,
+    });
+    if (result.status === 'ok' && result.action === 'ranking_card') {
+      expect(Buffer.isBuffer(result.png)).toBe(true);
+      expect(result.png.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    }
+  });
+
+  it('fails closed on a non-PNG or malformed ranking_card payload', async () => {
+    for (const pngBase64 of ['aGVsbG8gd29ybGQ=', 'not*base64*png', '']) {
+      vi.stubGlobal(
+        'fetch',
+        mockJson(() => ({ ...rankingCardPayload, pngBase64 })),
+      );
+      expect(
+        await callIvrmGameAccounts(
+          guild,
+          user,
+          { action: 'ranking_card', gameCode: 'genshin' },
+          config,
+        ),
+      ).toEqual({ status: 'unavailable' });
+    }
+  });
+
+  it('fails closed when the self rank is not a positive integer or null', async () => {
+    for (const selfRank of [0, -1, 1.5, '2']) {
+      vi.stubGlobal(
+        'fetch',
+        mockJson(() => ({ ...rankingCardPayload, selfRank })),
+      );
+      expect(
+        await callIvrmGameAccounts(
+          guild,
+          user,
+          { action: 'ranking_card', gameCode: 'genshin' },
+          config,
+        ),
+      ).toEqual({ status: 'unavailable' });
+    }
+    vi.stubGlobal(
+      'fetch',
+      mockJson(() => ({ ...rankingCardPayload, selfRank: null })),
+    );
+    const result = await callIvrmGameAccounts(
+      guild,
+      user,
+      { action: 'ranking_card', gameCode: 'genshin' },
+      config,
+    );
+    expect(result.status).toBe('ok');
+  });
+
+  it('maps ranking-card errors to ranking-card-unavailable, keeping member errors distinct', async () => {
+    const cases: Array<[number, unknown, unknown]> = [
+      [404, { status: 'error', error: 'ranking_empty' }, { status: 'ranking-card-unavailable' }],
+      [
+        502,
+        { status: 'error', error: 'card_render_failed' },
+        { status: 'ranking-card-unavailable' },
+      ],
+      [
+        503,
+        { status: 'error', error: 'card_renderer_unavailable' },
+        { status: 'ranking-card-unavailable' },
+      ],
+      [404, { status: 'error', error: 'member_not_linked' }, { status: 'not-linked' }],
+      [
+        404,
+        { status: 'error', error: 'game_account_not_found' },
+        { status: 'not-found', error: 'game_account_not_found' },
+      ],
+    ];
+    for (const [status, body, expected] of cases) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Response.json(body, { status })),
+      );
+      expect(
+        await callIvrmGameAccounts(
+          guild,
+          user,
+          { action: 'ranking_card', gameCode: 'genshin' },
+          config,
+        ),
+      ).toEqual(expected);
+    }
+  });
+
+  it('accepts a ranking card body above the score cap but rejects one above the card cap', async () => {
+    // ~100 KiB of valid PNG-prefixed base64: over the 64 KiB score cap,
+    // well under the card cap.
+    const medium = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(100_000, 1),
+    ]).toString('base64');
+    vi.stubGlobal(
+      'fetch',
+      mockJson(() => ({ ...rankingCardPayload, pngBase64: medium })),
+    );
+    const ok = await callIvrmGameAccounts(
+      guild,
+      user,
+      { action: 'ranking_card', gameCode: 'genshin' },
+      config,
+    );
+    expect(ok).toMatchObject({ status: 'ok', action: 'ranking_card' });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response('x'.repeat(4 * 1024 * 1024 + 1), {
+            headers: { 'content-type': 'application/json' },
+          }),
+      ),
+    );
+    expect(
+      await callIvrmGameAccounts(
+        guild,
+        user,
+        { action: 'ranking_card', gameCode: 'genshin' },
+        config,
+      ),
+    ).toEqual({ status: 'unavailable' });
+  });
+});

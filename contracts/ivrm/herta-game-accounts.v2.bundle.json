@@ -7,7 +7,7 @@
     "sourceRepository": "ivRooom/ivrm-contracts",
     "version": "2.0.0"
   },
-  "description": "Signed private game-account operations for the invoking Discord guild member: link/unlink a game UID in the member's ivrm-web game accounts (the same store the Web portal edits), read the stored Enka showcase summary including per-character artifact scores, render build-card PNGs from the stored snapshot, and read the stored HoYoLAB exploration progress. Actions: link, unlink, list, score, card, progress, ranking. No browser CORS; no-store on every response.",
+  "description": "Signed private game-account operations for the invoking Discord guild member: link/unlink a game UID in the member's ivrm-web game accounts (the same store the Web portal edits), read the stored Enka showcase summary including per-character artifact scores, render build-card PNGs from the stored snapshot, render ranking-card PNGs from the server-wide ranking, and read the stored HoYoLAB exploration progress. Actions: link, unlink, list, score, card, progress, ranking, ranking_card. No browser CORS; no-store on every response.",
   "errors": {
     "400": "invalid_request",
     "401": "invalid_signature",
@@ -17,7 +17,8 @@
       "game_not_found",
       "game_account_not_found",
       "card_unavailable",
-      "character_not_found"
+      "character_not_found",
+      "ranking_empty"
     ],
     "422": [
       "card_not_supported",
@@ -65,6 +66,10 @@
       },
       "ranking": {
         "optional": ["axis", "characterId", "slot", "formula", "limit"],
+        "required": ["gameCode"]
+      },
+      "ranking_card": {
+        "optional": ["axis", "characterId", "slot", "formula"],
         "required": ["gameCode"]
       },
       "score": {

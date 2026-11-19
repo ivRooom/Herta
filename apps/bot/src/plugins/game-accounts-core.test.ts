@@ -37,6 +37,7 @@ import {
   scoreSwitcherCharacters,
   RANKING_DEFAULT_SELECTION,
   buildRankingEmbed,
+  rankingCardRequestInput,
   rankingRequestInput,
   rankingSlotLabel,
 } from './game-accounts-core.js';
@@ -919,6 +920,35 @@ describe('ranking helpers (#1196 R3)', () => {
       axis: 'formula',
       formula: 'rolls',
       limit: 10,
+    });
+  });
+
+  it('builds the ranking_card input from the same selection without a limit', () => {
+    expect(
+      rankingCardRequestInput('genshin', {
+        axis: 'character',
+        characterId: '10000098',
+        slot: 'flower',
+        formula: 'rolls',
+      }),
+    ).toEqual({
+      action: 'ranking_card',
+      gameCode: 'genshin',
+      axis: 'character',
+      characterId: '10000098',
+    });
+    expect(
+      rankingCardRequestInput('genshin', {
+        axis: 'formula',
+        characterId: null,
+        slot: null,
+        formula: 'rolls',
+      }),
+    ).toEqual({
+      action: 'ranking_card',
+      gameCode: 'genshin',
+      axis: 'formula',
+      formula: 'rolls',
     });
   });
 
