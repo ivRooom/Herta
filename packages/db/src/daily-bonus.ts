@@ -113,6 +113,53 @@ export async function dailyFortuneSnapshot<T>(
   >`SELECT result_json FROM daily_fortune_results WHERE guild_id=${guild} AND discord_user_id=${user} AND target_date=${date}`;
   return saved[0]!.result_json;
 }
+export interface DailySpecialDayRuleRow {
+  id: string;
+  guild_id: string;
+  kind: 'date' | 'annual';
+  exact_date: string | null;
+  month_day: string | null;
+  title: string | null;
+  intro: string | null;
+  enabled: boolean;
+  created_by: string;
+  created_at: Date;
+  updated_at: Date;
+}
+export interface DailySpecialDayRuleInput {
+  id: string;
+  kind: 'date' | 'annual';
+  exactDate: string | null;
+  monthDay: string | null;
+  title: string | null;
+  intro: string | null;
+  enabled: boolean;
+  createdBy: string;
+}
+export async function listDailySpecialDayRules(db: PrismaClient, guild: string) {
+  return db.$queryRaw<
+    DailySpecialDayRuleRow[]
+  >`SELECT * FROM daily_special_day_rules WHERE guild_id=${guild} ORDER BY kind DESC, exact_date, month_day, id`;
+}
+/**
+ * Insert or replace one rule owned by the guild. The update path is
+ * guarded on the existing row's guild, so a rule id from another
+ * guild can never be hijacked; the read-back returns null then.
+ */
+export async function saveDailySpecialDayRule(
+  db: PrismaClient,
+  guild: string,
+  rule: DailySpecialDayRuleInput,
+) {
+  await db.$executeRaw`INSERT INTO daily_special_day_rules(id,guild_id,kind,exact_date,month_day,title,intro,enabled,created_by) VALUES(${rule.id},${guild},${rule.kind},${rule.exactDate},${rule.monthDay},${rule.title},${rule.intro},${rule.enabled},${rule.createdBy}) ON CONFLICT(id) DO UPDATE SET kind=EXCLUDED.kind,exact_date=EXCLUDED.exact_date,month_day=EXCLUDED.month_day,title=EXCLUDED.title,intro=EXCLUDED.intro,enabled=EXCLUDED.enabled,updated_at=NOW() WHERE daily_special_day_rules.guild_id=EXCLUDED.guild_id`;
+  const rows = await db.$queryRaw<
+    DailySpecialDayRuleRow[]
+  >`SELECT * FROM daily_special_day_rules WHERE id=${rule.id} AND guild_id=${guild}`;
+  return rows[0] ?? null;
+}
+export async function deleteDailySpecialDayRule(db: PrismaClient, guild: string, id: string) {
+  await db.$executeRaw`DELETE FROM daily_special_day_rules WHERE id=${id} AND guild_id=${guild}`;
+}
 export async function hasDailyBonusSchema(db: PrismaClient) {
   const rows = await db.$queryRaw<
     Array<{ ready: boolean }>
