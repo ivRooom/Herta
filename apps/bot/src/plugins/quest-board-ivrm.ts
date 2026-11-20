@@ -394,7 +394,10 @@ export async function callIvrmQuestBoard(
       cache: 'no-store',
     });
     if (!response.ok) {
-      const { value } = await readBoundedJson(response, 4096);
+      const { parsed, value } = await readBoundedJson(response, 4096);
+      // An unparsed body (for example an HTML 404 from a proxy) says
+      // nothing about the member's link state, so never map its status.
+      if (!parsed) return { status: 'unavailable' };
       return mapErrorResponse(response.status, value);
     }
     const { parsed, value } = await readBoundedJson(response, MAX_RESPONSE_BYTES);

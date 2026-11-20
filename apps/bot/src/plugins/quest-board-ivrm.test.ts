@@ -271,6 +271,22 @@ describe('private ivrm-web quest board client', () => {
     expect(await callIvrmQuestBoard(guild, user, config)).toEqual({ status: 'unavailable' });
   });
 
+  it('treats an unparsed error response as unavailable', async () => {
+    // A proxy answering HTML 404 says nothing about the member's link
+    // state: it must not be mapped to not-linked.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response('<html>Not Found</html>', {
+            status: 404,
+            headers: { 'content-type': 'text/html' },
+          }),
+      ),
+    );
+    expect(await callIvrmQuestBoard(guild, user, config)).toEqual({ status: 'unavailable' });
+  });
+
   it('treats a network failure as unavailable', async () => {
     vi.stubGlobal(
       'fetch',
