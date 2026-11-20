@@ -152,3 +152,45 @@ export function findConflictingSpecialDayRule(
         : rule.month_day === input.monthDay),
   );
 }
+
+/** Bot が説明文の末尾に必ず付ける固定文（apps/bot の daily-bonus と一致させる）。 */
+export const DAILY_BONUS_DESCRIPTION_SUFFIX =
+  '下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST';
+/** Bot がフッターに必ず入れる固定文。 */
+export const DAILY_BONUS_FIXED_FOOTER = '受取と今日の運勢は本人にだけ表示します';
+/** プラグイン設定 messageTemplate の最大長（manifest の configSchema と一致）。 */
+export const MESSAGE_TEMPLATE_MAX_LENGTH = 1000;
+
+/** プラグイン設定のスキーマと同じ条件で messageTemplate を検証する。 */
+export function parseMessageTemplateInput(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > MESSAGE_TEMPLATE_MAX_LENGTH) return null;
+  return value;
+}
+
+export interface DailyBonusPreview {
+  title: string;
+  description: string;
+  footer: string;
+  titleFromSpecialDay: boolean;
+  introFromSpecialDay: boolean;
+}
+
+/**
+ * Bot の Embed 合成規則の複製（#766 Phase B の送信なしプレビュー用）。
+ * 特別日ルールがタイトル・冒頭文より優先され、説明文の末尾とフッターは
+ * 常に固定文になる。記念日フィールド・画像・色は当日の確定内容でのみ
+ * 付くため、ここには含めない。
+ */
+export function composeDailyBonusPreview(input: {
+  dateJst: string;
+  messageTemplate: string;
+  specialDay: SpecialDayOverride | null;
+}): DailyBonusPreview {
+  return {
+    title: input.specialDay?.title ?? `🎁 ${input.dateJst} 本日のログインボーナス`,
+    description: `${input.specialDay?.intro ?? input.messageTemplate}\n\n${DAILY_BONUS_DESCRIPTION_SUFFIX}`,
+    footer: DAILY_BONUS_FIXED_FOOTER,
+    titleFromSpecialDay: Boolean(input.specialDay?.title),
+    introFromSpecialDay: Boolean(input.specialDay?.intro),
+  };
+}
