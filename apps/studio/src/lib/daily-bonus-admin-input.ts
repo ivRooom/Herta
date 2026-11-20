@@ -190,7 +190,7 @@ export function composeDailyBonusPreview(input: {
     title: input.specialDay?.title ?? `🎁 ${input.dateJst} 本日のログインボーナス`,
     description: `${input.specialDay?.intro ?? input.messageTemplate}\n\n${DAILY_BONUS_DESCRIPTION_SUFFIX}`,
     footer: DAILY_BONUS_FIXED_FOOTER,
-    titleFromSpecialDay: input.specialDay?.title !== undefined,
-    introFromSpecialDay: input.specialDay?.intro !== undefined,
+    titleFromSpecialDay: Boolean(input.specialDay?.title),
+    introFromSpecialDay: Boolean(input.specialDay?.intro),
   };
 }

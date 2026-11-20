@@ -234,7 +234,7 @@ test('composer preview falls back per part when the override is partial', () => 
   const preview = composeDailyBonusPreview({
     dateJst: '2027-01-01',
     messageTemplate: '通常の冒頭文',
-    specialDay: { title: '🎍 元日', source: 'date' },
+    specialDay: { title: '🎍 元日', intro: null, source: 'date' },
   });
   assert.equal(preview.title, '🎍 元日');
   assert.equal(preview.description, `通常の冒頭文\n\n${DAILY_BONUS_DESCRIPTION_SUFFIX}`);
