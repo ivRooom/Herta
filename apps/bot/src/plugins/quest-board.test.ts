@@ -4,13 +4,32 @@ import type { PrismaClient } from '@herta/db';
 import { questBoardManifest } from '@herta/plugin-catalog';
 import type { PluginRuntimeContext } from '@herta/plugin-sdk';
 import { handleQuestBoardPeriodSelect, questBoardPlugin } from './quest-board.js';
-import type { IvrmQuestBoardResult, QuestBoardStatus } from './quest-board-ivrm.js';
+import type {
+  IvrmQuestBoardCardResult,
+  IvrmQuestBoardResult,
+  QuestBoardStatus,
+} from './quest-board-ivrm.js';
 
 const guild = '123456789012345678';
 const user = '223456789012345678';
 
 type Context = PluginRuntimeContext<{ enabled: boolean }, unknown, PrismaClient>;
 type Api = Parameters<typeof handleQuestBoardPeriodSelect>[2];
+type CardApi = Parameters<typeof handleQuestBoardPeriodSelect>[3];
+
+const PNG_BYTES = Buffer.concat([
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  Buffer.from('fake-png-payload'),
+]);
+
+const okCardApi = vi.fn(
+  async (_guildId: string, _userId: string, period: 'daily' | 'weekly' | 'monthly') =>
+    ({ status: 'ok', period, png: PNG_BYTES }) as IvrmQuestBoardCardResult,
+) as unknown as CardApi;
+
+const failingCardApi = vi.fn(
+  async () => ({ status: 'unavailable' }) as IvrmQuestBoardCardResult,
+) as unknown as CardApi;
 
 function makeContext(enabled = true): Context {
   return {
@@ -149,7 +168,7 @@ describe('quest board period select', () => {
     }) as unknown as Api;
     const { calls, interaction } = makeSelectInteraction(user, ['weekly'], timeline);
 
-    await handleQuestBoardPeriodSelect(makeContext(), interaction, api);
+    await handleQuestBoardPeriodSelect(makeContext(), interaction, api, failingCardApi);
 
     expect(api).toHaveBeenCalledTimes(1);
     expect(api).toHaveBeenCalledWith(guild, user);
@@ -157,6 +176,37 @@ describe('quest board period select', () => {
     const result = calls.filter((call) => call.method === 'editReply').at(-1);
     expect(JSON.stringify(result?.options?.embeds)).toContain('ウィークリー');
     expect(JSON.stringify(result?.options?.components)).toContain(`quest-board:period:${user}`);
+  });
+
+  it('attaches the period card as the main display when the card renders', async () => {
+    const timeline: string[] = [];
+    const api = vi.fn(async () => okResult) as unknown as Api;
+    const { calls, interaction } = makeSelectInteraction(user, ['daily'], timeline);
+
+    await handleQuestBoardPeriodSelect(makeContext(), interaction, api, okCardApi);
+
+    expect(okCardApi).toHaveBeenCalledWith(guild, user, 'daily');
+    const result = calls.filter((call) => call.method === 'editReply').at(-1);
+    const files = (result?.options?.files ?? []) as { name: string }[];
+    expect(files).toHaveLength(1);
+    expect(files[0]?.name).toBe('quest-board-daily.png');
+    expect(result?.options?.attachments).toBeUndefined();
+    // The companion embed carries the all-clear line, not the quest list.
+    expect(JSON.stringify(result?.options?.embeds)).toContain('全クリアまで');
+    expect(JSON.stringify(result?.options?.embeds)).not.toContain('発言');
+  });
+
+  it('falls back to the embed list and clears attachments when the card fails', async () => {
+    const timeline: string[] = [];
+    const api = vi.fn(async () => okResult) as unknown as Api;
+    const { calls, interaction } = makeSelectInteraction(user, ['daily'], timeline);
+
+    await handleQuestBoardPeriodSelect(makeContext(), interaction, api, failingCardApi);
+
+    const result = calls.filter((call) => call.method === 'editReply').at(-1);
+    expect(result?.options?.files).toEqual([]);
+    expect(result?.options?.attachments).toEqual([]);
+    expect(JSON.stringify(result?.options?.embeds)).toContain('発言');
   });
 
   it('rejects presses from anyone but the command owner', async () => {
@@ -188,9 +238,14 @@ describe('quest board period select', () => {
     const first = makeSelectInteraction(user, ['weekly'], timeline);
     const second = makeSelectInteraction(user, ['monthly'], timeline);
 
-    const firstPromise = handleQuestBoardPeriodSelect(makeContext(), first.interaction, api);
+    const firstPromise = handleQuestBoardPeriodSelect(
+      makeContext(),
+      first.interaction,
+      api,
+      failingCardApi,
+    );
     await apiStarted.promise;
-    await handleQuestBoardPeriodSelect(makeContext(), second.interaction, api);
+    await handleQuestBoardPeriodSelect(makeContext(), second.interaction, api, failingCardApi);
 
     expect(api).toHaveBeenCalledTimes(1);
     expect(second.calls).toHaveLength(1);
@@ -318,6 +373,70 @@ describe('quest command replies', () => {
     const calls = await runCommand('weekly');
     const edit = calls.filter((call) => call.method === 'editReply').at(-1);
     expect(JSON.stringify(edit?.options?.embeds)).toContain('ウィークリー');
+  });
+
+  it('attaches the image card as the main display when the card renders', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init: RequestInit) => {
+        const request = JSON.parse(init.body as string) as Record<string, unknown>;
+        if (request.action === 'card') {
+          return Response.json({
+            schemaVersion: 1,
+            requestId: request.requestId,
+            discordUserId: user,
+            action: 'card',
+            status: 'ok',
+            card: { period: request.period, pngBase64: PNG_BYTES.toString('base64') },
+          });
+        }
+        return Response.json({
+          schemaVersion: 1,
+          requestId: request.requestId,
+          discordUserId: user,
+          action: request.action,
+          status: 'ok',
+          board: boardFixture,
+        });
+      }),
+    );
+    const calls = await runCommand('daily');
+    const edit = calls.filter((call) => call.method === 'editReply').at(-1);
+    const files = (edit?.options?.files ?? []) as { name: string }[];
+    expect(files).toHaveLength(1);
+    expect(files[0]?.name).toBe('quest-board-daily.png');
+    // The companion embed replaces the quest list while a card shows.
+    expect(JSON.stringify(edit?.options?.embeds)).toContain('全クリアまで あと 1 本');
+    expect(JSON.stringify(edit?.options?.embeds)).not.toContain('発言');
+    expect(JSON.stringify(edit?.options?.components)).toContain(`quest-board:period:${user}`);
+  });
+
+  it('falls back to the embed list when the card renderer is unavailable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init: RequestInit) => {
+        const request = JSON.parse(init.body as string) as Record<string, unknown>;
+        if (request.action === 'card') {
+          return Response.json(
+            { status: 'error', error: 'card_renderer_unavailable' },
+            { status: 503 },
+          );
+        }
+        return Response.json({
+          schemaVersion: 1,
+          requestId: request.requestId,
+          discordUserId: user,
+          action: request.action,
+          status: 'ok',
+          board: boardFixture,
+        });
+      }),
+    );
+    const calls = await runCommand('daily');
+    const edit = calls.filter((call) => call.method === 'editReply').at(-1);
+    expect(edit?.options?.files).toEqual([]);
+    expect(edit?.options?.attachments).toEqual([]);
+    expect(JSON.stringify(edit?.options?.embeds)).toContain('発言');
   });
 
   it('shows the unconfigured guidance when the integration is not set up', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { QuestBoardQuest, QuestBoardStatus } from './quest-board-ivrm.js';
 import {
+  buildQuestBoardCardEmbed,
   buildQuestBoardEmbed,
   buildQuestBoardErrorEmbed,
   buildQuestBoardPeriodSelect,
@@ -14,7 +15,9 @@ import {
   isAlmostComplete,
   isQuestBoardPeriodType,
   parseQuestBoardPeriodCustomId,
+  questBoardCardFileName,
   EMBED_COLOR_ERROR,
+  EMBED_COLOR_SUCCESS,
   MAX_EMBED_TOTAL_CHARS,
   MEMBER_QUEST_BOARD_URL,
 } from './quest-board-core.js';
@@ -231,6 +234,39 @@ describe('quest board period select', () => {
   it('guards period types', () => {
     expect(isQuestBoardPeriodType('daily')).toBe(true);
     expect(isQuestBoardPeriodType('yearly')).toBe(false);
+  });
+});
+
+describe('quest board card companion embed', () => {
+  it('names the attachment per period', () => {
+    expect(questBoardCardFileName('daily')).toBe('quest-board-daily.png');
+    expect(questBoardCardFileName('weekly')).toBe('quest-board-weekly.png');
+    expect(questBoardCardFileName('monthly')).toBe('quest-board-monthly.png');
+  });
+
+  it('carries only the all-clear state and callouts, not the quest list', () => {
+    const embed = buildQuestBoardCardEmbed(board(), 'daily', new Date('2026-11-20T03:00:00.000Z'));
+    expect(embed.title).toContain('デイリー');
+    // One of two quests is recorded: one remains, worth 1 pt, and
+    // the incomplete quest's 20 XP is still on the table.
+    expect(embed.description).toContain('全クリアまで あと 1 本（全クリアで 1 pt）・ 残り 20 XP');
+    // The 4/5 quest is at 80%: the almost-complete callout appears.
+    expect(embed.description).toContain('あと少し： 「発言」あと 1 回');
+    // The quest list itself is the card's job, not the embed's.
+    expect(embed.fields).toBeUndefined();
+    expect(embed.footer?.text).toContain('累計クリア');
+    expect(embed.footer?.text).toContain(MEMBER_QUEST_BOARD_URL);
+  });
+
+  it('celebrates an all-clear board', () => {
+    const cleared = board();
+    const daily = cleared.periods[0]!;
+    daily.allClear = true;
+    daily.completedCount = daily.quests.length;
+    const embed = buildQuestBoardCardEmbed(cleared, 'daily');
+    expect(embed.color).toBe(EMBED_COLOR_SUCCESS);
+    expect(embed.description).toContain('全クリア達成！');
+    expect(embed.description).toContain('1 pt');
   });
 });
 
