@@ -1,12 +1,27 @@
 import { NextResponse } from 'next/server';
 import {
+  activateDailyBonusTemplateRevision,
+  approveDailyBonusTemplateRevision,
+  createDailyBonusTemplateRevision,
+  deactivateDailyBonusTemplateRevision,
+  deleteDailyBonusTemplateRevision,
   deleteDailySpecialDayRule,
+  getDailyBonusTemplateRevision,
+  listDailyBonusTemplateRevisions,
   listDailySpecialDayRules,
+  returnDailyBonusTemplateRevision,
   saveDailySpecialDayRule,
+  submitDailyBonusTemplateRevision,
+  updateDailyBonusTemplateRevisionDraft,
 } from '@herta/db';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
-import { parseSpecialDayRuleInput } from '@/lib/daily-bonus-admin-input';
+import {
+  parseSpecialDayRuleInput,
+  parseTemplateRevisionContent,
+  parseTemplateRevisionId,
+  parseTemplateRevisionReviewNote,
+} from '@/lib/daily-bonus-admin-input';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
 import { studioDailyBonusResource } from '@/lib/studio-policy-resources';
@@ -29,13 +44,19 @@ async function access(request: Request, context: Context) {
     studioDailyBonusResource(guildId, 'history'),
   );
   if (request.method === 'GET' && !canReadHistory) {
-    // 特別日ルールの書き込み権限だけを持つ利用者も、管理に必要なルール一覧は読める。
+    // 特別日ルールや版管理の書き込み権限だけを持つ利用者も、管理に必要な一覧は読める。
     const canManageSpecialDays = hasEffectivePluginPermission(
       resolved.access,
       'studio.settings.write',
       studioDailyBonusResource(guildId, 'special-days'),
     );
-    if (!canManageSpecialDays) return { response: reply({ error: 'forbidden' }, 403) };
+    const canManageComposer = hasEffectivePluginPermission(
+      resolved.access,
+      'studio.settings.write',
+      studioDailyBonusResource(guildId, 'composer'),
+    );
+    if (!canManageSpecialDays && !canManageComposer)
+      return { response: reply({ error: 'forbidden' }, 403) };
   }
   return { guildId, actor: session.user.id, policyAccess: resolved.access, canReadHistory };
 }
@@ -53,7 +74,20 @@ export async function GET(request: Request, context: Context) {
     } catch {
       specialDayRulesAvailable = false;
     }
-    return reply({ announcements, specialDayRules, specialDayRulesAvailable });
+    let templateRevisions: Awaited<ReturnType<typeof listDailyBonusTemplateRevisions>> = [];
+    let templateRevisionsAvailable = true;
+    try {
+      templateRevisions = await listDailyBonusTemplateRevisions(prisma, allowed.guildId);
+    } catch {
+      templateRevisionsAvailable = false;
+    }
+    return reply({
+      announcements,
+      specialDayRules,
+      specialDayRulesAvailable,
+      templateRevisions,
+      templateRevisionsAvailable,
+    });
   } catch {
     return reply({ error: 'daily_bonus_unavailable' }, 503);
   }
@@ -126,6 +160,206 @@ export async function POST(request: Request, context: Context) {
         return count;
       });
       if (deleted === 0) return reply({ error: 'rule_not_found' }, 404);
+      return reply({ status: 'deleted' });
+    }
+    if (
+      body.action === 'create-template-revision' ||
+      body.action === 'update-template-revision' ||
+      body.action === 'submit-template-revision' ||
+      body.action === 'approve-template-revision' ||
+      body.action === 'return-template-revision' ||
+      body.action === 'activate-template-revision' ||
+      body.action === 'deactivate-template-revision' ||
+      body.action === 'delete-template-revision'
+    ) {
+      if (
+        !hasEffectivePluginPermission(
+          allowed.policyAccess,
+          'studio.settings.write',
+          studioDailyBonusResource(allowed.guildId, 'composer'),
+        )
+      )
+        return reply({ error: 'forbidden' }, 403);
+      const guildId = allowed.guildId;
+      const actor = allowed.actor;
+      if (body.action === 'create-template-revision') {
+        const content = parseTemplateRevisionContent(body.messageTemplate);
+        if (content === null) return reply({ error: 'invalid_request' }, 422);
+        const created = await prisma.$transaction(async (tx) => {
+          const row = await createDailyBonusTemplateRevision(tx, guildId, {
+            id: crypto.randomUUID(),
+            messageTemplate: content,
+            createdBy: actor,
+          });
+          await tx.auditLog.create({
+            data: {
+              guildId,
+              actorId: actor,
+              event: 'daily_bonus.template_revision.created',
+              metadata: { revisionId: row.id, revision: row.revision },
+            },
+          });
+          return row;
+        });
+        return reply({ status: 'created', revision: created });
+      }
+      const revisionId = parseTemplateRevisionId(body.revisionId);
+      if (revisionId === null) return reply({ error: 'invalid_request' }, 422);
+      if (body.action === 'deactivate-template-revision') {
+        const outcome = await prisma.$transaction(async (tx) => {
+          const row = await getDailyBonusTemplateRevision(tx, guildId, revisionId);
+          if (!row) return 'not_found' as const;
+          if (row.status !== 'active') return 'conflict' as const;
+          const count = await deactivateDailyBonusTemplateRevision(tx, guildId, revisionId);
+          if (count !== 1) return 'conflict' as const;
+          await tx.auditLog.create({
+            data: {
+              guildId,
+              actorId: actor,
+              event: 'daily_bonus.template_revision.deactivated',
+              metadata: { revisionId: row.id, revision: row.revision },
+            },
+          });
+          return 'ok' as const;
+        });
+        if (outcome === 'not_found') return reply({ error: 'revision_not_found' }, 404);
+        if (outcome === 'conflict') return reply({ error: 'revision_conflict' }, 409);
+        return reply({ status: 'deactivated' });
+      }
+      // 残りの操作は対象の版が存在することが前提。無い場合と自己承認を先に切り分ける。
+      const existing = await getDailyBonusTemplateRevision(prisma, guildId, revisionId);
+      if (!existing) return reply({ error: 'revision_not_found' }, 404);
+      if (body.action === 'approve-template-revision' && existing.created_by === actor)
+        return reply({ error: 'self_review_forbidden' }, 403);
+      if (body.action === 'update-template-revision') {
+        const content = parseTemplateRevisionContent(body.messageTemplate);
+        if (content === null) return reply({ error: 'invalid_request' }, 422);
+        const outcome = await prisma.$transaction(async (tx) => {
+          const count = await updateDailyBonusTemplateRevisionDraft(
+            tx,
+            guildId,
+            revisionId,
+            content,
+          );
+          if (count !== 1) return 'conflict' as const;
+          await tx.auditLog.create({
+            data: {
+              guildId,
+              actorId: actor,
+              event: 'daily_bonus.template_revision.updated',
+              metadata: { revisionId, revision: existing.revision },
+            },
+          });
+          return 'ok' as const;
+        });
+        if (outcome === 'conflict') return reply({ error: 'revision_conflict' }, 409);
+        return reply({ status: 'updated' });
+      }
+      if (body.action === 'submit-template-revision') {
+        const outcome = await prisma.$transaction(async (tx) => {
+          const count = await submitDailyBonusTemplateRevision(tx, guildId, revisionId);
+          if (count !== 1) return 'conflict' as const;
+          await tx.auditLog.create({
+            data: {
+              guildId,
+              actorId: actor,
+              event: 'daily_bonus.template_revision.submitted',
+              metadata: { revisionId, revision: existing.revision },
+            },
+          });
+          return 'ok' as const;
+        });
+        if (outcome === 'conflict') return reply({ error: 'revision_conflict' }, 409);
+        return reply({ status: 'submitted' });
+      }
+      if (body.action === 'approve-template-revision') {
+        const outcome = await prisma.$transaction(async (tx) => {
+          const count = await approveDailyBonusTemplateRevision(tx, guildId, revisionId, actor);
+          if (count !== 1) return 'conflict' as const;
+          await tx.auditLog.create({
+            data: {
+              guildId,
+              actorId: actor,
+              event: 'daily_bonus.template_revision.approved',
+              metadata: { revisionId, revision: existing.revision },
+            },
+          });
+          return 'ok' as const;
+        });
+        if (outcome === 'conflict') return reply({ error: 'revision_conflict' }, 409);
+        return reply({ status: 'approved' });
+      }
+      if (body.action === 'return-template-revision') {
+        const note = parseTemplateRevisionReviewNote(body.reviewNote);
+        if (note === undefined) return reply({ error: 'invalid_request' }, 422);
+        const outcome = await prisma.$transaction(async (tx) => {
+          const count = await returnDailyBonusTemplateRevision(tx, guildId, revisionId, note);
+          if (count !== 1) return 'conflict' as const;
+          await tx.auditLog.create({
+            data: {
+              guildId,
+              actorId: actor,
+              event: 'daily_bonus.template_revision.returned',
+              metadata: { revisionId, revision: existing.revision, reviewNote: note },
+            },
+          });
+          return 'ok' as const;
+        });
+        if (outcome === 'conflict') return reply({ error: 'revision_conflict' }, 409);
+        return reply({ status: 'returned' });
+      }
+      if (body.action === 'activate-template-revision') {
+        const expectedRaw = body.expectedActiveRevisionId;
+        const expected = expectedRaw === null ? null : parseTemplateRevisionId(expectedRaw);
+        if (expectedRaw !== null && expected === null)
+          return reply({ error: 'invalid_request' }, 422);
+        try {
+          await prisma.$transaction(async (tx) => {
+            const result = await activateDailyBonusTemplateRevision(
+              tx,
+              guildId,
+              revisionId,
+              expected,
+            );
+            // 有効化できなかった場合は、旧 active の supersede ごと巻き戻す。
+            if (result !== 'activated') throw new Error(`RevisionActivation:${result}`);
+            await tx.auditLog.create({
+              data: {
+                guildId,
+                actorId: actor,
+                event: 'daily_bonus.template_revision.activated',
+                metadata: {
+                  revisionId,
+                  revision: existing.revision,
+                  previousActiveRevisionId: expected,
+                },
+              },
+            });
+          });
+        } catch (error) {
+          if (error instanceof Error && error.message === 'RevisionActivation:conflict')
+            return reply({ error: 'revision_conflict' }, 409);
+          if (error instanceof Error && error.message === 'RevisionActivation:not_approved')
+            return reply({ error: 'revision_not_approved' }, 409);
+          throw error;
+        }
+        return reply({ status: 'activated' });
+      }
+      // delete-template-revision
+      const outcome = await prisma.$transaction(async (tx) => {
+        const count = await deleteDailyBonusTemplateRevision(tx, guildId, revisionId);
+        if (count !== 1) return 'conflict' as const;
+        await tx.auditLog.create({
+          data: {
+            guildId,
+            actorId: actor,
+            event: 'daily_bonus.template_revision.deleted',
+            metadata: { revisionId, revision: existing.revision },
+          },
+        });
+        return 'ok' as const;
+      });
+      if (outcome === 'conflict') return reply({ error: 'revision_conflict' }, 409);
       return reply({ status: 'deleted' });
     }
     const delivery = body.action === 'retry' || body.action === 'reconcile';

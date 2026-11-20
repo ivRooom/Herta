@@ -130,7 +130,7 @@ export function studioBotProfileSettingResource(guildId: string, setting: 'anniv
 }
 export function studioDailyBonusResource(
   guildId: string,
-  resource: 'history' | 'delivery' | 'special-days',
+  resource: 'history' | 'delivery' | 'special-days' | 'composer',
 ): string {
   return `guild:${guildId}:daily-bonus:${resource}`;
 }
@@ -206,6 +206,7 @@ export function buildStudioGranularPermissionOptions(
     ['history', 'studio.settings.read', '配信・受取履歴の閲覧'],
     ['delivery', 'studio.operation.execute', '当日配信の再試行・照合'],
     ['special-days', 'studio.settings.write', '特別日ルールの編集'],
+    ['composer', 'studio.settings.write', '通知文面の版管理（下書き・承認・有効化）'],
   ] as const) {
     const target = studioDailyBonusResource(guildId, resource);
     options.push({

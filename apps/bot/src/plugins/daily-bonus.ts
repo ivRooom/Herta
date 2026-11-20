@@ -10,10 +10,12 @@ import {
 } from 'discord.js';
 import {
   getDailyAnnouncement,
+  getActiveDailyBonusTemplateRevision,
   listDailySpecialDayRules,
   reserveDailyAnnouncement,
   captureDailyAnnouncementPopulation,
   setDailyAnnouncement,
+  setDailyAnnouncementTemplateRevision,
   recordDailyClaim,
   type PrismaClient,
 } from '@herta/db';
@@ -96,6 +98,20 @@ async function loadSpecialDayOverride(
 ): Promise<SpecialDayOverride | null> {
   try {
     return resolveSpecialDayOverride(await listDailySpecialDayRules(prisma, guildId), date);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load the guild's active message-template revision (#766 Phase C).
+ * The revisions table is applied by a separate migration gate, so any
+ * failure (including a missing table) degrades to the plugin config
+ * template.
+ */
+async function loadActiveTemplateRevision(prisma: PrismaClient, guildId: string) {
+  try {
+    return await getActiveDailyBonusTemplateRevision(prisma, guildId);
   } catch {
     return null;
   }
@@ -278,12 +294,14 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
       const events = todayHistory?.events ?? [];
       const bundle = todayHistory?.bundle ?? null;
       const specialDay = await loadSpecialDayOverride(ctx.prisma, ctx.guildId, date);
+      const templateRevision = await loadActiveTemplateRevision(ctx.prisma, ctx.guildId);
+      const baseTemplate = templateRevision?.message_template ?? ctx.config.messageTemplate;
       const embed = new EmbedBuilder()
         .setColor(bundle?.themeKey ? DAILY_BUNDLE_THEME_COLORS[bundle.themeKey] : 0xb9a2ff)
         .setTitle(specialDay?.title ?? `🎁 ${date} 本日のログインボーナス`)
         .setURL(MEMBER_DAILY_URL)
         .setDescription(
-          `${specialDay?.intro ?? ctx.config.messageTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
+          `${specialDay?.intro ?? baseTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
         )
         .setFooter({ text: '受取と今日の運勢は本人にだけ表示します' });
       if (bundle?.image) embed.setImage(bundle.image.url);
@@ -329,6 +347,20 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
           enforceNonce: true,
         });
         await setDailyAnnouncement(ctx.prisma, ctx.guildId, date, 'sent', message.id, null);
+        if (templateRevision) {
+          // Delivery snapshot for audit (#766 Phase C). Best-effort:
+          // the announcement itself is already recorded as sent.
+          try {
+            await setDailyAnnouncementTemplateRevision(
+              ctx.prisma,
+              ctx.guildId,
+              date,
+              templateRevision.id,
+            );
+          } catch {
+            // Audit-only; never fail a sent announcement over it.
+          }
+        }
       } catch {
         await setDailyAnnouncement(
           ctx.prisma,

@@ -7,12 +7,16 @@ import {
   dailyBonusReferenceRate,
   findConflictingSpecialDayRule,
   MESSAGE_TEMPLATE_MAX_LENGTH,
-  parseMessageTemplateInput,
+  parseTemplateRevisionContent,
   resolveSpecialDayOverride,
+  TEMPLATE_REVISION_STATUS_LABELS,
+  templateRevisionActions,
   validDailyBonusDate,
   validMonthDay,
   type SpecialDayRuleInput,
   type SpecialDayRuleView,
+  type TemplateRevisionAction,
+  type TemplateRevisionView,
 } from '@/lib/daily-bonus-admin-input';
 
 interface Announcement {
@@ -20,6 +24,7 @@ interface Announcement {
   status: string;
   message_id: string | null;
   error_code: string | null;
+  template_revision_id?: string | null;
   claims: number;
   eligible_count: number | null;
   eligible_captured_at: string | null;
@@ -29,7 +34,18 @@ interface DailyBonusData {
   announcements: Announcement[];
   specialDayRules?: SpecialDayRuleView[];
   specialDayRulesAvailable?: boolean;
+  templateRevisions?: TemplateRevisionView[];
+  templateRevisionsAvailable?: boolean;
 }
+const TEMPLATE_REVISION_ACTION_LABELS: Record<TemplateRevisionAction, string> = {
+  edit: '編集',
+  submit: '提出',
+  delete: '削除',
+  approve: '承認',
+  return: '差戻し',
+  activate: '有効化',
+  deactivate: '無効化',
+};
 const emptyRuleForm = {
   id: '',
   kind: 'annual' as 'date' | 'annual',
@@ -46,15 +62,11 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
     [busy, setBusy] = useState(false);
   const [ruleForm, setRuleForm] = useState(emptyRuleForm);
   const [previewDate, setPreviewDate] = useState('');
-  const [composer, setComposer] = useState<{
-    template: string;
-    savedTemplate: string;
-    editable: boolean;
-  } | null>(null);
-  const [composerState, setComposerState] = useState<'loading' | 'ready' | 'unavailable'>(
-    'loading',
-  );
-  const [composerMessage, setComposerMessage] = useState('');
+  const [configTemplate, setConfigTemplate] = useState<string | null>(null);
+  const [configState, setConfigState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [draftText, setDraftText] = useState('');
+  const [editingRevisionId, setEditingRevisionId] = useState<string | null>(null);
+  const [revisionMessage, setRevisionMessage] = useState('');
   const endpoint = `/api/guilds/${guildId}/daily-bonus`;
   async function load() {
     const response = await fetch(endpoint, { cache: 'no-store' });
@@ -77,28 +89,23 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
       .catch(() => {
         if (active) setError('履歴を取得できません。権限・DBの準備状況を確認してください。');
       });
-    // Composer 用にプラグイン設定（本文テンプレートと編集可否）も読み込む。
+    // 版が未有効化のときに効く、プラグイン設定の本文テンプレートも読み込む。
     // 失敗しても画面の他機能には影響させない。
     void fetch(`/api/guilds/${guildId}/plugins/daily-bonus`, { cache: 'no-store' })
       .then(async (response) => {
         if (!response.ok) throw new Error('composer');
         const value = (await response.json()) as {
           config?: Record<string, unknown>;
-          configAccess?: { editableFieldKeys?: string[] };
         };
         const template = value.config?.messageTemplate;
         if (typeof template !== 'string') throw new Error('composer');
         if (active) {
-          setComposer({
-            template,
-            savedTemplate: template,
-            editable: value.configAccess?.editableFieldKeys?.includes('messageTemplate') ?? false,
-          });
-          setComposerState('ready');
+          setConfigTemplate(template);
+          setConfigState('ready');
         }
       })
       .catch(() => {
-        if (active) setComposerState('unavailable');
+        if (active) setConfigState('unavailable');
       });
     return () => {
       active = false;
@@ -129,6 +136,9 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
     }
   }
   const rules = data?.specialDayRules ?? [];
+  const revisions = data?.templateRevisions ?? [];
+  const activeRevision = revisions.find((revision) => revision.status === 'active') ?? null;
+  const liveTemplate = activeRevision?.message_template ?? configTemplate;
   const formInput: SpecialDayRuleInput = {
     id: ruleForm.id || undefined,
     kind: ruleForm.kind,
@@ -161,40 +171,78 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
     // 編集中のルール自体を削除したら、フォームに残った内容で再作成されないようクリアする。
     if (ok && ruleForm.id === rule.id) setRuleForm(emptyRuleForm);
   }
-  const composerPreview =
-    composer && previewDate
-      ? composeDailyBonusPreview({
-          dateJst: previewDate,
-          messageTemplate: composer.template,
-          specialDay: preview,
+  const composerPreview = previewDate
+    ? composeDailyBonusPreview({
+        dateJst: previewDate,
+        messageTemplate: draftText.trim().length > 0 ? draftText : (liveTemplate ?? ''),
+        specialDay: preview,
+      })
+    : null;
+  async function saveDraft() {
+    const ok = editingRevisionId
+      ? await mutate({
+          action: 'update-template-revision',
+          revisionId: editingRevisionId,
+          messageTemplate: draftText,
         })
-      : null;
-  async function saveTemplate() {
-    if (!composer || parseMessageTemplateInput(composer.template) === null) return;
-    setBusy(true);
-    setComposerMessage('');
-    try {
-      const response = await fetch(`/api/guilds/${guildId}/plugins/daily-bonus`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ configPatch: { messageTemplate: composer.template } }),
-      });
-      const result = (await response.json().catch(() => null)) as {
-        error?: string;
-        config?: Record<string, unknown>;
-      } | null;
-      if (!response.ok) throw new Error(result?.error ?? '保存に失敗しました');
-      const saved =
-        typeof result?.config?.messageTemplate === 'string'
-          ? result.config.messageTemplate
-          : composer.template;
-      setComposer({ ...composer, template: saved, savedTemplate: saved });
-      setComposerMessage('保存しました。次回の09:00通知から反映されます（最大約60秒）。');
-    } catch (e) {
-      setComposerMessage(e instanceof Error ? e.message : '保存に失敗しました');
-    } finally {
-      setBusy(false);
+      : await mutate({ action: 'create-template-revision', messageTemplate: draftText });
+    if (ok) {
+      setEditingRevisionId(null);
+      setDraftText('');
+      setRevisionMessage('下書きを保存しました。提出すると審査待ちになります。');
     }
+  }
+  async function revisionAction(revision: TemplateRevisionView, action: TemplateRevisionAction) {
+    if (action === 'edit') {
+      setEditingRevisionId(revision.id);
+      setDraftText(revision.message_template);
+      setRevisionMessage('');
+      return;
+    }
+    if (action === 'delete') {
+      if (!window.confirm(`版 #${revision.revision}（下書き）を削除しますか？`)) return;
+      const ok = await mutate({ action: 'delete-template-revision', revisionId: revision.id });
+      if (ok && editingRevisionId === revision.id) {
+        setEditingRevisionId(null);
+        setDraftText('');
+      }
+      return;
+    }
+    if (action === 'submit') {
+      await mutate({ action: 'submit-template-revision', revisionId: revision.id });
+      return;
+    }
+    if (action === 'approve') {
+      await mutate({ action: 'approve-template-revision', revisionId: revision.id });
+      return;
+    }
+    if (action === 'return') {
+      const note = window.prompt('差戻し理由（任意）', '');
+      if (note === null) return;
+      await mutate({
+        action: 'return-template-revision',
+        revisionId: revision.id,
+        reviewNote: note,
+      });
+      return;
+    }
+    if (action === 'activate') {
+      if (
+        !window.confirm(
+          `版 #${revision.revision} を有効化しますか？次回の09:00通知からこの本文になります。`,
+        )
+      )
+        return;
+      await mutate({
+        action: 'activate-template-revision',
+        revisionId: revision.id,
+        expectedActiveRevisionId: activeRevision?.id ?? null,
+      });
+      return;
+    }
+    // deactivate
+    if (!window.confirm('有効化中の版を外し、プラグイン設定の本文に戻しますか？')) return;
+    await mutate({ action: 'deactivate-template-revision', revisionId: revision.id });
   }
   const field = 'rounded border border-white/20 bg-transparent px-3 py-2';
   return (
@@ -233,7 +281,15 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
                 {data.announcements.map((a) => (
                   <tr key={a.target_date}>
                     <td>{a.target_date}</td>
-                    <td>{a.status}</td>
+                    <td>
+                      {a.status}
+                      {a.template_revision_id && (
+                        <p>
+                          本文: 版 #
+                          {revisions.find((r) => r.id === a.template_revision_id)?.revision ?? '—'}
+                        </p>
+                      )}
+                    </td>
                     <td title={a.eligible_captured_at ?? undefined}>
                       {a.eligible_count ?? '取得不可'}
                     </td>
@@ -428,84 +484,136 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
         </div>
       </section>
       <section className="space-y-3">
-        <h2 className="text-xl">通知文面 Composer</h2>
+        <h2 className="text-xl">通知文面 Composer（版管理）</h2>
         <p>
-          09:00通知の本文（冒頭文）を編集します。保存すると次回の通知から反映されます（最大約60秒）で、送信済みのメッセージは変わりません。タイトル・末尾の案内文・フッター・ボタン・ロールメンションは安全のため固定で、編集できません。日付ごとの差し替えは「特別日ルール」が優先されます。
+          09:00通知の本文（冒頭文）は版管理で変更します。下書きを作成して提出し、作成者以外が承認してから有効化すると、次回の通知からその本文になります。有効化中の版がない間は、プラグイン設定の本文が使われます。タイトル・末尾の案内文・フッター・ボタン・ロールメンションは安全のため固定で、日付ごとの差し替えは「特別日ルール」が優先されます。
         </p>
-        {composerState === 'loading' && <p>読み込み中…</p>}
-        {composerState === 'unavailable' && (
+        {data && data.templateRevisionsAvailable === false && (
+          <p role="alert">版一覧を取得できませんでした。DBの準備状況を確認してください。</p>
+        )}
+        <p>
+          現在の本文の出所:{' '}
+          {activeRevision
+            ? `版 #${activeRevision.revision}（有効化中）`
+            : configState === 'ready'
+              ? 'プラグイン設定の本文（版は未有効化）'
+              : '読み込み中／取得不可'}
+        </p>
+        <div className="space-y-2 rounded border border-white/20 p-3">
+          <h3>{editingRevisionId ? '下書きを編集' : '新しい下書き'}</h3>
+          <label className="block">
+            本文（冒頭文）
+            <textarea
+              className={field}
+              disabled={busy}
+              rows={4}
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+            />
+          </label>
           <p>
-            通知文面を読み込めませんでした。プラグイン設定の閲覧権限を確認するか、
-            <Link className="underline" href={`/dashboard/guilds/${guildId}/plugins/daily-bonus`}>
-              プラグイン設定
-            </Link>
-            から編集してください。
+            {draftText.length} / {MESSAGE_TEMPLATE_MAX_LENGTH} 文字
           </p>
-        )}
-        {composerState === 'ready' && composer && (
-          <>
-            <div className="space-y-2 rounded border border-white/20 p-3">
-              <label className="block">
-                本文（冒頭文）
-                <textarea
-                  className={field}
-                  disabled={busy || !composer.editable}
-                  rows={4}
-                  value={composer.template}
-                  onChange={(e) => setComposer({ ...composer, template: e.target.value })}
-                />
-              </label>
-              <p>
-                {composer.template.length} / {MESSAGE_TEMPLATE_MAX_LENGTH} 文字
-                {!composer.editable && '（編集権限がないため読み取り専用です）'}
-              </p>
-              <div className="space-x-3">
-                <button
-                  disabled={
-                    busy ||
-                    !composer.editable ||
-                    composer.template === composer.savedTemplate ||
-                    parseMessageTemplateInput(composer.template) === null
-                  }
-                  onClick={() => void saveTemplate()}
-                >
-                  保存
-                </button>
-              </div>
-              {composerMessage && <p>{composerMessage}</p>}
-            </div>
-            <div className="space-y-2 rounded border border-white/20 p-3">
-              <h3>プレビュー（送信しません）</h3>
-              <label className="block">
-                日付
-                <input
-                  className={field}
-                  type="date"
-                  value={previewDate}
-                  onChange={(e) => setPreviewDate(e.target.value)}
-                />
-              </label>
-              {composerPreview && (
-                <div
-                  className="space-y-2 rounded border-l-4 bg-white/5 p-3"
-                  style={{ borderLeftColor: '#b9a2ff' }}
-                >
-                  <p className="font-semibold">{composerPreview.title}</p>
-                  <p className="whitespace-pre-wrap">{composerPreview.description}</p>
-                  <p className="text-sm opacity-70">{composerPreview.footer}</p>
+          <div className="space-x-3">
+            <button
+              disabled={busy || parseTemplateRevisionContent(draftText) === null}
+              onClick={() => void saveDraft()}
+            >
+              下書きを保存
+            </button>
+            <button
+              disabled={busy || liveTemplate === null}
+              onClick={() => {
+                setEditingRevisionId(null);
+                setDraftText(liveTemplate ?? '');
+              }}
+            >
+              現在の本文を読み込む
+            </button>
+            {editingRevisionId && (
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setEditingRevisionId(null);
+                  setDraftText('');
+                }}
+              >
+                編集をやめる
+              </button>
+            )}
+          </div>
+          {revisionMessage && <p>{revisionMessage}</p>}
+        </div>
+        {!data ? (
+          <p>読み込み中…</p>
+        ) : revisions.length === 0 ? (
+          <p>版はまだありません。下書きを作成するところから始めてください。</p>
+        ) : (
+          <ul className="space-y-2">
+            {revisions.map((revision) => (
+              <li key={revision.id} className="rounded border border-white/20 p-3">
+                <p>
+                  版 #{revision.revision} ／ {TEMPLATE_REVISION_STATUS_LABELS[revision.status]}
+                  {revision.status === 'rejected' && revision.review_note
+                    ? `（差戻し理由: ${revision.review_note}）`
+                    : ''}
+                </p>
+                <p className="whitespace-pre-wrap">{revision.message_template}</p>
+                <p>
+                  作成者: {revision.created_by}
+                  {revision.approved_by ? ` ／ 承認者: ${revision.approved_by}` : ''}
+                </p>
+                <div className="space-x-3">
+                  {templateRevisionActions(revision.status).map((action) => (
+                    <button
+                      key={action}
+                      disabled={busy}
+                      onClick={() => void revisionAction(revision, action)}
+                    >
+                      {TEMPLATE_REVISION_ACTION_LABELS[action]}
+                    </button>
+                  ))}
                 </div>
-              )}
-              <p>
-                タイトル:{' '}
-                {composerPreview?.titleFromSpecialDay ? '特別日ルール' : '通常（固定書式）'}／
-                冒頭文: {composerPreview?.introFromSpecialDay ? '特別日ルール' : '本文テンプレート'}
-              </p>
-              <p>
-                記念日がある日は「今日は何の日？」フィールドが、画像が設定された日は大画像が追加されます。色は日別テーマで変わる場合があります。ボタン（受取・今日の問題・今日の運勢）とロールメンションは常に付きます。
-              </p>
-            </div>
-          </>
+              </li>
+            ))}
+          </ul>
         )}
+        <div className="space-y-2 rounded border border-white/20 p-3">
+          <h3>プレビュー（送信しません）</h3>
+          <label className="block">
+            日付
+            <input
+              className={field}
+              type="date"
+              value={previewDate}
+              onChange={(e) => setPreviewDate(e.target.value)}
+            />
+          </label>
+          {composerPreview && (
+            <div
+              className="space-y-2 rounded border-l-4 bg-white/5 p-3"
+              style={{ borderLeftColor: '#b9a2ff' }}
+            >
+              <p className="font-semibold">{composerPreview.title}</p>
+              <p className="whitespace-pre-wrap">{composerPreview.description}</p>
+              <p className="text-sm opacity-70">{composerPreview.footer}</p>
+            </div>
+          )}
+          <p>
+            タイトル: {composerPreview?.titleFromSpecialDay ? '特別日ルール' : '通常（固定書式）'}／
+            冒頭文:{' '}
+            {composerPreview?.introFromSpecialDay
+              ? '特別日ルール'
+              : draftText.trim().length > 0
+                ? '編集中の下書き'
+                : activeRevision
+                  ? `版 #${activeRevision.revision}`
+                  : 'プラグイン設定の本文'}
+          </p>
+          <p>
+            記念日がある日は「今日は何の日？」フィールドが、画像が設定された日は大画像が追加されます。色は日別テーマで変わる場合があります。ボタン（受取・今日の問題・今日の運勢）とロールメンションは常に付きます。
+          </p>
+        </div>
       </section>
       <section className="space-y-3">
         <h2 className="text-xl">記念日（今日は何の日）</h2>
