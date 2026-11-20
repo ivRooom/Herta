@@ -17,6 +17,18 @@ import {
   listDailySpecialDayRules,
   saveDailySpecialDayRule,
   deleteDailySpecialDayRule,
+  createDailyBonusTemplateRevision,
+  listDailyBonusTemplateRevisions,
+  getDailyBonusTemplateRevision,
+  getActiveDailyBonusTemplateRevision,
+  updateDailyBonusTemplateRevisionDraft,
+  submitDailyBonusTemplateRevision,
+  approveDailyBonusTemplateRevision,
+  returnDailyBonusTemplateRevision,
+  activateDailyBonusTemplateRevision,
+  deactivateDailyBonusTemplateRevision,
+  deleteDailyBonusTemplateRevision,
+  setDailyAnnouncementTemplateRevision,
 } from './daily-bonus.js';
 
 test(
@@ -320,6 +332,170 @@ test(
         (await listDailySpecialDayRules(db, 'guild')).map((row) => row.id),
         ['halloween-2026'],
       );
+    } finally {
+      await db?.$disconnect();
+      if (created) {
+        const metadata = JSON.parse(docker('inspect', name))[0];
+        assert.equal(metadata.Config.Labels['herta.daily.fixture'], name);
+        docker('rm', '-f', '-v', name);
+        assert.equal(docker('ps', '-aq', '--filter', `label=herta.daily.fixture=${name}`), '');
+      }
+    }
+  },
+);
+
+test(
+  'isolated PG: template revision lifecycle, self-approval guard, CAS activation and snapshot',
+  {
+    skip: process.env.HERTA_RUN_PG_DAILY_TESTS !== '1',
+    timeout: 120000,
+  },
+  async () => {
+    const name = `herta-template-revision-test-${randomUUID()}`;
+    let created = false,
+      db: PrismaClient | undefined;
+    const docker = (...args: string[]) =>
+      execFileSync('docker', args, {
+        encoding: 'utf8',
+        timeout: 30000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    try {
+      docker(
+        'create',
+        '--pull',
+        'never',
+        '--name',
+        name,
+        '--label',
+        `herta.daily.fixture=${name}`,
+        '--memory',
+        '384m',
+        '--memory-swap',
+        '384m',
+        '--pids-limit',
+        '128',
+        '--tmpfs',
+        '/var/lib/postgresql/data:rw,size=256m',
+        '-p',
+        '127.0.0.1::5432',
+        '-e',
+        'POSTGRES_PASSWORD=synthetic-test-only',
+        'postgres:17-alpine',
+      );
+      created = true;
+      docker('start', name);
+      const metadata = JSON.parse(docker('inspect', name))[0],
+        port = Number(metadata.NetworkSettings.Ports['5432/tcp'][0].HostPort);
+      let ready = false;
+      for (let index = 0; index < 60; index++) {
+        try {
+          docker('exec', name, 'pg_isready', '-U', 'postgres');
+          ready = true;
+          break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      assert.ok(ready);
+      const sql = `CREATE TABLE guilds(id TEXT PRIMARY KEY); INSERT INTO guilds VALUES('guild'),('other');\nCREATE TABLE daily_bonus_announcements(guild_id TEXT NOT NULL, target_date TEXT NOT NULL, channel_id TEXT NOT NULL, role_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', message_id TEXT, error_code TEXT, eligible_count INT, eligible_captured_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(guild_id, target_date));\n${readFileSync(new URL('../prisma/migrations/20261121090000_daily_bonus_template_revisions/migration.sql', import.meta.url), 'utf8')}`;
+      execFileSync(
+        'docker',
+        ['exec', '-i', name, 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres'],
+        { input: sql, encoding: 'utf8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] },
+      );
+      db = new PrismaClient({
+        datasources: {
+          db: { url: `postgresql://postgres:synthetic-test-only@127.0.0.1:${port}/postgres` },
+        },
+      });
+      // Drafts are numbered per guild and start as drafts.
+      const first = await createDailyBonusTemplateRevision(db, 'guild', {
+        id: 'rev-1',
+        messageTemplate: '最初の本文',
+        createdBy: 'author',
+      });
+      assert.equal(first.revision, 1);
+      assert.equal(first.status, 'draft');
+      const second = await createDailyBonusTemplateRevision(db, 'guild', {
+        id: 'rev-2',
+        messageTemplate: '次の本文',
+        createdBy: 'author',
+      });
+      assert.equal(second.revision, 2);
+      assert.equal((await listDailyBonusTemplateRevisions(db, 'other')).length, 0);
+      // Draft edit works; approval requires submission first.
+      assert.equal(
+        await updateDailyBonusTemplateRevisionDraft(db, 'guild', 'rev-1', '直した本文'),
+        1,
+      );
+      assert.equal(await approveDailyBonusTemplateRevision(db, 'guild', 'rev-1', 'reviewer'), 0);
+      assert.equal(await submitDailyBonusTemplateRevision(db, 'guild', 'rev-1'), 1);
+      // The author can never approve their own revision, even at the SQL layer.
+      assert.equal(await approveDailyBonusTemplateRevision(db, 'guild', 'rev-1', 'author'), 0);
+      assert.equal(await approveDailyBonusTemplateRevision(db, 'guild', 'rev-1', 'reviewer'), 1);
+      // Approved content is frozen.
+      assert.equal(
+        await updateDailyBonusTemplateRevisionDraft(db, 'guild', 'rev-1', '差し替え'),
+        0,
+      );
+      // Activation is a CAS on the currently active revision.
+      assert.equal(
+        await activateDailyBonusTemplateRevision(db, 'guild', 'rev-1', 'rev-2'),
+        'conflict',
+      );
+      assert.equal(
+        await activateDailyBonusTemplateRevision(db, 'guild', 'rev-1', null),
+        'activated',
+      );
+      assert.equal((await getActiveDailyBonusTemplateRevision(db, 'guild'))?.id, 'rev-1');
+      // Activating the second revision supersedes the first.
+      assert.equal(await submitDailyBonusTemplateRevision(db, 'guild', 'rev-2'), 1);
+      assert.equal(await approveDailyBonusTemplateRevision(db, 'guild', 'rev-2', 'reviewer'), 1);
+      assert.equal(
+        await activateDailyBonusTemplateRevision(db, 'guild', 'rev-2', 'rev-1'),
+        'activated',
+      );
+      assert.equal((await getActiveDailyBonusTemplateRevision(db, 'guild'))?.id, 'rev-2');
+      assert.equal(
+        (await getDailyBonusTemplateRevision(db, 'guild', 'rev-1'))?.status,
+        'superseded',
+      );
+      // The delivery snapshot records the revision used for the day.
+      await db.$executeRaw`INSERT INTO daily_bonus_announcements(guild_id,target_date,channel_id,role_id,status) VALUES('guild','2026-11-21','channel','role','sent')`;
+      await setDailyAnnouncementTemplateRevision(db, 'guild', '2026-11-21', 'rev-2');
+      assert.equal(
+        (await getDailyAnnouncement(db, 'guild', '2026-11-21'))?.template_revision_id,
+        'rev-2',
+      );
+      // Deactivation is CAS-guarded too and returns delivery to the config template.
+      assert.equal(await deactivateDailyBonusTemplateRevision(db, 'guild', 'rev-1'), 0);
+      assert.equal(await deactivateDailyBonusTemplateRevision(db, 'guild', 'rev-2'), 1);
+      assert.equal(await getActiveDailyBonusTemplateRevision(db, 'guild'), null);
+      // Return flow: pending -> rejected with a note, editable again, resubmittable.
+      const third = await createDailyBonusTemplateRevision(db, 'guild', {
+        id: 'rev-3',
+        messageTemplate: '差戻し対象',
+        createdBy: 'author',
+      });
+      assert.equal(third.revision, 3);
+      assert.equal(await submitDailyBonusTemplateRevision(db, 'guild', 'rev-3'), 1);
+      assert.equal(
+        await returnDailyBonusTemplateRevision(db, 'guild', 'rev-3', '誤字があります'),
+        1,
+      );
+      const returned = await getDailyBonusTemplateRevision(db, 'guild', 'rev-3');
+      assert.equal(returned?.status, 'rejected');
+      assert.equal(returned?.review_note, '誤字があります');
+      assert.equal(
+        await updateDailyBonusTemplateRevisionDraft(db, 'guild', 'rev-3', '直した差戻し対象'),
+        1,
+      );
+      assert.equal((await getDailyBonusTemplateRevision(db, 'guild', 'rev-3'))?.status, 'draft');
+      // Only drafts and returned revisions can be deleted.
+      assert.equal(await deleteDailyBonusTemplateRevision(db, 'guild', 'rev-2'), 0);
+      assert.equal(await deleteDailyBonusTemplateRevision(db, 'guild', 'rev-3'), 1);
+      assert.equal((await listDailyBonusTemplateRevisions(db, 'guild')).length, 2);
     } finally {
       await db?.$disconnect();
       if (created) {

@@ -167,6 +167,83 @@ export function parseMessageTemplateInput(value: unknown): string | null {
   return value;
 }
 
+/**
+ * 本文テンプレートの版管理（#766 Phase C）の Studio 側ユーティリティ。
+ * 状態遷移の正本は API と DB（@herta/db）で、ここは入力検証と
+ * 画面表示用の遷移表・ラベルを提供する。
+ */
+
+export type TemplateRevisionStatus =
+  'draft' | 'pending_review' | 'approved' | 'active' | 'superseded' | 'rejected';
+
+export interface TemplateRevisionView {
+  id: string;
+  revision: number;
+  message_template: string;
+  status: TemplateRevisionStatus;
+  created_by: string;
+  approved_by: string | null;
+  review_note: string | null;
+  activated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const TEMPLATE_REVISION_STATUS_LABELS: Record<TemplateRevisionStatus, string> = {
+  draft: '下書き',
+  pending_review: '審査待ち',
+  approved: '承認済み',
+  active: '有効化中',
+  superseded: '旧版',
+  rejected: '差戻し',
+};
+
+export type TemplateRevisionAction =
+  'edit' | 'submit' | 'delete' | 'approve' | 'return' | 'activate' | 'deactivate';
+
+/** 状態ごとに画面へ出してよい操作。API 側でも同じ遷移を DB の更新条件で強制する。 */
+export function templateRevisionActions(
+  status: TemplateRevisionStatus,
+): readonly TemplateRevisionAction[] {
+  switch (status) {
+    case 'draft':
+    case 'rejected':
+      return ['edit', 'submit', 'delete'];
+    case 'pending_review':
+      return ['approve', 'return'];
+    case 'approved':
+      return ['activate'];
+    case 'active':
+      return ['deactivate'];
+    case 'superseded':
+      return [];
+  }
+}
+
+/** 版の本文の検証。プラグイン設定と同じ最大長で、空の下書きは作らせない。 */
+export function parseTemplateRevisionContent(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > MESSAGE_TEMPLATE_MAX_LENGTH) return null;
+  if (value.trim().length === 0) return null;
+  return value;
+}
+
+export function parseTemplateRevisionId(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 128) return null;
+  return value;
+}
+
+const REVIEW_NOTE_MAX_LENGTH = 500;
+
+/** 差戻し理由。未指定・空は null、不正な型や長すぎる値は undefined。 */
+export function parseTemplateRevisionReviewNote(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.length > REVIEW_NOTE_MAX_LENGTH) return undefined;
+  return trimmed;
+}
+
 export interface DailyBonusPreview {
   title: string;
   description: string;

@@ -11,9 +11,15 @@ import {
   MESSAGE_TEMPLATE_MAX_LENGTH,
   parseMessageTemplateInput,
   parseSpecialDayRuleInput,
+  parseTemplateRevisionContent,
+  parseTemplateRevisionId,
+  parseTemplateRevisionReviewNote,
   resolveSpecialDayOverride,
+  TEMPLATE_REVISION_STATUS_LABELS,
+  templateRevisionActions,
   validMonthDay,
   type SpecialDayRuleView,
+  type TemplateRevisionStatus,
 } from './daily-bonus-admin-input.ts';
 test('anniversary fixed dates require real dates, including leap rules', () => {
   assert.equal(validDailyBonusDate('2026-02-30'), false);
@@ -240,4 +246,45 @@ test('composer preview falls back per part when the override is partial', () => 
   assert.equal(preview.description, `通常の冒頭文\n\n${DAILY_BONUS_DESCRIPTION_SUFFIX}`);
   assert.equal(preview.titleFromSpecialDay, true);
   assert.equal(preview.introFromSpecialDay, false);
+});
+test('template revision content requires non-empty text within the template limit', () => {
+  assert.equal(parseTemplateRevisionContent('おはようございます'), 'おはようございます');
+  assert.equal(parseTemplateRevisionContent(''), null);
+  assert.equal(parseTemplateRevisionContent('  \n '), null);
+  assert.equal(
+    parseTemplateRevisionContent('x'.repeat(MESSAGE_TEMPLATE_MAX_LENGTH))?.length,
+    MESSAGE_TEMPLATE_MAX_LENGTH,
+  );
+  assert.equal(parseTemplateRevisionContent('x'.repeat(MESSAGE_TEMPLATE_MAX_LENGTH + 1)), null);
+  assert.equal(parseTemplateRevisionContent(42), null);
+  assert.equal(parseTemplateRevisionContent(null), null);
+});
+test('template revision ids and review notes are bounded', () => {
+  assert.equal(parseTemplateRevisionId('abc'), 'abc');
+  assert.equal(parseTemplateRevisionId(''), null);
+  assert.equal(parseTemplateRevisionId('x'.repeat(129)), null);
+  assert.equal(parseTemplateRevisionId(7), null);
+  assert.equal(parseTemplateRevisionReviewNote(undefined), null);
+  assert.equal(parseTemplateRevisionReviewNote('  '), null);
+  assert.equal(parseTemplateRevisionReviewNote(' 誤字を直してください '), '誤字を直してください');
+  assert.equal(parseTemplateRevisionReviewNote('x'.repeat(501)), undefined);
+  assert.equal(parseTemplateRevisionReviewNote(3), undefined);
+});
+test('template revision actions follow the state machine and every status is labelled', () => {
+  assert.deepEqual(templateRevisionActions('draft'), ['edit', 'submit', 'delete']);
+  assert.deepEqual(templateRevisionActions('rejected'), ['edit', 'submit', 'delete']);
+  assert.deepEqual(templateRevisionActions('pending_review'), ['approve', 'return']);
+  assert.deepEqual(templateRevisionActions('approved'), ['activate']);
+  assert.deepEqual(templateRevisionActions('active'), ['deactivate']);
+  assert.deepEqual(templateRevisionActions('superseded'), []);
+  const statuses: TemplateRevisionStatus[] = [
+    'draft',
+    'pending_review',
+    'approved',
+    'active',
+    'superseded',
+    'rejected',
+  ];
+  for (const status of statuses)
+    assert.ok(TEMPLATE_REVISION_STATUS_LABELS[status].length > 0, status);
 });
