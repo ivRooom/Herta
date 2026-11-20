@@ -2,9 +2,12 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import {
+  composeDailyBonusPreview,
   currentDailyBonusDate,
   dailyBonusReferenceRate,
   findConflictingSpecialDayRule,
+  MESSAGE_TEMPLATE_MAX_LENGTH,
+  parseMessageTemplateInput,
   resolveSpecialDayOverride,
   validDailyBonusDate,
   validMonthDay,
@@ -43,6 +46,15 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
     [busy, setBusy] = useState(false);
   const [ruleForm, setRuleForm] = useState(emptyRuleForm);
   const [previewDate, setPreviewDate] = useState('');
+  const [composer, setComposer] = useState<{
+    template: string;
+    savedTemplate: string;
+    editable: boolean;
+  } | null>(null);
+  const [composerState, setComposerState] = useState<'loading' | 'ready' | 'unavailable'>(
+    'loading',
+  );
+  const [composerMessage, setComposerMessage] = useState('');
   const endpoint = `/api/guilds/${guildId}/daily-bonus`;
   async function load() {
     const response = await fetch(endpoint, { cache: 'no-store' });
@@ -65,11 +77,34 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
       .catch(() => {
         if (active) setError('履歴を取得できません。権限・DBの準備状況を確認してください。');
       });
+    // Composer 用にプラグイン設定（本文テンプレートと編集可否）も読み込む。
+    // 失敗しても画面の他機能には影響させない。
+    void fetch(`/api/guilds/${guildId}/plugins/daily-bonus`, { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('composer');
+        const value = (await response.json()) as {
+          config?: Record<string, unknown>;
+          configAccess?: { editableFieldKeys?: string[] };
+        };
+        const template = value.config?.messageTemplate;
+        if (typeof template !== 'string') throw new Error('composer');
+        if (active) {
+          setComposer({
+            template,
+            savedTemplate: template,
+            editable: value.configAccess?.editableFieldKeys?.includes('messageTemplate') ?? false,
+          });
+          setComposerState('ready');
+        }
+      })
+      .catch(() => {
+        if (active) setComposerState('unavailable');
+      });
     return () => {
       active = false;
       window.clearInterval(timer);
     };
-  }, [endpoint]);
+  }, [endpoint, guildId]);
   async function mutate(body: unknown): Promise<boolean> {
     setBusy(true);
     setError('');
@@ -125,6 +160,41 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
     const ok = await mutate({ action: 'delete-special-day-rule', ruleId: rule.id });
     // 編集中のルール自体を削除したら、フォームに残った内容で再作成されないようクリアする。
     if (ok && ruleForm.id === rule.id) setRuleForm(emptyRuleForm);
+  }
+  const composerPreview =
+    composer && previewDate
+      ? composeDailyBonusPreview({
+          dateJst: previewDate,
+          messageTemplate: composer.template,
+          specialDay: preview,
+        })
+      : null;
+  async function saveTemplate() {
+    if (!composer || parseMessageTemplateInput(composer.template) === null) return;
+    setBusy(true);
+    setComposerMessage('');
+    try {
+      const response = await fetch(`/api/guilds/${guildId}/plugins/daily-bonus`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ configPatch: { messageTemplate: composer.template } }),
+      });
+      const result = (await response.json().catch(() => null)) as {
+        error?: string;
+        config?: Record<string, unknown>;
+      } | null;
+      if (!response.ok) throw new Error(result?.error ?? '保存に失敗しました');
+      const saved =
+        typeof result?.config?.messageTemplate === 'string'
+          ? result.config.messageTemplate
+          : composer.template;
+      setComposer({ ...composer, template: saved, savedTemplate: saved });
+      setComposerMessage('保存しました。次回の09:00通知から反映されます（最大約60秒）。');
+    } catch (e) {
+      setComposerMessage(e instanceof Error ? e.message : '保存に失敗しました');
+    } finally {
+      setBusy(false);
+    }
   }
   const field = 'rounded border border-white/20 bg-transparent px-3 py-2';
   return (
@@ -356,6 +426,86 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
               : 'なし（通常表示）'}
           </p>
         </div>
+      </section>
+      <section className="space-y-3">
+        <h2 className="text-xl">通知文面 Composer</h2>
+        <p>
+          09:00通知の本文（冒頭文）を編集します。保存すると次回の通知から反映されます（最大約60秒）で、送信済みのメッセージは変わりません。タイトル・末尾の案内文・フッター・ボタン・ロールメンションは安全のため固定で、編集できません。日付ごとの差し替えは「特別日ルール」が優先されます。
+        </p>
+        {composerState === 'loading' && <p>読み込み中…</p>}
+        {composerState === 'unavailable' && (
+          <p>
+            通知文面を読み込めませんでした。プラグイン設定の閲覧権限を確認するか、
+            <Link className="underline" href={`/dashboard/guilds/${guildId}/plugins/daily-bonus`}>
+              プラグイン設定
+            </Link>
+            から編集してください。
+          </p>
+        )}
+        {composerState === 'ready' && composer && (
+          <>
+            <div className="space-y-2 rounded border border-white/20 p-3">
+              <label className="block">
+                本文（冒頭文）
+                <textarea
+                  className={field}
+                  disabled={busy || !composer.editable}
+                  rows={4}
+                  value={composer.template}
+                  onChange={(e) => setComposer({ ...composer, template: e.target.value })}
+                />
+              </label>
+              <p>
+                {composer.template.length} / {MESSAGE_TEMPLATE_MAX_LENGTH} 文字
+                {!composer.editable && '（編集権限がないため読み取り専用です）'}
+              </p>
+              <div className="space-x-3">
+                <button
+                  disabled={
+                    busy ||
+                    !composer.editable ||
+                    composer.template === composer.savedTemplate ||
+                    parseMessageTemplateInput(composer.template) === null
+                  }
+                  onClick={() => void saveTemplate()}
+                >
+                  保存
+                </button>
+              </div>
+              {composerMessage && <p>{composerMessage}</p>}
+            </div>
+            <div className="space-y-2 rounded border border-white/20 p-3">
+              <h3>プレビュー（送信しません）</h3>
+              <label className="block">
+                日付
+                <input
+                  className={field}
+                  type="date"
+                  value={previewDate}
+                  onChange={(e) => setPreviewDate(e.target.value)}
+                />
+              </label>
+              {composerPreview && (
+                <div
+                  className="space-y-2 rounded border-l-4 bg-white/5 p-3"
+                  style={{ borderLeftColor: '#b9a2ff' }}
+                >
+                  <p className="font-semibold">{composerPreview.title}</p>
+                  <p className="whitespace-pre-wrap">{composerPreview.description}</p>
+                  <p className="text-sm opacity-70">{composerPreview.footer}</p>
+                </div>
+              )}
+              <p>
+                タイトル:{' '}
+                {composerPreview?.titleFromSpecialDay ? '特別日ルール' : '通常（固定書式）'}／
+                冒頭文: {composerPreview?.introFromSpecialDay ? '特別日ルール' : '本文テンプレート'}
+              </p>
+              <p>
+                記念日がある日は「今日は何の日？」フィールドが、画像が設定された日は大画像が追加されます。色は日別テーマで変わる場合があります。ボタン（受取・今日の問題・今日の運勢）とロールメンションは常に付きます。
+              </p>
+            </div>
+          </>
+        )}
       </section>
       <section className="space-y-3">
         <h2 className="text-xl">記念日（今日は何の日）</h2>

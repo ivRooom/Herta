@@ -4,7 +4,12 @@ import {
   validDailyBonusDate,
   dailyBonusReferenceRate,
   canOperateDailyAnnouncement,
+  composeDailyBonusPreview,
+  DAILY_BONUS_DESCRIPTION_SUFFIX,
+  DAILY_BONUS_FIXED_FOOTER,
   findConflictingSpecialDayRule,
+  MESSAGE_TEMPLATE_MAX_LENGTH,
+  parseMessageTemplateInput,
   parseSpecialDayRuleInput,
   resolveSpecialDayOverride,
   validMonthDay,
@@ -193,4 +198,46 @@ test('findConflictingSpecialDayRule detects same-target rules with a different i
     }),
     undefined,
   );
+});
+test('message template validation mirrors the plugin config schema', () => {
+  assert.equal(parseMessageTemplateInput('おはようございます'), 'おはようございます');
+  assert.equal(parseMessageTemplateInput(''), '');
+  assert.equal(parseMessageTemplateInput('あ'.repeat(MESSAGE_TEMPLATE_MAX_LENGTH))?.length, 1000);
+  assert.equal(parseMessageTemplateInput('あ'.repeat(MESSAGE_TEMPLATE_MAX_LENGTH + 1)), null);
+  assert.equal(parseMessageTemplateInput(42), null);
+  assert.equal(parseMessageTemplateInput(null), null);
+});
+test('composer preview composes the template with the fixed suffix and footer', () => {
+  const preview = composeDailyBonusPreview({
+    dateJst: '2026-11-20',
+    messageTemplate: '🌅 おはようございます！',
+    specialDay: null,
+  });
+  assert.equal(preview.title, '🎁 2026-11-20 本日のログインボーナス');
+  assert.equal(preview.description, `🌅 おはようございます！\n\n${DAILY_BONUS_DESCRIPTION_SUFFIX}`);
+  assert.equal(preview.footer, DAILY_BONUS_FIXED_FOOTER);
+  assert.equal(preview.titleFromSpecialDay, false);
+  assert.equal(preview.introFromSpecialDay, false);
+});
+test('composer preview lets a special-day override win over the template', () => {
+  const preview = composeDailyBonusPreview({
+    dateJst: '2026-12-25',
+    messageTemplate: '通常の冒頭文',
+    specialDay: { title: '🎄 クリスマス', intro: '特別な冒頭文', source: 'annual' },
+  });
+  assert.equal(preview.title, '🎄 クリスマス');
+  assert.equal(preview.description, `特別な冒頭文\n\n${DAILY_BONUS_DESCRIPTION_SUFFIX}`);
+  assert.equal(preview.titleFromSpecialDay, true);
+  assert.equal(preview.introFromSpecialDay, true);
+});
+test('composer preview falls back per part when the override is partial', () => {
+  const preview = composeDailyBonusPreview({
+    dateJst: '2027-01-01',
+    messageTemplate: '通常の冒頭文',
+    specialDay: { title: '🎍 元日', source: 'date' },
+  });
+  assert.equal(preview.title, '🎍 元日');
+  assert.equal(preview.description, `通常の冒頭文\n\n${DAILY_BONUS_DESCRIPTION_SUFFIX}`);
+  assert.equal(preview.titleFromSpecialDay, true);
+  assert.equal(preview.introFromSpecialDay, false);
 });
