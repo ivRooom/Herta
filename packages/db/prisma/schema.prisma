@@ -29,6 +29,7 @@ model Guild {
   fortuneProfiles         FortuneProfile[]
   dailyBonusAnnouncements DailyBonusAnnouncement[]
   dailySpecialDayRules    DailySpecialDayRule[]
+  dailyBonusTemplateRevisions DailyBonusTemplateRevision[]
   dailyBonusClaims        DailyBonusClaim[]
   dailyBonusQuizSessions  DailyBonusQuizSession[]
   dailyFortuneResults     DailyFortuneResult[]
@@ -1467,6 +1468,7 @@ model DailyBonusAnnouncement {
   status             String    @default("pending")
   messageId          String?   @map("message_id")
   errorCode          String?   @map("error_code")
+  templateRevisionId String?   @map("template_revision_id")
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
   guild              Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -1498,6 +1500,34 @@ model DailySpecialDayRule {
   @@unique([guildId, monthDay], map: "daily_special_day_rules_guild_month_day_key")
   @@index([guildId], map: "daily_special_day_rules_guild_id_idx")
   @@map("daily_special_day_rules")
+}
+
+/**
+ * Versioned message template for the 09:00 announcement (#766 Phase C):
+ * draft -> pending_review -> approved -> active -> superseded, with
+ * pending_review -> rejected when returned. At most one revision per
+ * guild is active (partial unique index in the migration); the bot
+ * falls back to the plugin config messageTemplate when none is active
+ * and records the active revision id on each announcement.
+ */
+model DailyBonusTemplateRevision {
+  id              String    @id
+  guildId         String    @map("guild_id")
+  revision        Int
+  messageTemplate String    @map("message_template")
+  status          String    @default("draft")
+  createdBy       String    @map("created_by")
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at") @db.Timestamptz(6)
+  reviewNote      String?   @map("review_note")
+  activatedAt     DateTime? @map("activated_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  guild           Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([guildId, revision], map: "daily_bonus_template_revisions_guild_revision_key")
+  @@index([guildId, status], map: "daily_bonus_template_revisions_guild_status_idx")
+  @@map("daily_bonus_template_revisions")
 }
 
 model DailyBonusClaim {

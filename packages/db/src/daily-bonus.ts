@@ -12,6 +12,7 @@ export interface DailyAnnouncement {
   status: 'pending' | 'sending' | 'sent' | 'failed' | 'uncertain' | 'disabled';
   message_id: string | null;
   error_code: string | null;
+  template_revision_id: string | null;
 }
 export async function getDailyAnnouncement(db: PrismaClient, guild: string, date: string) {
   const rows = await db.$queryRaw<
@@ -50,6 +51,19 @@ export async function setDailyAnnouncement(
   error: string | null,
 ) {
   await db.$executeRaw`UPDATE daily_bonus_announcements SET status=${status},message_id=${message},error_code=${error},updated_at=NOW() WHERE guild_id=${guild} AND target_date=${date}`;
+}
+/**
+ * Record which template revision a day's announcement used (#766
+ * Phase C delivery snapshot). NULL means the plugin config template
+ * was in effect. Audit-only: callers treat failures as non-fatal.
+ */
+export async function setDailyAnnouncementTemplateRevision(
+  db: PrismaClient,
+  guild: string,
+  date: string,
+  revisionId: string | null,
+) {
+  await db.$executeRaw`UPDATE daily_bonus_announcements SET template_revision_id=${revisionId} WHERE guild_id=${guild} AND target_date=${date}`;
 }
 export async function recordDailyClaim(
   db: PrismaClient,
@@ -165,6 +179,134 @@ export async function deleteDailySpecialDayRule(
   id: string,
 ) {
   return db.$executeRaw`DELETE FROM daily_special_day_rules WHERE id=${id} AND guild_id=${guild}`;
+}
+export type DailyBonusTemplateRevisionStatus =
+  'draft' | 'pending_review' | 'approved' | 'active' | 'superseded' | 'rejected';
+export interface DailyBonusTemplateRevisionRow {
+  id: string;
+  guild_id: string;
+  revision: number;
+  message_template: string;
+  status: DailyBonusTemplateRevisionStatus;
+  created_by: string;
+  approved_by: string | null;
+  approved_at: Date | null;
+  review_note: string | null;
+  activated_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+/** 本文テンプレートの版管理（#766 Phase C）も特別日ルールと同じく通常・対話的どちらのクライアントでも扱える。 */
+export type DailyBonusTemplateRevisionDbClient = PrismaClient | Prisma.TransactionClient;
+export async function listDailyBonusTemplateRevisions(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+) {
+  return db.$queryRaw<
+    DailyBonusTemplateRevisionRow[]
+  >`SELECT * FROM daily_bonus_template_revisions WHERE guild_id=${guild} ORDER BY revision DESC`;
+}
+export async function getDailyBonusTemplateRevision(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+  id: string,
+) {
+  const rows = await db.$queryRaw<
+    DailyBonusTemplateRevisionRow[]
+  >`SELECT * FROM daily_bonus_template_revisions WHERE id=${id} AND guild_id=${guild}`;
+  return rows[0] ?? null;
+}
+export async function getActiveDailyBonusTemplateRevision(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+) {
+  const rows = await db.$queryRaw<
+    DailyBonusTemplateRevisionRow[]
+  >`SELECT * FROM daily_bonus_template_revisions WHERE guild_id=${guild} AND status='active'`;
+  return rows[0] ?? null;
+}
+/** Create a draft with the guild's next revision number. */
+export async function createDailyBonusTemplateRevision(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+  input: { id: string; messageTemplate: string; createdBy: string },
+) {
+  const rows = await db.$queryRaw<DailyBonusTemplateRevisionRow[]>`
+    INSERT INTO daily_bonus_template_revisions(id,guild_id,revision,message_template,created_by)
+    SELECT ${input.id},${guild},COALESCE(MAX(revision),0)+1,${input.messageTemplate},${input.createdBy}
+    FROM daily_bonus_template_revisions WHERE guild_id=${guild}
+    RETURNING *`;
+  return rows[0]!;
+}
+/** Edit a draft (or a returned revision, which goes back to draft). Approved content is frozen. */
+export async function updateDailyBonusTemplateRevisionDraft(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+  id: string,
+  messageTemplate: string,
+) {
+  return db.$executeRaw`UPDATE daily_bonus_template_revisions SET message_template=${messageTemplate},status='draft',approved_by=NULL,approved_at=NULL,updated_at=NOW() WHERE id=${id} AND guild_id=${guild} AND status IN ('draft','rejected')`;
+}
+export async function submitDailyBonusTemplateRevision(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+  id: string,
+) {
+  return db.$executeRaw`UPDATE daily_bonus_template_revisions SET status='pending_review',review_note=NULL,updated_at=NOW() WHERE id=${id} AND guild_id=${guild} AND status IN ('draft','rejected')`;
+}
+/** Approve a pending revision. The author can never approve their own revision. */
+export async function approveDailyBonusTemplateRevision(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+  id: string,
+  actor: string,
+) {
+  return db.$executeRaw`UPDATE daily_bonus_template_revisions SET status='approved',approved_by=${actor},approved_at=NOW(),updated_at=NOW() WHERE id=${id} AND guild_id=${guild} AND status='pending_review' AND created_by<>${actor}`;
+}
+export async function returnDailyBonusTemplateRevision(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+  id: string,
+  reviewNote: string | null,
+) {
+  return db.$executeRaw`UPDATE daily_bonus_template_revisions SET status='rejected',review_note=${reviewNote},updated_at=NOW() WHERE id=${id} AND guild_id=${guild} AND status='pending_review'`;
+}
+/**
+ * Activate an approved revision with a compare-and-swap on the
+ * currently active one. Must run inside a transaction: when the
+ * target turns out not to be approved, the caller rolls back so the
+ * previously active revision stays active.
+ */
+export async function activateDailyBonusTemplateRevision(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+  id: string,
+  expectedActiveId: string | null,
+): Promise<'activated' | 'conflict' | 'not_approved'> {
+  const current = await getActiveDailyBonusTemplateRevision(db, guild);
+  if ((current?.id ?? null) !== expectedActiveId) return 'conflict';
+  if (current) {
+    await db.$executeRaw`UPDATE daily_bonus_template_revisions SET status='superseded',updated_at=NOW() WHERE id=${current.id} AND guild_id=${guild} AND status='active'`;
+  }
+  const count =
+    await db.$executeRaw`UPDATE daily_bonus_template_revisions SET status='active',activated_at=NOW(),updated_at=NOW() WHERE id=${id} AND guild_id=${guild} AND status='approved'`;
+  if (count !== 1) return 'not_approved';
+  return 'activated';
+}
+/** Take the active revision offline (rollback to the plugin config template), CAS-guarded. */
+export async function deactivateDailyBonusTemplateRevision(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+  expectedActiveId: string,
+) {
+  return db.$executeRaw`UPDATE daily_bonus_template_revisions SET status='superseded',updated_at=NOW() WHERE id=${expectedActiveId} AND guild_id=${guild} AND status='active'`;
+}
+export async function deleteDailyBonusTemplateRevision(
+  db: DailyBonusTemplateRevisionDbClient,
+  guild: string,
+  id: string,
+) {
+  return db.$executeRaw`DELETE FROM daily_bonus_template_revisions WHERE id=${id} AND guild_id=${guild} AND status IN ('draft','rejected')`;
 }
 export async function hasDailyBonusSchema(db: PrismaClient) {
   const rows = await db.$queryRaw<
