@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
+import sharp from 'sharp';
 
 export const QUEST_BOARD_PATH = '/v2/herta/quest-board';
 export const QUEST_BOARD_PURPOSE = 'herta-quest-board-v2';
@@ -12,6 +13,15 @@ export const QUEST_BOARD_PURPOSE = 'herta-quest-board-v2';
 const MAX_RESPONSE_BYTES = 65_536;
 
 const REQUEST_TIMEOUT_MS = 5_000;
+
+/**
+ * The card action returns one period rendered as a PNG (base64 in
+ * JSON), so its caps follow the game-accounts card actions instead:
+ * 4 MiB of response and 20 s for the server-side render.
+ */
+const MAX_CARD_RESPONSE_BYTES = 4 * 1024 * 1024;
+
+const CARD_REQUEST_TIMEOUT_MS = 20_000;
 
 export interface QuestBoardConfig {
   apiBaseUrl: string;
@@ -92,6 +102,20 @@ export type IvrmQuestBoardResult =
   | { status: 'disabled' }
   | { status: 'ineligible-guild' | 'unavailable' | 'unconfigured' };
 
+/**
+ * The card action's result. The failure states are the status
+ * action's, so the plugin can branch on them the same way; the
+ * plugin only ever renders a card on 'ok' and falls back to the
+ * Embed view otherwise (renderer problems arrive as 'unavailable',
+ * exactly like the game cards' text fallback).
+ */
+export type IvrmQuestBoardCardResult =
+  | { status: 'ok'; period: QuestBoardPeriodType; png: Buffer }
+  | { status: 'not-linked' }
+  | { status: 'duplicate' }
+  | { status: 'disabled' }
+  | { status: 'ineligible-guild' | 'unavailable' | 'unconfigured' };
+
 export function resolveQuestBoardConfig(
   env: Partial<Record<string, string | undefined>>,
 ): QuestBoardConfig | null {
@@ -118,11 +142,11 @@ export function resolveQuestBoardConfig(
 }
 
 /**
- * Builds the signed status request. The wire contract mirrors the
+ * Builds a signed request. The wire contract mirrors the
  * game-accounts integration with a quest-board purpose string, so a
  * signature minted for another integration is never accepted here
- * (and vice versa). Q2 only ever sends the status action; the card
- * action lands with Q3.
+ * (and vice versa). The status action (Q2) sends no extra keys; the
+ * card action (Q3) adds the period it wants rendered.
  */
 export function buildQuestBoardRequest(
   config: QuestBoardConfig,
@@ -130,13 +154,17 @@ export function buildQuestBoardRequest(
   userId: string,
   requestId: string,
   timestamp: string,
+  action: { type: 'status' } | { type: 'card'; period: QuestBoardPeriodType } = {
+    type: 'status',
+  },
 ) {
   const payload: Record<string, unknown> = {
     schemaVersion: 1,
     requestId,
     guildId,
     discordUserId: userId,
-    action: 'status',
+    action: action.type,
+    ...(action.type === 'card' ? { period: action.period } : {}),
   };
   const body = JSON.stringify(payload);
   const key = createHmac('sha256', config.secret).update(QUEST_BOARD_PURPOSE).digest();
@@ -355,7 +383,10 @@ async function readBoundedJson(
   }
 }
 
-function mapErrorResponse(status: number, value: unknown): IvrmQuestBoardResult {
+function mapErrorResponse(
+  status: number,
+  value: unknown,
+): Exclude<IvrmQuestBoardResult, { status: 'ok' }> {
   const error = isRecord(value) && typeof value.error === 'string' ? value.error : null;
   const bodyStatus = isRecord(value) && typeof value.status === 'string' ? value.status : null;
   // The only 404 this endpoint answers is the unlinked member; it
@@ -403,6 +434,107 @@ export async function callIvrmQuestBoard(
     const { parsed, value } = await readBoundedJson(response, MAX_RESPONSE_BYTES);
     if (!parsed) return { status: 'unavailable' };
     return parseSuccessBody(value, requestId, userId);
+  } catch {
+    return { status: 'unavailable' };
+  } // Never log URLs, response bodies or other member values.
+}
+
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/**
+ * A rendered card is 1600 px wide and roughly 1000-2000 px tall
+ * (about 1.6-3.2 M pixels). The pixel cap keeps a malformed payload
+ * from decoding into an unbounded raw buffer; anything above it is
+ * not a card the API renders and fails closed.
+ */
+const MAX_CARD_PIXELS = 10_000_000;
+
+/**
+ * Validates a card success body. The echo fields must match the
+ * request (including the action and the requested period), and the
+ * payload must decode to an actual PNG — anything else is an
+ * upstream malfunction and fails closed like every other field.
+ * The magic alone is not enough: a truncated or CRC-broken payload
+ * still carries it, so the whole image is decoded here (sharp is
+ * already a bot dependency). metadata() would not catch this — it
+ * only reads IHDR and lets a bad IDAT CRC through.
+ */
+async function parseCardSuccessBody(
+  value: unknown,
+  requestId: string,
+  userId: string,
+  period: QuestBoardPeriodType,
+): Promise<IvrmQuestBoardCardResult> {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    value.requestId !== requestId ||
+    value.discordUserId !== userId ||
+    value.action !== 'card' ||
+    value.status !== 'ok' ||
+    !isRecord(value.card) ||
+    value.card.period !== period ||
+    typeof value.card.pngBase64 !== 'string'
+  )
+    return { status: 'unavailable' };
+  const png = Buffer.from(value.card.pngBase64, 'base64');
+  if (png.length <= PNG_MAGIC.length || !PNG_MAGIC.every((byte, index) => png[index] === byte))
+    return { status: 'unavailable' };
+  try {
+    await sharp(png, { limitInputPixels: MAX_CARD_PIXELS }).raw().toBuffer();
+  } catch {
+    return { status: 'unavailable' };
+  }
+  return { status: 'ok', period, png };
+}
+
+/**
+ * Fetches one period of the board rendered as a PNG card by the
+ * API (Q3). Same signing, guild gate and failure mapping as the
+ * status action; only the size cap and timeout differ (see the
+ * constants above). Renderer problems on the API side (503
+ * card_renderer_unavailable / 502 card_render_failed) carry no
+ * dedicated state here: they map to 'unavailable' and the plugin
+ * falls back to the Embed view.
+ */
+export async function callIvrmQuestBoardCard(
+  guildId: string,
+  userId: string,
+  period: QuestBoardPeriodType,
+  config = resolveQuestBoardConfig(process.env),
+): Promise<IvrmQuestBoardCardResult> {
+  if (!config) return { status: 'unconfigured' };
+  if (config.guildId !== guildId) return { status: 'ineligible-guild' };
+  if (!/^\d{17,20}$/.test(guildId) || !/^\d{17,20}$/.test(userId)) return { status: 'unavailable' };
+  const requestId = randomUUID();
+  const request = buildQuestBoardRequest(
+    config,
+    guildId,
+    userId,
+    requestId,
+    new Date().toISOString(),
+    {
+      type: 'card',
+      period,
+    },
+  );
+  try {
+    const response = await fetch(request.url, {
+      ...request.init,
+      signal: AbortSignal.timeout(CARD_REQUEST_TIMEOUT_MS),
+      redirect: 'error',
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      const { parsed, value } = await readBoundedJson(response, 4096);
+      // An unparsed body (for example an HTML 404 from a proxy) says
+      // nothing about the member's link state, so never map its status.
+      if (!parsed) return { status: 'unavailable' };
+      return mapErrorResponse(response.status, value);
+    }
+    const { parsed, value } = await readBoundedJson(response, MAX_CARD_RESPONSE_BYTES);
+    if (!parsed) return { status: 'unavailable' };
+    return parseCardSuccessBody(value, requestId, userId, period);
   } catch {
     return { status: 'unavailable' };
   } // Never log URLs, response bodies or other member values.

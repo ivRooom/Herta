@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   MessageFlags,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
@@ -14,16 +15,20 @@ import {
 } from '@herta/plugin-sdk';
 import {
   callIvrmQuestBoard,
+  callIvrmQuestBoardCard,
+  type IvrmQuestBoardResult,
   type QuestBoardPeriodType,
   type QuestBoardStatus,
 } from './quest-board-ivrm.js';
 import {
+  buildQuestBoardCardEmbed,
   buildQuestBoardEmbed,
   buildQuestBoardErrorEmbed,
   buildQuestBoardPeriodSelect,
   formatQuestBoardError,
   isQuestBoardPeriodType,
   parseQuestBoardPeriodCustomId,
+  questBoardCardFileName,
   QUEST_BOARD_PERIOD_CUSTOM_ID_PREFIX,
   type QuestBoardEmbed,
 } from './quest-board-core.js';
@@ -64,22 +69,72 @@ function periodSelectRow(
 export interface QuestBoardView {
   embeds: QuestBoardEmbed[];
   components: ActionRowBuilder<StringSelectMenuBuilder>[];
+  files: AttachmentBuilder[];
+  /**
+   * Present (and empty) only in the Embed fallback view: switching
+   * periods away from a card view must drop the previous period's
+   * attachment, and an empty attachments list is what clears it.
+   */
+  attachments?: [];
 }
 
 /**
- * Builds the one-period board view: the period embed plus the period
- * switcher dropdown. Exported for tests; the command and the select
+ * Builds the one-period board view: the period switcher dropdown
+ * plus either the image card with its companion embed (Q3, the
+ * main display) or — when no card PNG is given — the full Embed
+ * view from Q2. Exported for tests; the command and the select
  * handler share it.
  */
 export function buildQuestBoardView(
   userId: string,
   board: QuestBoardStatus,
   periodType: QuestBoardPeriodType,
+  cardPng: Buffer | null = null,
 ): QuestBoardView {
+  const components = [periodSelectRow(userId, periodType)];
+  if (cardPng) {
+    return {
+      embeds: [buildQuestBoardCardEmbed(board, periodType)],
+      components,
+      files: [new AttachmentBuilder(cardPng, { name: questBoardCardFileName(periodType) })],
+    };
+  }
   return {
     embeds: [buildQuestBoardEmbed(board, periodType)],
-    components: [periodSelectRow(userId, periodType)],
+    components,
+    files: [],
+    attachments: [],
   };
+}
+
+type QuestBoardViewResult =
+  | { kind: 'view'; view: QuestBoardView }
+  | { kind: 'error'; result: Exclude<IvrmQuestBoardResult, { status: 'ok' }> };
+
+/**
+ * Reads the board and builds the view for one period. The status
+ * call owns the error branching (not linked, disabled, …); the
+ * card call is fail-soft — any failure (renderer unavailable,
+ * network, malformed payload) keeps the Embed view instead of
+ * failing the command.
+ */
+export async function fetchQuestBoardView(
+  guildId: string,
+  userId: string,
+  periodType: QuestBoardPeriodType,
+  callApi: typeof callIvrmQuestBoard = callIvrmQuestBoard,
+  callCard: typeof callIvrmQuestBoardCard = callIvrmQuestBoardCard,
+): Promise<QuestBoardViewResult> {
+  const result = await callApi(guildId, userId);
+  if (result.status !== 'ok') return { kind: 'error', result };
+  let png: Buffer | null = null;
+  try {
+    const card = await callCard(guildId, userId, periodType);
+    if (card.status === 'ok') png = card.png;
+  } catch {
+    png = null;
+  }
+  return { kind: 'view', view: buildQuestBoardView(userId, result.board, periodType, png) };
 }
 
 interface QuestBoardSelectInteraction {
@@ -94,6 +149,8 @@ interface QuestBoardSelectInteraction {
   editReply(options: {
     embeds?: QuestBoardEmbed[];
     components: ActionRowBuilder<StringSelectMenuBuilder>[];
+    files?: AttachmentBuilder[];
+    attachments?: readonly never[];
   }): Promise<unknown>;
 }
 
@@ -113,6 +170,7 @@ export async function handleQuestBoardPeriodSelect(
   context: PluginRuntimeContext<QuestBoardConfig, unknown, PrismaClient>,
   interaction: QuestBoardSelectInteraction | undefined,
   callApi: typeof callIvrmQuestBoard = callIvrmQuestBoard,
+  callCard: typeof callIvrmQuestBoardCard = callIvrmQuestBoardCard,
 ): Promise<void> {
   if (
     !interaction?.isStringSelectMenu?.() ||
@@ -161,16 +219,22 @@ export async function handleQuestBoardPeriodSelect(
     return;
   }
   try {
-    const result = await callApi(interaction.guildId, parsed.userId);
-    if (result.status !== 'ok') {
+    const fetched = await fetchQuestBoardView(
+      interaction.guildId,
+      parsed.userId,
+      periodType,
+      callApi,
+      callCard,
+    );
+    if (fetched.kind === 'error') {
       // A failed switch must not destroy the view: leave the message
       // as-is and tell only the presser.
       await interaction
-        .followUp({ content: formatQuestBoardError(result), flags: MessageFlags.Ephemeral })
+        .followUp({ content: formatQuestBoardError(fetched.result), flags: MessageFlags.Ephemeral })
         .catch(() => undefined);
       return;
     }
-    await interaction.editReply(buildQuestBoardView(parsed.userId, result.board, periodType));
+    await interaction.editReply(fetched.view);
   } catch (error) {
     context.logger.error(
       { error: error instanceof Error ? error.name : 'UnknownError' },
@@ -221,12 +285,14 @@ export const questBoardPlugin = definePlugin<QuestBoardConfig, unknown, PrismaCl
               await interaction.editReply('不明な操作です。');
               return;
             }
-            const result = await callIvrmQuestBoard(guildId, userId);
-            if (result.status !== 'ok') {
-              await interaction.editReply({ embeds: [buildQuestBoardErrorEmbed(result)] });
+            const fetched = await fetchQuestBoardView(guildId, userId, subcommand);
+            if (fetched.kind === 'error') {
+              await interaction.editReply({
+                embeds: [buildQuestBoardErrorEmbed(fetched.result)],
+              });
               return;
             }
-            await interaction.editReply(buildQuestBoardView(userId, result.board, subcommand));
+            await interaction.editReply(fetched.view);
           } catch (error) {
             // Never include member values in logs or error replies.
             context.logger.error(

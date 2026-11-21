@@ -319,6 +319,65 @@ export function buildQuestBoardEmbed(
   };
 }
 
+/** 画像カードの添付ファイル名 (期間ごと)。プラグインが AttachmentBuilder に載せる。 */
+export function questBoardCardFileName(periodType: QuestBoardPeriodType): string {
+  return `quest-board-${periodType}.png`;
+}
+
+/**
+ * 画像カードに併記する補助 Embed (DESIGN §3.2)。クエスト一覧は
+ * カード側が担うので、こちらは全クリア報酬 pt の状態と「あと少し」
+ * の呼びかけ、ポータルへの導線だけを持つ。カードが取得できない
+ * 場合は buildQuestBoardEmbed (一覧入り) がフォールバックになる。
+ */
+export function buildQuestBoardCardEmbed(
+  board: QuestBoardStatus,
+  periodType: QuestBoardPeriodType,
+  now: Date = new Date(),
+): QuestBoardEmbed {
+  const period = questBoardPeriod(board, periodType);
+  if (!period)
+    return buildNoticeEmbed(
+      '期間データを取得できませんでした。少し待ってからお試しください。',
+      'error',
+    );
+  const label = questBoardPeriodLabel(periodType);
+  const title = truncate(`📋 クエストボード（${label}）`, MAX_EMBED_TITLE_CHARS);
+  const descriptionLines: string[] = [];
+  if (period.quests.length === 0) {
+    descriptionLines.push(`${formatPeriodRange(period)} ・ 現在表示できるクエストがありません。`);
+  } else if (period.allClear) {
+    descriptionLines.push(
+      `🎉 全クリア達成！ 全クリアボーナス ${period.allClearPoints} pt の対象です`,
+    );
+  } else {
+    const remaining = period.quests.length - period.completedCount;
+    const remainingXp = period.quests
+      .filter((quest) => !quest.completed)
+      .reduce((sum, quest) => sum + quest.xpReward, 0);
+    descriptionLines.push(
+      `全クリアまで あと ${remaining} 本（全クリアで ${period.allClearPoints} pt）・ 残り ${remainingXp} XP`,
+    );
+    const almost = period.quests.filter(isAlmostComplete);
+    for (const quest of almost.slice(0, 3)) {
+      descriptionLines.push(
+        `🔥 あと少し： 「${quest.title}」あと ${quest.threshold - quest.progress} ${quest.unit}`,
+      );
+    }
+  }
+  return {
+    title,
+    description: truncate(descriptionLines.join('\n'), MAX_EMBED_DESCRIPTION_CHARS),
+    color: period.allClear ? EMBED_COLOR_SUCCESS : EMBED_COLOR_PRIMARY,
+    footer: {
+      text: truncate(
+        `リセット ${formatJstDateTime(period.endsAt)}（${formatRemainingUntil(period.endsAt, now)}） ・ 累計クリア ${board.totalCompletions} 件 ・ ポータルでも確認できます：${MEMBER_QUEST_BOARD_URL}`,
+        MAX_EMBED_FOOTER_CHARS,
+      ),
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 期間切替セレクトメニュー (DESIGN §3.1)。customId は
 // `quest-board:period:<userId>` で、表示は Ephemeral のため本人だけが
