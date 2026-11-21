@@ -61,6 +61,8 @@ import {
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
 import { dailyBonusActionRow, dailyBonusTestActionRow } from './daily-bonus-buttons.js';
+import { fetchQuestBoardView } from './quest-board.js';
+import { buildQuestBoardErrorEmbed } from './quest-board-core.js';
 import {
   dailySupportActionRow,
   dailySupportFailureClass,
@@ -123,6 +125,7 @@ async function loadActiveTemplateRevision(prisma: PrismaClient, guildId: string)
 
 const timers = new Map<string, NodeJS.Timeout>();
 const running = new Set<string>();
+const questViewInFlight = new Set<string>();
 const generations = new Map<string, number>();
 export const dailyBonusPlugin = definePlugin<Config, Client, PrismaClient>({
   manifest: dailyBonusManifest,
@@ -175,6 +178,10 @@ export const dailyBonusPlugin = definePlugin<Config, Client, PrismaClient>({
                 '🧪 これはTEST通知です。ボタンは表示確認用で、本番の受取・問題回答・運勢・ポイント付与は行われません。',
               flags: MessageFlags.Ephemeral,
             });
+            return;
+          }
+          if (interaction?.isButton() && interaction.customId.startsWith('daily-bonus:quests:')) {
+            await handleDailyBonusQuests(ctx, interaction);
             return;
           }
           if (!interaction?.isButton() || !interaction.customId.startsWith('daily-bonus:')) return;
@@ -247,7 +254,7 @@ async function scanDailyBonusTestSends(ctx: Context) {
       )
       .setURL(MEMBER_DAILY_URL)
       .setDescription(
-        `${specialDay?.intro ?? baseTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
+        `${specialDay?.intro ?? baseTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST\n📋 [クエストボードはこちら](https://member.ivrm.jp/quests)`,
       )
       .setFooter({
         text: '🧪 これはTEST送信です。本番の受取・ポイント付与は行われません',
@@ -420,7 +427,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
         .setTitle(specialDay?.title ?? `🎁 ${date} 本日のログインボーナス`)
         .setURL(MEMBER_DAILY_URL)
         .setDescription(
-          `${specialDay?.intro ?? baseTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
+          `${specialDay?.intro ?? baseTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST\n📋 [クエストボードはこちら](https://member.ivrm.jp/quests)`,
         )
         .setFooter({ text: '受取と今日の運勢は本人にだけ表示します' });
       if (bundle?.image) embed.setImage(bundle.image.url);
@@ -525,6 +532,46 @@ async function replyClaimFailure(
     content,
     components: [dailySupportActionRow({ kind: 'claim', failureClass, target: date }, ctx.config)],
   });
+}
+
+/**
+ * Quest view button (#954): answers only the presser (ephemeral) with
+ * their own quest board, reusing the /quest command's fetch and
+ * rendering (#946). The date in the customId is informational: the
+ * board API derives the current periods server-side. Read-only - it
+ * never claims, answers or moves points.
+ */
+async function handleDailyBonusQuests(ctx: Context, interaction: ButtonInteraction) {
+  if (interaction.guildId !== ctx.guildId) return;
+  const key = `${ctx.guildId}:${interaction.user.id}`;
+  if (questViewInFlight.has(key)) {
+    await interaction.reply({
+      content: 'クエストを表示中です。完了するまでお待ちください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  questViewInFlight.add(key);
+  try {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const fetched = await fetchQuestBoardView(ctx.guildId, interaction.user.id, 'daily');
+    if (fetched.kind === 'error') {
+      await interaction.editReply({ embeds: [buildQuestBoardErrorEmbed(fetched.result)] });
+      return;
+    }
+    await interaction.editReply({
+      embeds: fetched.view.embeds,
+      components: fetched.view.components,
+      files: fetched.view.files,
+    });
+  } catch {
+    ctx.logger.warn('Daily bonus quest view failed');
+    await interaction
+      .editReply('クエストを表示できませんでした。少し待ってから再度お試しください。')
+      .catch(() => undefined);
+  } finally {
+    questViewInFlight.delete(key);
+  }
 }
 
 async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
