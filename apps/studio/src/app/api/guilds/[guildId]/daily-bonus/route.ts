@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import {
   activateDailyBonusTemplateRevision,
   approveDailyBonusTemplateRevision,
+  countInFlightDailyBonusTestSends,
+  createDailyBonusTestSend,
+  getLatestDailyBonusTestSend,
+  listDailyBonusTestSends,
   createDailyBonusTemplateRevision,
   deactivateDailyBonusTemplateRevision,
   deleteDailyBonusTemplateRevision,
@@ -21,6 +25,8 @@ import {
   parseTemplateRevisionContent,
   parseTemplateRevisionId,
   parseTemplateRevisionReviewNote,
+  parseTestSendChannelId,
+  parseTestSendDate,
 } from '@/lib/daily-bonus-admin-input';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
@@ -81,12 +87,21 @@ export async function GET(request: Request, context: Context) {
     } catch {
       templateRevisionsAvailable = false;
     }
+    let testSends: Awaited<ReturnType<typeof listDailyBonusTestSends>> = [];
+    let testSendsAvailable = true;
+    try {
+      testSends = await listDailyBonusTestSends(prisma, allowed.guildId);
+    } catch {
+      testSendsAvailable = false;
+    }
     return reply({
       announcements,
       specialDayRules,
       specialDayRulesAvailable,
       templateRevisions,
       templateRevisionsAvailable,
+      testSends,
+      testSendsAvailable,
     });
   } catch {
     return reply({ error: 'daily_bonus_unavailable' }, 503);
@@ -161,6 +176,46 @@ export async function POST(request: Request, context: Context) {
       });
       if (deleted === 0) return reply({ error: 'rule_not_found' }, 404);
       return reply({ status: 'deleted' });
+    }
+    if (body.action === 'request-test-send') {
+      const canManageComposer = hasEffectivePluginPermission(
+        allowed.policyAccess,
+        'studio.settings.write',
+        studioDailyBonusResource(allowed.guildId, 'composer'),
+      );
+      if (!canManageComposer) return reply({ error: 'forbidden' }, 403);
+      const channelId = parseTestSendChannelId(body.channelId);
+      const targetDate = parseTestSendDate(body.date);
+      if (!channelId || !targetDate) return reply({ error: 'invalid_request' }, 422);
+      const outcome = await prisma.$transaction(async (tx) => {
+        if ((await countInFlightDailyBonusTestSends(tx, allowed.guildId)) > 0)
+          return 'in_flight' as const;
+        const latest = await getLatestDailyBonusTestSend(tx, allowed.guildId);
+        if (latest && Date.now() - new Date(latest.created_at).getTime() < 60_000)
+          return 'rate_limited' as const;
+        const created = await createDailyBonusTestSend(tx, {
+          id: crypto.randomUUID(),
+          guildId: allowed.guildId,
+          channelId,
+          targetDate,
+          requestedBy: allowed.actor,
+          expiresAt: new Date(Date.now() + 10 * 60_000),
+        });
+        await tx.auditLog.create({
+          data: {
+            guildId: allowed.guildId,
+            actorId: allowed.actor,
+            event: 'daily_bonus.test_send.requested',
+            targetType: 'daily_bonus_test_send',
+            targetId: created.id,
+            metadata: { channelId, targetDate },
+          },
+        });
+        return created;
+      });
+      if (outcome === 'in_flight') return reply({ error: 'test_send_in_flight' }, 409);
+      if (outcome === 'rate_limited') return reply({ error: 'test_send_rate_limited' }, 429);
+      return reply({ status: 'queued', testSend: outcome });
     }
     if (
       body.action === 'create-template-revision' ||
