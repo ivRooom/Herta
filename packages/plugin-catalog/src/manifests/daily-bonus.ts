@@ -40,7 +40,12 @@ export const dailyBonusManifest: PluginManifest = {
         title:
           '運営メンション先（失敗が起きたチャンネルへ報告し、このロール/ユーザーをメンション。空なら報告ボタン無効）',
       },
-      scheduleTime: { type: 'string', enum: ['09:00'], default: '09:00', title: '配信時刻（JST）' },
+      scheduleTime: {
+        type: 'string',
+        pattern: '^(09|1[0-9]|2[0-3]):[0-5][0-9]$',
+        default: '09:00',
+        title: '配信時刻（JST・09:00〜23:59。受取の開始と期限は09:00基準のまま）',
+      },
       timezone: { type: 'string', enum: ['Asia/Tokyo'], default: 'Asia/Tokyo' },
       fortuneEnabled: { type: 'boolean', default: true, title: '受取後に運勢を表示' },
       anniversaryLimit: {
