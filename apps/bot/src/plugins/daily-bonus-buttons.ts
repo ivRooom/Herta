@@ -1,11 +1,12 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 
 /**
- * The four actions remain visible while V2 is disabled.
+ * The five actions remain visible while V2 is disabled.
  * V1 questions reuse the canonical claim+answer flow; neither preview nor
  * fortune interaction may claim points without an explicit answer/claim.
  * The yesterday review (#820) is V2-only and read-only: it never claims,
- * answers or opens a session.
+ * answers or opens a session. The quest view (#954) is read-only too: it
+ * answers with the presser's own quest board, ephemerally.
  */
 export function dailyBonusActionRow(date: string, participationEnabled: boolean) {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -29,11 +30,15 @@ export function dailyBonusActionRow(date: string, participationEnabled: boolean)
       .setCustomId(`daily-bonus:fortune:${date}`)
       .setLabel('🔮 今日の運勢')
       .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`daily-bonus:quests:${date}`)
+      .setLabel('📋 クエストを確認')
+      .setStyle(ButtonStyle.Secondary),
   );
 }
 
 /**
- * TEST sends (#723) render the same four actions with inert customIds.
+ * TEST sends (#723) render the same five actions with inert customIds.
  * The daily-bonus-test: prefix is handled by a dedicated branch that
  * only explains the message is a test: it can never claim, answer,
  * generate a fortune or move points.
@@ -55,6 +60,10 @@ export function dailyBonusTestActionRow(requestId: string) {
     new ButtonBuilder()
       .setCustomId(`daily-bonus-test:${requestId}:fortune`)
       .setLabel('🔮 今日の運勢')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`daily-bonus-test:${requestId}:quests`)
+      .setLabel('📋 クエストを確認')
       .setStyle(ButtonStyle.Secondary),
   );
 }
