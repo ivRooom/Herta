@@ -31,6 +31,7 @@ import {
 } from './daily-bonus-policy.js';
 import { captureDailyBonusPopulation } from './daily-bonus-population.js';
 import { fetchDailyTodayHistory, type DailyBundleThemeKey } from './daily-today-history.js';
+import { dailyBonusSendOpensAt, resolveDailyBonusScheduleTime } from './daily-bonus-schedule.js';
 import { resolveSpecialDayOverride, type SpecialDayOverride } from './daily-special-days.js';
 
 /** Accent colors for the daily bundle themes (ivrm-web #1304). */
@@ -74,6 +75,7 @@ interface Config {
   alertChannelId?: string;
   notificationRoleId: string;
   supportMentionId: string;
+  scheduleTime: string;
   fortuneEnabled: boolean;
   anniversaryLimit: number;
   anniversaryCategories: string[];
@@ -297,6 +299,13 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
   // Announcements are created for the calendar day whose 09:00 JST opens
   // the slot; admission (dailyBonusDate) is slot-based, creation is not.
   const date = dailyBonusCalendarDate(now);
+  // #766 Phase D2 (plan B): the send time is configurable, but the slot
+  // itself stays anchored at 09:00 - the date above, the claim window, and
+  // the receive deadline never move with scheduleTime.
+  const sendOpensAt = dailyBonusSendOpensAt(
+    date,
+    resolveDailyBonusScheduleTime(ctx.config.scheduleTime),
+  );
   const resultGeneration = generations.get(ctx.guildId) ?? 0;
   await scanParticipationResults(
     ctx,
@@ -311,7 +320,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
     () => resultGeneration === (generations.get(ctx.guildId) ?? 0),
   );
   if (resultGeneration !== (generations.get(ctx.guildId) ?? 0)) return;
-  if (now.getTime() < Date.parse(`${date}T09:00:00+09:00`)) return;
+  if (now.getTime() < sendOpensAt) return;
   // A late restart may deliver today's message; never creates a past-day occurrence.
   running.add(ctx.guildId);
   const generation = generations.get(ctx.guildId) ?? 0;
@@ -330,7 +339,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
       const matches = messages.filter(
         (message) =>
           message.author.id === ctx.client.user?.id &&
-          message.createdTimestamp >= Date.parse(`${date}T09:00:00+09:00`) &&
+          message.createdTimestamp >= sendOpensAt &&
           message.content === `<@&${prior.role_id}>` &&
           message.components.some(
             (row) =>
