@@ -271,3 +271,41 @@ export function composeDailyBonusPreview(input: {
     introFromSpecialDay: Boolean(input.specialDay?.intro),
   };
 }
+
+// ---------------------------------------------------------------------------
+// #766 Phase D1: TEST sends (#723). Studio queues a request; the Bot
+// claims it, validates the target channel itself and sends one
+// TEST-marked message. The parsers below only shape the request input.
+
+export type TestSendStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'uncertain' | 'expired';
+
+export interface TestSendView {
+  id: string;
+  channelId: string;
+  targetDate: string;
+  requestedBy: string;
+  status: TestSendStatus;
+  messageId: string | null;
+  errorCode: string | null;
+  createdAt: string;
+}
+
+export const TEST_SEND_STATUS_LABELS: Record<TestSendStatus, string> = {
+  queued: '送信待ち',
+  sending: '送信中',
+  sent: '送信済み',
+  failed: '失敗',
+  uncertain: '送達不明（再送しません）',
+  expired: '期限切れ',
+};
+
+/** Discord snowflake (17-20 digits), the same shape as plugin config ids. */
+export function parseTestSendChannelId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^\d{17,20}$/.test(trimmed) ? trimmed : null;
+}
+
+export function parseTestSendDate(value: unknown): string | null {
+  return typeof value === 'string' && validDailyBonusDate(value) ? value : null;
+}

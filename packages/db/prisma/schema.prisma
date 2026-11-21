@@ -30,6 +30,7 @@ model Guild {
   dailyBonusAnnouncements DailyBonusAnnouncement[]
   dailySpecialDayRules    DailySpecialDayRule[]
   dailyBonusTemplateRevisions DailyBonusTemplateRevision[]
+  dailyBonusTestSends        DailyBonusTestSend[]
   dailyBonusClaims        DailyBonusClaim[]
   dailyBonusQuizSessions  DailyBonusQuizSession[]
   dailyFortuneResults     DailyFortuneResult[]
@@ -1510,6 +1511,24 @@ model DailySpecialDayRule {
  * falls back to the plugin config messageTemplate when none is active
  * and records the active revision id on each announcement.
  */
+model DailyBonusTestSend {
+  id          String   @id
+  guildId     String   @map("guild_id")
+  channelId   String   @map("channel_id")
+  targetDate  String   @map("target_date")
+  requestedBy String   @map("requested_by")
+  status      String   @default("queued")
+  messageId   String?  @map("message_id")
+  errorCode   String?  @map("error_code")
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, status, createdAt], map: "daily_bonus_test_sends_guild_status_idx")
+  @@map("daily_bonus_test_sends")
+}
+
 model DailyBonusTemplateRevision {
   id              String    @id
   guildId         String    @map("guild_id")

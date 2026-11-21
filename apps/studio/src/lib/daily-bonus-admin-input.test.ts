@@ -14,7 +14,10 @@ import {
   parseTemplateRevisionContent,
   parseTemplateRevisionId,
   parseTemplateRevisionReviewNote,
+  parseTestSendChannelId,
+  parseTestSendDate,
   resolveSpecialDayOverride,
+  TEST_SEND_STATUS_LABELS,
   TEMPLATE_REVISION_STATUS_LABELS,
   templateRevisionActions,
   validMonthDay,
@@ -287,4 +290,16 @@ test('template revision actions follow the state machine and every status is lab
   ];
   for (const status of statuses)
     assert.ok(TEMPLATE_REVISION_STATUS_LABELS[status].length > 0, status);
+});
+
+test('test send inputs require a snowflake channel and a real date', () => {
+  assert.equal(parseTestSendChannelId('123456789012345678'), '123456789012345678');
+  assert.equal(parseTestSendChannelId(' 12345678901234567 '), '12345678901234567');
+  assert.equal(parseTestSendChannelId('123'), null);
+  assert.equal(parseTestSendChannelId('12345678901234567a'), null);
+  assert.equal(parseTestSendChannelId(123456789012345678), null);
+  assert.equal(parseTestSendDate('2026-11-21'), '2026-11-21');
+  assert.equal(parseTestSendDate('2026-02-30'), null);
+  assert.equal(parseTestSendDate('21/11/2026'), null);
+  assert.equal(Object.keys(TEST_SEND_STATUS_LABELS).length, 6);
 });

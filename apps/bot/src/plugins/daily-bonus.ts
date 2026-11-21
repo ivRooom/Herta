@@ -11,6 +11,8 @@ import {
 import {
   getDailyAnnouncement,
   getActiveDailyBonusTemplateRevision,
+  claimNextDailyBonusTestSend,
+  completeDailyBonusTestSend,
   listDailySpecialDayRules,
   reserveDailyAnnouncement,
   captureDailyAnnouncementPopulation,
@@ -57,7 +59,7 @@ import {
 } from './daily-quiz-settings.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
-import { dailyBonusActionRow } from './daily-bonus-buttons.js';
+import { dailyBonusActionRow, dailyBonusTestActionRow } from './daily-bonus-buttons.js';
 import {
   dailySupportActionRow,
   dailySupportFailureClass,
@@ -163,6 +165,16 @@ export const dailyBonusPlugin = definePlugin<Config, Client, PrismaClient>({
             );
             return;
           }
+          if (interaction?.isButton() && interaction.customId.startsWith('daily-bonus-test:')) {
+            // TEST message buttons are inert by design (#723): they can
+            // never claim, answer, generate a fortune or move points.
+            await interaction.reply({
+              content:
+                '🧪 これはTEST通知です。ボタンは表示確認用で、本番の受取・問題回答・運勢・ポイント付与は行われません。',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
           if (!interaction?.isButton() || !interaction.customId.startsWith('daily-bonus:')) return;
           await handleDailyBonus(ctx, interaction);
         },
@@ -176,14 +188,112 @@ function stop(guild: string) {
   timers.delete(guild);
   generations.set(guild, (generations.get(guild) ?? 0) + 1);
 }
+/**
+ * Deliver queued TEST sends (#766 Phase D1 / #723). The request row is
+ * the only state: no production announcement, nonce or resend logic is
+ * involved, the role is never pinged, and an unknown delivery outcome
+ * is recorded as 'uncertain' instead of being retried.
+ */
+async function scanDailyBonusTestSends(ctx: Context) {
+  let request;
+  try {
+    request = await claimNextDailyBonusTestSend(ctx.prisma, ctx.guildId);
+  } catch {
+    return; // Table not applied yet: test sends stay unavailable.
+  }
+  if (!request) return;
+  const fail = (errorCode: string) =>
+    completeDailyBonusTestSend(ctx.prisma, request.id, 'failed', null, errorCode).catch(
+      () => false,
+    );
+  try {
+    const guild = await ctx.client.guilds.fetch(ctx.guildId);
+    const channel = await guild.channels.fetch(request.channel_id);
+    const me = await guild.members.fetchMe();
+    if (!channel?.isTextBased() || channel.isThread() || !('send' in channel)) {
+      await fail('TestTargetInvalid');
+      return;
+    }
+    const permissions = channel.permissionsFor(me);
+    if (
+      !permissions?.has([
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+      ])
+    ) {
+      await fail('TestTargetPermissions');
+      return;
+    }
+    // Preview mode: a test send never freezes the day's snapshot.
+    const todayHistory = await fetchDailyTodayHistory(
+      ctx.guildId,
+      request.target_date,
+      ctx.config.anniversaryLimit,
+      undefined,
+      'preview',
+    );
+    const events = todayHistory?.events ?? [];
+    const bundle = todayHistory?.bundle ?? null;
+    const specialDay = await loadSpecialDayOverride(ctx.prisma, ctx.guildId, request.target_date);
+    const templateRevision = await loadActiveTemplateRevision(ctx.prisma, ctx.guildId);
+    const baseTemplate = templateRevision?.message_template ?? ctx.config.messageTemplate;
+    const embed = new EmbedBuilder()
+      .setColor(bundle?.themeKey ? DAILY_BUNDLE_THEME_COLORS[bundle.themeKey] : 0xb9a2ff)
+      .setTitle(
+        `【TEST】${specialDay?.title ?? `🎁 ${request.target_date} 本日のログインボーナス`}`,
+      )
+      .setURL(MEMBER_DAILY_URL)
+      .setDescription(
+        `${specialDay?.intro ?? baseTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST`,
+      )
+      .setFooter({
+        text: '🧪 これはTEST送信です。本番の受取・ポイント付与は行われません',
+      });
+    if (bundle?.image) embed.setImage(bundle.image.url);
+    if (events.length)
+      embed.addFields({
+        name: dailyAnniversaryHeading(events.length),
+        value: '公式情報を確認した本日の記念日です。',
+      });
+    for (const event of events)
+      embed.addFields({
+        name: `🎮 ${event.title}${event.anniversary === null ? '' : `（${event.anniversary}周年）`}`,
+        value: `${event.summary || '記念日をお祝いしましょう'}\n[出典](${event.sourceUrl})`,
+      });
+    if (process.env.DAILY_BONUS_ENABLED !== 'true') {
+      await fail('ConfigurationChanged');
+      return;
+    }
+    try {
+      const message = await channel.send({
+        embeds: [embed],
+        components: [dailyBonusTestActionRow(request.id)],
+        allowedMentions: { parse: [] },
+      });
+      await completeDailyBonusTestSend(ctx.prisma, request.id, 'sent', message.id, null);
+    } catch {
+      await completeDailyBonusTestSend(
+        ctx.prisma,
+        request.id,
+        'uncertain',
+        null,
+        'DiscordSendUnconfirmed',
+      ).catch(() => false);
+    }
+  } catch {
+    await fail('TestSendFailed');
+  }
+}
 export async function scanDailyBonus(ctx: Context, now = new Date()) {
-  if (
-    process.env.DAILY_BONUS_ENABLED !== 'true' ||
-    !ctx.config.enabled ||
-    running.has(ctx.guildId) ||
-    !ctx.config.channelId
-  )
+  if (process.env.DAILY_BONUS_ENABLED !== 'true' || !ctx.config.enabled || running.has(ctx.guildId))
     return;
+  // TEST sends (#723) target their own channel and are independent of
+  // the 09:00 slot, so they are scanned before the production gates.
+  await scanDailyBonusTestSends(ctx).catch(() =>
+    ctx.logger.warn('Daily bonus test send scan failed'),
+  );
+  if (!ctx.config.channelId) return;
   // Announcements are created for the calendar day whose 09:00 JST opens
   // the slot; admission (dailyBonusDate) is slot-based, creation is not.
   const date = dailyBonusCalendarDate(now);

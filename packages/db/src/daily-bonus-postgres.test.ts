@@ -29,6 +29,11 @@ import {
   deactivateDailyBonusTemplateRevision,
   deleteDailyBonusTemplateRevision,
   setDailyAnnouncementTemplateRevision,
+  claimNextDailyBonusTestSend,
+  completeDailyBonusTestSend,
+  countInFlightDailyBonusTestSends,
+  createDailyBonusTestSend,
+  listDailyBonusTestSends,
 } from './daily-bonus.js';
 
 test(
@@ -496,6 +501,117 @@ test(
       assert.equal(await deleteDailyBonusTemplateRevision(db, 'guild', 'rev-2'), 0);
       assert.equal(await deleteDailyBonusTemplateRevision(db, 'guild', 'rev-3'), 1);
       assert.equal((await listDailyBonusTemplateRevisions(db, 'guild')).length, 2);
+    } finally {
+      await db?.$disconnect();
+      if (created) {
+        const metadata = JSON.parse(docker('inspect', name))[0];
+        assert.equal(metadata.Config.Labels['herta.daily.fixture'], name);
+        docker('rm', '-f', '-v', name);
+        assert.equal(docker('ps', '-aq', '--filter', `label=herta.daily.fixture=${name}`), '');
+      }
+    }
+  },
+);
+
+test(
+  'isolated PG: test sends claim once, complete from sending only, and expire unclaimed',
+  {
+    skip: process.env.HERTA_RUN_PG_DAILY_TESTS !== '1',
+    timeout: 120000,
+  },
+  async () => {
+    const name = `herta-daily-test-${randomUUID()}`;
+    let created = false,
+      db: PrismaClient | undefined;
+    const docker = (...args: string[]) =>
+      execFileSync('docker', args, {
+        encoding: 'utf8',
+        timeout: 30000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    try {
+      docker(
+        'create',
+        '--pull',
+        'never',
+        '--name',
+        name,
+        '--label',
+        `herta.daily.fixture=${name}`,
+        '--memory',
+        '384m',
+        '--memory-swap',
+        '384m',
+        '--pids-limit',
+        '128',
+        '--tmpfs',
+        '/var/lib/postgresql/data:rw,size=256m',
+        '-p',
+        '127.0.0.1::5432',
+        '-e',
+        'POSTGRES_PASSWORD=synthetic-test-only',
+        'postgres:17-alpine',
+      );
+      created = true;
+      docker('start', name);
+      const metadata = JSON.parse(docker('inspect', name))[0],
+        port = Number(metadata.NetworkSettings.Ports['5432/tcp'][0].HostPort);
+      let ready = false;
+      for (let index = 0; index < 60; index++) {
+        try {
+          docker('exec', name, 'pg_isready', '-U', 'postgres');
+          ready = true;
+          break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      assert.ok(ready);
+      const sql = `CREATE TABLE guilds(id TEXT PRIMARY KEY); INSERT INTO guilds VALUES('guild'),('other');\n${readFileSync(new URL('../prisma/migrations/20261121103000_daily_bonus_test_sends/migration.sql', import.meta.url), 'utf8')}`;
+      execFileSync(
+        'docker',
+        ['exec', '-i', name, 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres'],
+        { input: sql, encoding: 'utf8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] },
+      );
+      db = new PrismaClient({
+        datasources: {
+          db: { url: `postgresql://postgres:synthetic-test-only@127.0.0.1:${port}/postgres` },
+        },
+      });
+      const first = await createDailyBonusTestSend(db, {
+        id: 'test-send-1',
+        guildId: 'guild',
+        channelId: '100000000000000001',
+        targetDate: '2026-11-21',
+        requestedBy: 'author',
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+      });
+      assert.equal(first.status, 'queued');
+      assert.equal(await countInFlightDailyBonusTestSends(db, 'guild'), 1);
+      const claimed = await claimNextDailyBonusTestSend(db, 'guild');
+      assert.equal(claimed?.id, 'test-send-1');
+      assert.equal(claimed?.status, 'sending');
+      // A claimed request is never handed out twice.
+      assert.equal(await claimNextDailyBonusTestSend(db, 'guild'), null);
+      assert.equal(
+        await completeDailyBonusTestSend(db, 'test-send-1', 'sent', 'msg-1', null),
+        true,
+      );
+      // Completion only applies from 'sending'.
+      assert.equal(await completeDailyBonusTestSend(db, 'test-send-1', 'failed', null, 'X'), false);
+      // An already-expired request is closed as expired and never claimed.
+      await createDailyBonusTestSend(db, {
+        id: 'test-send-2',
+        guildId: 'guild',
+        channelId: '100000000000000001',
+        targetDate: '2026-11-21',
+        requestedBy: 'author',
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      assert.equal(await claimNextDailyBonusTestSend(db, 'guild'), null);
+      const rows = await listDailyBonusTestSends(db, 'guild');
+      assert.equal(rows.find((row) => row.id === 'test-send-2')?.status, 'expired');
+      assert.equal(rows.find((row) => row.id === 'test-send-1')?.message_id, 'msg-1');
     } finally {
       await db?.$disconnect();
       if (created) {
