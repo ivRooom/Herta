@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { creditAchievementUnlockIfEnabled } from '@herta/db';
 import {
   ACHIEVEMENT_OPERATION_BLOCK_PREFIX,
   ACHIEVEMENT_OPERATION_DISCORD_ID_PATTERN,
@@ -160,7 +161,7 @@ export async function applyAchievementOperation(input: {
   const blockId = achievementBlockRecordId(input.request.achievementId);
 
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`achievement:${input.guildId}:${input.request.userId}`}, 0))`;
+    await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${`achievement:${input.guildId}:${input.request.userId}`}, 0))`;
     let changed = false;
     if (input.request.action === 'grant') {
       const removed = await tx.$executeRaw`
@@ -175,6 +176,15 @@ export async function applyAchievementOperation(input: {
         ON CONFLICT DO NOTHING
       `;
       changed = Number(removed) > 0 || Number(inserted) > 0;
+      if (Number(inserted) > 0) {
+        await creditAchievementUnlockIfEnabled(
+          tx,
+          input.guildId,
+          input.request.userId,
+          input.request.achievementId,
+          new Date(),
+        );
+      }
     } else {
       const removed = await tx.$executeRaw`
         DELETE FROM "achievement_unlocks"
