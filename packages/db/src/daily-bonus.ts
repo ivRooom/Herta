@@ -320,3 +320,124 @@ export async function cleanDailyBonusHistory(db: PrismaClient) {
   await db.$executeRaw`DELETE FROM daily_fortune_results WHERE created_at<NOW()-INTERVAL '180 days'`;
   await db.$executeRaw`DELETE FROM daily_bonus_claims WHERE updated_at<NOW()-INTERVAL '180 days'`;
 }
+
+export type DailyBonusTestSendStatus =
+  'queued' | 'sending' | 'sent' | 'failed' | 'uncertain' | 'expired';
+
+export interface DailyBonusTestSendRow {
+  id: string;
+  guild_id: string;
+  channel_id: string;
+  target_date: string;
+  requested_by: string;
+  status: DailyBonusTestSendStatus;
+  message_id: string | null;
+  error_code: string | null;
+  expires_at: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export type DailyBonusTestSendDbClient = PrismaClient | Prisma.TransactionClient;
+
+/**
+ * TEST send requests (#766 Phase D1 / #723). Studio creates the row,
+ * the Bot claims and sends it. The rate-limit inputs (an in-flight
+ * request, the latest request time) are read by the caller so the
+ * policy stays visible in the Studio route.
+ */
+export async function createDailyBonusTestSend(
+  db: DailyBonusTestSendDbClient,
+  input: {
+    id: string;
+    guildId: string;
+    channelId: string;
+    targetDate: string;
+    requestedBy: string;
+    expiresAt: Date;
+  },
+): Promise<DailyBonusTestSendRow> {
+  const rows = await db.$queryRaw<DailyBonusTestSendRow[]>`
+    INSERT INTO daily_bonus_test_sends
+      (id, guild_id, channel_id, target_date, requested_by, status, expires_at)
+    VALUES (${input.id}, ${input.guildId}, ${input.channelId}, ${input.targetDate},
+      ${input.requestedBy}, 'queued', ${input.expiresAt})
+    RETURNING id, guild_id, channel_id, target_date, requested_by, status, message_id, error_code, expires_at, created_at, updated_at`;
+  return rows[0]!;
+}
+
+export async function listDailyBonusTestSends(
+  db: DailyBonusTestSendDbClient,
+  guildId: string,
+  limit = 10,
+): Promise<DailyBonusTestSendRow[]> {
+  return db.$queryRaw<DailyBonusTestSendRow[]>`
+    SELECT id, guild_id, channel_id, target_date, requested_by, status, message_id, error_code, expires_at, created_at, updated_at FROM daily_bonus_test_sends
+    WHERE guild_id = ${guildId}
+    ORDER BY created_at DESC
+    LIMIT ${Math.min(Math.max(limit, 1), 50)}`;
+}
+
+export async function countInFlightDailyBonusTestSends(
+  db: DailyBonusTestSendDbClient,
+  guildId: string,
+): Promise<number> {
+  const rows = await db.$queryRaw<{ count: number }[]>`
+    SELECT COUNT(*)::int AS count FROM daily_bonus_test_sends
+    WHERE guild_id = ${guildId} AND status IN ('queued', 'sending')`;
+  return rows[0]?.count ?? 0;
+}
+
+export async function getLatestDailyBonusTestSend(
+  db: DailyBonusTestSendDbClient,
+  guildId: string,
+): Promise<DailyBonusTestSendRow | null> {
+  const rows = await listDailyBonusTestSends(db, guildId, 1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Claim the oldest live request for the guild. Expired queued rows are
+ * marked expired in the same statement so they can never be sent late.
+ * A row stuck in 'sending' for over two minutes (interrupted Bot) is
+ * closed as 'uncertain' rather than resent: the delivery outcome is
+ * unknown and test sends are never blindly repeated (#723).
+ */
+export async function claimNextDailyBonusTestSend(
+  db: DailyBonusTestSendDbClient,
+  guildId: string,
+): Promise<DailyBonusTestSendRow | null> {
+  await db.$executeRaw`
+    UPDATE daily_bonus_test_sends SET status = 'expired', updated_at = NOW()
+    WHERE guild_id = ${guildId} AND status = 'queued' AND expires_at <= NOW()`;
+  await db.$executeRaw`
+    UPDATE daily_bonus_test_sends SET status = 'uncertain',
+      error_code = 'InterruptedSendRequiresReview', updated_at = NOW()
+    WHERE guild_id = ${guildId} AND status = 'sending'
+      AND updated_at < NOW() - INTERVAL '2 minutes'`;
+  const rows = await db.$queryRaw<DailyBonusTestSendRow[]>`
+    UPDATE daily_bonus_test_sends SET status = 'sending', updated_at = NOW()
+    WHERE id = (
+      SELECT id FROM daily_bonus_test_sends
+      WHERE guild_id = ${guildId} AND status = 'queued' AND expires_at > NOW()
+      ORDER BY created_at ASC
+      LIMIT 1
+    )
+    RETURNING id, guild_id, channel_id, target_date, requested_by, status, message_id, error_code, expires_at, created_at, updated_at`;
+  return rows[0] ?? null;
+}
+
+export async function completeDailyBonusTestSend(
+  db: DailyBonusTestSendDbClient,
+  id: string,
+  outcome: 'sent' | 'failed' | 'uncertain',
+  messageId: string | null,
+  errorCode: string | null,
+): Promise<boolean> {
+  const count = await db.$executeRaw`
+    UPDATE daily_bonus_test_sends
+    SET status = ${outcome}, message_id = ${messageId}, error_code = ${errorCode},
+      updated_at = NOW()
+    WHERE id = ${id} AND status = 'sending'`;
+  return count === 1;
+}

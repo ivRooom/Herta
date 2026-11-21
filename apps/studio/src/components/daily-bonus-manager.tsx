@@ -8,6 +8,7 @@ import {
   findConflictingSpecialDayRule,
   MESSAGE_TEMPLATE_MAX_LENGTH,
   parseTemplateRevisionContent,
+  parseTestSendChannelId,
   resolveSpecialDayOverride,
   TEMPLATE_REVISION_STATUS_LABELS,
   templateRevisionActions,
@@ -17,6 +18,8 @@ import {
   type SpecialDayRuleView,
   type TemplateRevisionAction,
   type TemplateRevisionView,
+  type TestSendView,
+  TEST_SEND_STATUS_LABELS,
 } from '@/lib/daily-bonus-admin-input';
 
 interface Announcement {
@@ -36,6 +39,8 @@ interface DailyBonusData {
   specialDayRulesAvailable?: boolean;
   templateRevisions?: TemplateRevisionView[];
   templateRevisionsAvailable?: boolean;
+  testSends?: TestSendView[];
+  testSendsAvailable?: boolean;
 }
 const TEMPLATE_REVISION_ACTION_LABELS: Record<TemplateRevisionAction, string> = {
   edit: '編集',
@@ -67,6 +72,9 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
   const [draftText, setDraftText] = useState('');
   const [editingRevisionId, setEditingRevisionId] = useState<string | null>(null);
   const [revisionMessage, setRevisionMessage] = useState('');
+  const [testChannelId, setTestChannelId] = useState('');
+  const [testDate, setTestDate] = useState('');
+  const [testMessage, setTestMessage] = useState('');
   const endpoint = `/api/guilds/${guildId}/daily-bonus`;
   async function load() {
     const response = await fetch(endpoint, { cache: 'no-store' });
@@ -79,6 +87,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
     const initialToday = currentDailyBonusDate();
     setToday(initialToday);
     setPreviewDate(initialToday);
+    setTestDate(initialToday);
     const timer = window.setInterval(() => setToday(currentDailyBonusDate()), 30000);
     void fetch(endpoint, { cache: 'no-store' })
       .then(async (response) => {
@@ -102,6 +111,9 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
         if (active) {
           setConfigTemplate(template);
           setConfigState('ready');
+          const channelId = value.config?.channelId;
+          if (typeof channelId === 'string' && channelId)
+            setTestChannelId((current) => current || channelId);
         }
       })
       .catch(() => {
@@ -134,6 +146,29 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
     } finally {
       setBusy(false);
     }
+  }
+  async function requestTestSend() {
+    const channelId = parseTestSendChannelId(testChannelId);
+    if (!channelId) {
+      setTestMessage('送信先チャンネルID（17〜20桁の数字）を入力してください。');
+      return;
+    }
+    if (!validDailyBonusDate(testDate)) {
+      setTestMessage('対象日を確認してください。');
+      return;
+    }
+    if (
+      !window.confirm(
+        `チャンネル ${channelId} へ ${testDate} のTEST通知を1件送信します。ロールメンションは付きません。よろしいですか？`,
+      )
+    )
+      return;
+    const posted = await mutate({ action: 'request-test-send', channelId, date: testDate });
+    setTestMessage(
+      posted
+        ? 'TEST送信を予約しました。Bot が次回スキャン（最大30秒ほど）で送信します。状態は下の一覧で確認できます。'
+        : 'TEST送信を予約できませんでした。同時実行中・60秒間隔の制限・権限を確認してください。',
+    );
   }
   const rules = data?.specialDayRules ?? [];
   const revisions = data?.templateRevisions ?? [];
@@ -614,6 +649,59 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
             記念日がある日は「今日は何の日？」フィールドが、画像が設定された日は大画像が追加されます。色は日別テーマで変わる場合があります。ボタン（受取・今日の問題・今日の運勢）とロールメンションは常に付きます。
           </p>
         </div>
+      </section>
+      <section className="space-y-3">
+        <h2 className="text-xl">TEST送信</h2>
+        <p>
+          指定したチャンネルへ、TEST表記の通知を1件だけ送信します。ロールメンションは付かず、ボタンも表示確認用で本番の受取・ポイント付与は行われません。送信前の見た目は上のプレビューで確認できます。
+        </p>
+        {data && data.testSendsAvailable === false ? (
+          <p>TEST送信はまだ有効化されていません（DB移行の適用待ち）。</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <label className="space-y-1">
+                <span>送信先チャンネルID</span>
+                <input
+                  className="block border px-2 py-1"
+                  value={testChannelId}
+                  onChange={(event) => setTestChannelId(event.target.value)}
+                  placeholder="123456789012345678"
+                />
+              </label>
+              <label className="space-y-1">
+                <span>対象日</span>
+                <input
+                  className="block border px-2 py-1"
+                  type="date"
+                  value={testDate}
+                  onChange={(event) => setTestDate(event.target.value)}
+                />
+              </label>
+              <button
+                className="border px-3 py-1"
+                disabled={busy}
+                onClick={() => void requestTestSend()}
+              >
+                TEST送信を予約
+              </button>
+            </div>
+            {testMessage ? <p>{testMessage}</p> : null}
+            {(data?.testSends ?? []).length ? (
+              <ul className="space-y-1">
+                {(data?.testSends ?? []).map((send) => (
+                  <li key={send.id} className="border px-2 py-1">
+                    {send.targetDate} → チャンネル {send.channelId}:{' '}
+                    {TEST_SEND_STATUS_LABELS[send.status] ?? send.status}
+                    {send.errorCode ? `（${send.errorCode}）` : ''}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>TEST送信の履歴はまだありません。</p>
+            )}
+          </>
+        )}
       </section>
       <section className="space-y-3">
         <h2 className="text-xl">記念日（今日は何の日）</h2>

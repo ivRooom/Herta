@@ -92,8 +92,9 @@ export function buildTodayHistoryRequest(
   date: string,
   requestId: string,
   timestamp: string,
+  mode: 'confirm' | 'preview' = 'confirm',
 ) {
-  const body = JSON.stringify({ guildId, date, mode: 'confirm' });
+  const body = JSON.stringify({ guildId, date, mode });
   const signature = createHmac('sha256', config.secret)
     .update(`${timestamp}.${requestId}.POST.${TODAY_HISTORY_PATH}.${body}`)
     .digest('hex');
@@ -253,6 +254,7 @@ export async function fetchDailyTodayHistory(
   date: string,
   limit: number,
   config = resolveTodayHistoryConfig(process.env),
+  mode: 'confirm' | 'preview' = 'confirm',
 ): Promise<TodayHistoryPayload | null> {
   if (!config || config.guildId !== guildId) return null;
   const requestId = randomUUID();
@@ -262,6 +264,7 @@ export async function fetchDailyTodayHistory(
     date,
     requestId,
     new Date().toISOString(),
+    mode,
   );
   try {
     const response = await fetch(request.url, {
