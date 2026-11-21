@@ -9,6 +9,10 @@
     "dist"
   ],
   "exports": {
+    "./common-points": {
+      "types": "./src/common-points.ts",
+      "default": "./dist/common-points.js"
+    },
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
