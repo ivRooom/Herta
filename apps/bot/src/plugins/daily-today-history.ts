@@ -36,15 +36,23 @@ export interface DailyBundleImage {
   alt: string | null;
 }
 
+export interface DailyBundleVideo {
+  url: string;
+}
+
 /**
  * The day's delivery bundle resolved by the Web side (#1304): a
  * banner image and a theme key, each resolved date > annual >
- * default. The bot only renders what the bundle carries; content
- * management lives in the Web Admin calendar.
+ * default. Contract v2 (ivrm-web #1500) adds an optional video
+ * URL, delivered by link: the announcement message content
+ * carries the URL and Discord renders it inline. The bot only
+ * renders what the bundle carries; content management lives in
+ * the Web Admin calendar.
  */
 export interface DailyBundle {
   themeKey: DailyBundleThemeKey | null;
   image: DailyBundleImage | null;
+  video: DailyBundleVideo | null;
 }
 
 export interface TodayHistoryPayload {
@@ -182,13 +190,30 @@ function isHttpsUrl(value: string): boolean {
  * malformed bundle yields null (the announcement renders without a
  * banner/theme) and never invalidates a good selection.
  */
+/**
+ * Validate the contract v2 video block. The video degrades on its
+ * own: a malformed video yields null and never discards a valid
+ * image or theme, because the video is an additive field the day
+ * can simply go without.
+ */
+function parseDailyBundleVideo(value: unknown): DailyBundleVideo | null {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) return null;
+  const { url, source } = value;
+  if (typeof url !== 'string' || url.length > 2048 || !isHttpsUrl(url)) return null;
+  if (!DAILY_BUNDLE_SOURCES.has(source as string)) return null;
+  return { url };
+}
+
 export function parseDailyBundle(value: unknown): DailyBundle | null {
-  if (!isRecord(value) || value.contractVersion !== 1) return null;
+  if (!isRecord(value) || (value.contractVersion !== 1 && value.contractVersion !== 2)) return null;
   const { themeKey, themeSource, image } = value;
   if (themeKey !== null && !(DAILY_BUNDLE_THEME_KEYS as readonly unknown[]).includes(themeKey))
     return null;
   if (themeSource !== null && !DAILY_BUNDLE_SOURCES.has(themeSource as string)) return null;
-  if (image === null) return { themeKey: themeKey as DailyBundleThemeKey | null, image: null };
+  const video = value.contractVersion === 2 ? parseDailyBundleVideo(value.video) : null;
+  if (image === null)
+    return { themeKey: themeKey as DailyBundleThemeKey | null, image: null, video };
   if (!isRecord(image)) return null;
   const { url, width, height, alt, source } = image;
   if (typeof url !== 'string' || url.length > 2048 || !isHttpsUrl(url)) return null;
@@ -206,6 +231,7 @@ export function parseDailyBundle(value: unknown): DailyBundle | null {
       height: height as number,
       alt: alt as string | null,
     },
+    video,
   };
 }
 

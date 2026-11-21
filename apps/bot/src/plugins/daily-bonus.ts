@@ -60,7 +60,12 @@ import {
 } from './daily-quiz-settings.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
-import { dailyBonusActionRow, dailyBonusTestActionRow } from './daily-bonus-buttons.js';
+import {
+  buildDailyBonusMessageContent,
+  dailyBonusActionRow,
+  dailyBonusTestActionRow,
+  matchesDailyBonusMessageContent,
+} from './daily-bonus-buttons.js';
 import { fetchQuestBoardView } from './quest-board.js';
 import { buildQuestBoardErrorEmbed } from './quest-board-core.js';
 import {
@@ -276,6 +281,7 @@ async function scanDailyBonusTestSends(ctx: Context) {
     }
     try {
       const message = await channel.send({
+        content: bundle?.video ? bundle.video.url : undefined,
         embeds: [embed],
         components: [dailyBonusTestActionRow(request.id)],
         allowedMentions: { parse: [] },
@@ -347,7 +353,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
         (message) =>
           message.author.id === ctx.client.user?.id &&
           message.createdTimestamp >= sendOpensAt &&
-          message.content === `<@&${prior.role_id}>` &&
+          matchesDailyBonusMessageContent(message.content, prior.role_id) &&
           message.components.some(
             (row) =>
               'components' in row &&
@@ -458,7 +464,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
       }
       try {
         const message = await channel.send({
-          content: `<@&${role.id}>`,
+          content: buildDailyBonusMessageContent(role.id, bundle?.video?.url ?? null),
           embeds: [embed],
           components: [
             dailyBonusActionRow(

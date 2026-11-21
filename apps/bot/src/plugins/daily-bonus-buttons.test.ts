@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { dailyBonusActionRow, dailyBonusTestActionRow } from './daily-bonus-buttons.js';
+import {
+  buildDailyBonusMessageContent,
+  dailyBonusActionRow,
+  dailyBonusTestActionRow,
+  matchesDailyBonusMessageContent,
+} from './daily-bonus-buttons.js';
 
 describe('09:00 Discord daily bonus action row', () => {
   it.each([
@@ -26,6 +31,27 @@ describe('09:00 Discord daily bonus action row', () => {
       '🔮 今日の運勢',
       '📋 クエストを確認',
     ]);
+  });
+
+  it('builds the announcement content with an optional video line', () => {
+    expect(buildDailyBonusMessageContent('123', null)).toBe('<@&123>');
+    expect(buildDailyBonusMessageContent('123', 'https://example.test/movie.mp4')).toBe(
+      '<@&123>\nhttps://example.test/movie.mp4',
+    );
+  });
+
+  it('matches only the mention and the mention + video line shapes', () => {
+    expect(matchesDailyBonusMessageContent('<@&123>', '123')).toBe(true);
+    expect(matchesDailyBonusMessageContent('<@&123>\nhttps://example.test/movie.mp4', '123')).toBe(
+      true,
+    );
+    expect(matchesDailyBonusMessageContent('<@&123>\nhttp://example.test/movie.mp4', '123')).toBe(
+      false,
+    );
+    expect(matchesDailyBonusMessageContent('<@&123>\nhttps://example.test/a b', '123')).toBe(false);
+    expect(matchesDailyBonusMessageContent('<@&123> extra', '123')).toBe(false);
+    expect(matchesDailyBonusMessageContent('<@&999>', '123')).toBe(false);
+    expect(matchesDailyBonusMessageContent('<@&123>\n', '123')).toBe(false);
   });
 
   it('shows the same five actions on the TEST row with inert ids', () => {
