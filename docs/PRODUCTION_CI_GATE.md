@@ -115,6 +115,46 @@ manual protected rollback. After the rollback's new runtime proof exists,
 the next normal CI may compare actual rollback SHA to latest main.
 The proof contains no secrets, raw audio, ticket contents, or PII.
 
+### 2026-11-04 protected Status API incident: read-only recovery decision (#765)
+
+**Scope and established evidence.** The [failed production run #41807040824](https://github.com/ivRooom/Herta/actions/runs/41807040824) printed a four-service, same-SHA image-config-ID readback and public health before GitHub proof publication returned HTTP 500. An authorized operator subsequently ran `deploy/scripts/production-proof-audit.mjs` using GET-only GitHub API access. For SHA `7a3e8ed67fefb84014787527910cf500519b6c0d`, run `41807040824`, attempt `1`, the resulting deployment ID was `7542865017` with matching run/attempt and **zero statuses**. This establishes a created record and missing status at the time of inspection; it does not establish the GitHub API's internal 500 cause or current live state.
+
+**Read-only diagnostic sequence (operator):**
+
+1. Use a clean detached worktree for the PR containing the audit CLI; never stash, reset, clean or overwrite the operator's existing staged files. Confirm the worktree SHA and that it contains the reviewed GET-only auditor.
+2. Using an authorized GitHub token held in environment memory (never displayed or pasted into an Issue), rerun the audit for exactly the SHA/run/attempt above. Inspect the complete `herta-runtime-attested` deployment history, record ID, latest status and duplicate count. Stop on pagination, authorization or API failure. This audit does not write any GitHub status.
+3. Independently authenticate to the known Lightsail host through the approved management path, verify the host identity pin, then read back the current Git SHA and the running `api`, `bot`, `studio`, `worker` image tags/config IDs and container health. Compare to the SHA and Docker config digest recorded by the failed deploy. A historical SSH log is not evidence of the **current** runtime.
+4. Recheck external API and Auth.js health, monitoring/error logs, the latest backup, restore readiness, and the tested rollback target. Record evidence without secrets, API tokens, personal data or raw audio.
+5. Reconcile GitHub deployment/Status, exact Actions run and attempt, authenticated host readback and backup readiness in [Issue #765](https://github.com/ivRooom/Herta/issues/765). Distinguish **record created**, **status missing**, **release proof accepted** and **runtime verified**; none imply another.
+6. Investigate the failed `POST /deployments/{id}/statuses` path using sanitized request IDs and the least-privilege token permissions. If the original run did not log a GitHub request ID, document that it cannot be recovered from the old job output. Decide on a recovery mechanism only after the actual 500 cause and partial-write semantics are understood.
+
+**No-Go until separately approved:** do not rerun the failed deployment workflow (it can create duplicate records or redeploy), create another Deployment, manually add `success` to deployment `7542865017`, disable Ruleset/Environment protection, re-enable a failed quality gate, or perform an emergency rollback without an approved incident plan. The normal proof validator intentionally requires a valid status issued during a successful SSH job; a later manually backfilled status may fail temporal checks even if the host is still healthy. A recovery design must explicitly address that invariant, not bypass it.
+
+**2026-11-05 fail-closed evidence.** Deploy Production run
+[#41957566912](https://github.com/ivRooom/Herta/actions/runs/41957566912)
+stopped at the quality gate with
+`Latest production SSH attempt failed or lacks completed health/proof`.
+Image build and SSH deploy were both skipped. The newer main SHA was not deployed by this run.
+
+**Manual approval boundary.** The existing quality gate allows
+`DEPLOY_BOOTSTRAP_APPROVED=true` only when there is no earlier successful SSH
+baseline. It is not a remedy for this partial deployment.
+`DEPLOY_EMERGENCY_ROLLBACK_APPROVED=true` requires an operator-approved,
+pinned historical main-ancestry SHA (not `ref=main`), historical passing CI,
+the protected production Environment, and a verified data rollback plan.
+The two flags are mutually exclusive. Neither repairs the failed old job.
+
+**Observed runtime.** An authorized read-only check found all four Herta
+containers running the same image tag and Docker image config ID recorded
+by failed run #41807040824. API/Bot Docker health and public API/Auth
+provider endpoints were also checked. Studio/Worker business health,
+current database write target, and isolated restore remain unverified.
+App-host Lightsail snapshots do not replace a verified PostgreSQL backup.
+Track recovery readiness in [Herta #506](https://github.com/ivRooom/Herta/issues/506)
+and [infrastructure #3](https://github.com/ivRooom/ivrm-infrastructure/issues/3).
+
+**Exit criteria:** the owner approves the plan; current runtime and health are independently verified; backup/restore/rollback are ready; any recovery PR passes exact-head CI/security checks and review; the official deployment path produces a consistent, unambiguous runtime proof and an independently verified production smoke check. Close #765 only after these have actually completed.
+
 ### Acceptance tests
 
 - `node --test deploy/scripts/production-provenance.test.mjs`
