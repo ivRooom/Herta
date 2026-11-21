@@ -155,7 +155,7 @@ export function findConflictingSpecialDayRule(
 
 /** Bot が説明文の末尾に必ず付ける固定文（apps/bot の daily-bonus と一致させる）。 */
 export const DAILY_BONUS_DESCRIPTION_SUFFIX =
-  '下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST';
+  '下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：翌日09:00 JST\n📋 [クエストボードはこちら](https://member.ivrm.jp/quests)';
 /** Bot がフッターに必ず入れる固定文。 */
 export const DAILY_BONUS_FIXED_FOOTER = '受取と今日の運勢は本人にだけ表示します';
 /** プラグイン設定 messageTemplate の最大長（manifest の configSchema と一致）。 */

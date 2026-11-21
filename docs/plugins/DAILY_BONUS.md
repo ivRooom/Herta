@@ -18,6 +18,8 @@ TEST sends (#766 Phase D1 / #723) are queued in `daily_bonus_test_sends` from th
 
 Configurable send time (#766 Phase D2, plan B): the plugin setting `scheduleTime` (HH:MM, 09:00-23:59 JST) controls only when the announcement message is sent. The slot itself stays anchored at 09:00: the calendar date, the claim window, and the receive deadline shown in the embed never move, so claims can open on the member portal before the Discord announcement goes out. Invalid values fall back to 09:00.
 
+Quest view button (#954): the announcement carries a fifth button, `daily-bonus:quests:<date>`, and a quest board link line in the description. Pressing the button answers only the presser (ephemeral) with their own quest board - the same fetch, image card, and period switcher as the /quest command (#946), starting on the daily period. It is read-only: it never claims, answers, or moves points. The TEST row mirrors the button with an inert `daily-bonus-test:` id.
+
 ## Delivery recovery
 
 Guild/date reservation prevents parallel Bots creating another occurrence. A late startup only creates today's occurrence, never a backlog. Known pre-send failures are retryable from Studio only for the current day and only while no message ID exists. Any ambiguous Discord send remains `uncertain` and is never automatically resent. Studio's reconcile action requests the Bot to inspect the most recent100 messages for exactly one own-Bot message matching date, role and bonus button; one exact match is adopted, otherwise operator review remains necessary. Do not infer message absence from a bounded search or reset uncertain rows to retryable.
