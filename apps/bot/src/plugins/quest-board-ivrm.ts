@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
+import sharp from 'sharp';
 
 export const QUEST_BOARD_PATH = '/v2/herta/quest-board';
 export const QUEST_BOARD_PURPOSE = 'herta-quest-board-v2';
@@ -441,17 +442,29 @@ export async function callIvrmQuestBoard(
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 /**
+ * A rendered card is 1600 px wide and roughly 1000-2000 px tall
+ * (about 1.6-3.2 M pixels). The pixel cap keeps a malformed payload
+ * from decoding into an unbounded raw buffer; anything above it is
+ * not a card the API renders and fails closed.
+ */
+const MAX_CARD_PIXELS = 10_000_000;
+
+/**
  * Validates a card success body. The echo fields must match the
  * request (including the action and the requested period), and the
  * payload must decode to an actual PNG — anything else is an
  * upstream malfunction and fails closed like every other field.
+ * The magic alone is not enough: a truncated or CRC-broken payload
+ * still carries it, so the whole image is decoded here (sharp is
+ * already a bot dependency). metadata() would not catch this — it
+ * only reads IHDR and lets a bad IDAT CRC through.
  */
-function parseCardSuccessBody(
+async function parseCardSuccessBody(
   value: unknown,
   requestId: string,
   userId: string,
   period: QuestBoardPeriodType,
-): IvrmQuestBoardCardResult {
+): Promise<IvrmQuestBoardCardResult> {
   if (
     !isRecord(value) ||
     value.schemaVersion !== 1 ||
@@ -467,6 +480,11 @@ function parseCardSuccessBody(
   const png = Buffer.from(value.card.pngBase64, 'base64');
   if (png.length <= PNG_MAGIC.length || !PNG_MAGIC.every((byte, index) => png[index] === byte))
     return { status: 'unavailable' };
+  try {
+    await sharp(png, { limitInputPixels: MAX_CARD_PIXELS }).raw().toBuffer();
+  } catch {
+    return { status: 'unavailable' };
+  }
   return { status: 'ok', period, png };
 }
 

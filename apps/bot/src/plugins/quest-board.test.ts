@@ -17,10 +17,13 @@ type Context = PluginRuntimeContext<{ enabled: boolean }, unknown, PrismaClient>
 type Api = Parameters<typeof handleQuestBoardPeriodSelect>[2];
 type CardApi = Parameters<typeof handleQuestBoardPeriodSelect>[3];
 
-const PNG_BYTES = Buffer.concat([
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  Buffer.from('fake-png-payload'),
-]);
+// A real 1x1 transparent PNG, generated with sharp: the card
+// client decodes the payload before accepting it, so a fake
+// magic-only payload would fall back to the embed list.
+const PNG_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 const okCardApi = vi.fn(
   async (_guildId: string, _userId: string, period: 'daily' | 'weekly' | 'monthly') =>
