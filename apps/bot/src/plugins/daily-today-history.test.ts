@@ -151,14 +151,50 @@ describe('today-history response parsing', () => {
         height: 1080,
         alt: 'ハロウィン',
       },
+      video: null,
     });
+  });
+  it('parses a contract v2 video and degrades a malformed one on its own', () => {
+    expect(
+      parseDailyBundle({
+        contractVersion: 2,
+        themeKey: null,
+        themeSource: null,
+        image: null,
+        video: { url: 'https://example.test/movie.mp4', source: 'date' },
+      }),
+    ).toEqual({
+      themeKey: null,
+      image: null,
+      video: { url: 'https://example.test/movie.mp4' },
+    });
+    // A malformed video never discards a valid image or theme.
+    expect(
+      parseDailyBundle({
+        contractVersion: 2,
+        themeKey: 'sakura',
+        themeSource: 'date',
+        image: null,
+        video: { url: 'http://example.test/movie.mp4', source: 'date' },
+      }),
+    ).toEqual({ themeKey: 'sakura', image: null, video: null });
+    // A v1 bundle never carries a video, even if a field is present.
+    expect(
+      parseDailyBundle({
+        contractVersion: 1,
+        themeKey: null,
+        themeSource: null,
+        image: null,
+        video: { url: 'https://example.test/movie.mp4', source: 'date' },
+      }),
+    ).toEqual({ themeKey: null, image: null, video: null });
   });
   it('keeps events when the bundle is absent or malformed', () => {
     const base = { date: '2026-10-30', confirmed: true, items: [item] };
     expect(parseTodayHistoryPayload(base, '2026-10-30', 3)?.bundle).toBeNull();
     expect(
       parseTodayHistoryPayload(
-        { ...base, bundle: { contractVersion: 2, themeKey: null, themeSource: null, image: null } },
+        { ...base, bundle: { contractVersion: 3, themeKey: null, themeSource: null, image: null } },
         '2026-10-30',
         3,
       )?.bundle,
@@ -207,7 +243,10 @@ describe('today-history response parsing', () => {
       '2026-10-30',
       3,
     );
-    expect(payload).toEqual({ events: [], bundle: { themeKey: 'sakura', image: null } });
+    expect(payload).toEqual({
+      events: [],
+      bundle: { themeKey: 'sakura', image: null, video: null },
+    });
     expect(
       parseTodayHistoryPayload(
         {
@@ -229,10 +268,10 @@ describe('today-history response parsing', () => {
         themeSource: 'date',
         image: null,
       }),
-    ).toEqual({ themeKey: 'sakura', image: null });
+    ).toEqual({ themeKey: 'sakura', image: null, video: null });
     expect(
       parseDailyBundle({ contractVersion: 1, themeKey: null, themeSource: null, image: null }),
-    ).toEqual({ themeKey: null, image: null });
+    ).toEqual({ themeKey: null, image: null, video: null });
   });
   it('caps at three and keeps an empty day empty', () => {
     const many = [item, item, item, item].map((e, i) => ({ ...e, id: `e${i}` }));
