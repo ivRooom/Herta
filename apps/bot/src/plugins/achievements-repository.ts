@@ -171,7 +171,7 @@ export async function syncAchievementUnlocks(
 ): Promise<string[]> {
   if (achievementIds.length === 0) return [];
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`achievement:${guildId}:${userId}`}, 0))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`achievement:${guildId}:${userId}`}, 0))`;
     const existing = await tx.$queryRaw<Array<{ achievementId: string }>>`
       SELECT "achievement_id" AS "achievementId"
       FROM "achievement_unlocks"
