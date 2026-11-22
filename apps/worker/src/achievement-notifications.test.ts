@@ -3,10 +3,12 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import type { Logger } from '@herta/logger';
 import {
+  ACHIEVEMENT_CARD_FILENAME,
   buildAchievementNotificationMessage,
   normalizeAchievementScanIntervalSeconds,
   parseAchievementPayload,
   startAchievementNotificationRuntime,
+  tierPresentation,
   verifyAchievementPayloadHash,
   type AchievementNotificationStore,
   type AchievementOutboxRow,
@@ -210,4 +212,138 @@ test('未連携ユーザーは再試行扱いにし、Discord 送信失敗も at
   await runtime.close();
   assert.deepEqual(fake.attemptFailed.sort(), ['unlock-flaky', 'unlock-unlinked']);
   assert.deepEqual(fake.sent, []);
+});
+
+test('ティア表は master / diamond / legend を持ち、platinum は legacy のまま', () => {
+  assert.deepEqual(tierPresentation('master'), { label: 'マスター', emoji: '💠', color: 0xa78bfa });
+  assert.deepEqual(tierPresentation('diamond'), {
+    label: 'ダイヤモンド',
+    emoji: '💎',
+    color: 0x7dd3fc,
+  });
+  assert.deepEqual(tierPresentation('legend'), {
+    label: 'レジェンド',
+    emoji: '👑',
+    color: 0xfb7185,
+  });
+  assert.deepEqual(tierPresentation('platinum'), {
+    label: 'プラチナ',
+    emoji: '💎',
+    color: 0x7dd3fc,
+  });
+  assert.deepEqual(tierPresentation('bronze'), { label: 'ブロンズ', emoji: '🥉', color: 0xcd7f32 });
+});
+
+test('カード添付時はコンパニオン Embed に attachment 画像が付く', () => {
+  const payload = {
+    code: 'total-xp-100',
+    name: '最初の一歩',
+    tier: 'master',
+    xpReward: 100,
+    unlockedAt: '2026-11-18T03:00:00.000Z',
+  };
+  const withCard = buildAchievementNotificationMessage({
+    displayName: 'いゔる',
+    discordUserId: 'discord-1',
+    payload,
+    cardFileName: ACHIEVEMENT_CARD_FILENAME,
+  });
+  const embedWithCard = withCard.embeds[0] as { image?: { url: string }; color: number };
+  assert.equal(embedWithCard.image?.url, 'attachment://achievement-card.png');
+  assert.equal(embedWithCard.color, 0xa78bfa);
+
+  const withoutCard = buildAchievementNotificationMessage({
+    displayName: 'いゔる',
+    discordUserId: 'discord-1',
+    payload,
+  });
+  const embedWithoutCard = withoutCard.embeds[0] as { image?: { url: string } };
+  assert.equal(embedWithoutCard.image, undefined);
+});
+
+const TEST_CARD_PNG = Buffer.concat([
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  Buffer.from('fake-card-bytes'),
+]);
+
+test('カード取得に成功したら multipart で添付して送信し sent にする', async () => {
+  const { logger } = createLogger();
+  const fake = createStore([createRow()]);
+  const { fetchImpl, calls } = createFetch((url) => {
+    if (url.includes('/members/')) {
+      return new Response(JSON.stringify({ nick: 'いゔる', user: { username: 'ivuru' } }), {
+        status: 200,
+      });
+    }
+    return new Response('{}', { status: 200 });
+  });
+  const cardRequests: unknown[] = [];
+  const runtime = await startAchievementNotificationRuntime({
+    logger,
+    store: fake.store,
+    discordBotToken: 'token',
+    guildId: 'guild-1',
+    resolveChannelId: async () => 'channel-1',
+    fetchImpl,
+    fetchCardPng: async (input) => {
+      cardRequests.push(input);
+      return TEST_CARD_PNG;
+    },
+    now: () => new Date('2026-11-18T04:00:00.000Z'),
+  });
+  await runtime.close();
+  assert.deepEqual(fake.sent, ['unlock-1']);
+  assert.equal(cardRequests.length, 1);
+  const post = calls.find((call) => call.url.includes('/channels/channel-1/messages'));
+  assert.ok(post);
+  const form = post.init?.body;
+  assert.ok(form instanceof FormData);
+  const payloadJson = JSON.parse(String(form.get('payload_json'))) as {
+    content: string;
+    embeds: Array<{ image?: { url: string } }>;
+    attachments: Array<{ id: number; filename: string }>;
+  };
+  assert.equal(payloadJson.content, '<@discord-1>');
+  assert.equal(payloadJson.embeds[0]?.image?.url, 'attachment://achievement-card.png');
+  assert.deepEqual(payloadJson.attachments, [{ id: 0, filename: 'achievement-card.png' }]);
+  const file = form.get('files[0]');
+  assert.ok(file instanceof Blob);
+  assert.equal(file.size, TEST_CARD_PNG.length);
+  assert.equal(file.type, 'image/png');
+});
+
+test('カード取得が null や例外でも従来の JSON 投稿にフォールバックして sent にする', async () => {
+  const { logger } = createLogger();
+  const fake = createStore([createRow({ id: 'unlock-null' }), createRow({ id: 'unlock-throw' })]);
+  const { fetchImpl, calls } = createFetch((url) => {
+    if (url.includes('/members/')) {
+      return new Response(JSON.stringify({ user: { username: 'ivuru' } }), { status: 200 });
+    }
+    return new Response('{}', { status: 200 });
+  });
+  let cardCall = 0;
+  const runtime = await startAchievementNotificationRuntime({
+    logger,
+    store: fake.store,
+    discordBotToken: 'token',
+    guildId: 'guild-1',
+    resolveChannelId: async () => 'channel-1',
+    fetchImpl,
+    fetchCardPng: async () => {
+      cardCall += 1;
+      if (cardCall === 1) return null;
+      throw new Error('card boom');
+    },
+  });
+  await runtime.close();
+  assert.deepEqual(fake.sent.sort(), ['unlock-null', 'unlock-throw']);
+  const posts = calls.filter((call) => call.url.includes('/channels/channel-1/messages'));
+  assert.equal(posts.length, 2);
+  for (const post of posts) {
+    assert.equal(typeof post.init?.body, 'string');
+    const body = JSON.parse(String(post.init?.body)) as {
+      embeds: Array<{ image?: unknown }>;
+    };
+    assert.equal(body.embeds[0]?.image, undefined);
+  }
 });
