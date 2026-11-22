@@ -4,6 +4,11 @@ import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@h
 import { normalizeBirthdayCardConfig, type BirthdayCardConfig } from '@herta/shared';
 import { renderBirthdayCard } from './birthday-card.js';
 import {
+  callIvrmBirthday,
+  type IvrmBirthdayRecipient,
+  type IvrmBirthdaySettings,
+} from './birthday-ivrm.js';
+import {
   claimBirthdayDelivery,
   completeBirthdayDelivery,
   deleteBirthdayRegistration,
@@ -41,6 +46,14 @@ export interface BirthdayRoleConfig extends BirthdayCardConfig {
   announcementChannelId: string | null;
   announcementMessage: string;
   leapDayPolicy: LeapDayPolicy;
+  /**
+   * S5a (#961): when true, the worker takes the day's recipients
+   * and the delivery settings from the ivrm-web signed API
+   * (POST /v2/herta/birthday) instead of the local registrations
+   * and this plugin config. Default false: the legacy path runs
+   * exactly as before until the S6-2 enablement gate flips it.
+   */
+  useIvrmApiSource: boolean;
 }
 
 export interface LocalDateParts {
@@ -54,6 +67,20 @@ interface BirthdayRegistrationLike {
   month: number;
   day: number;
   birthYear?: number | null;
+}
+
+/**
+ * One member the worker cycle delivers to, from either source:
+ * a legacy registration row (birthYear as stored) or an API
+ * recipient (birthYear always null). displayName only rides
+ * along on the API path, as the card's fallback name.
+ */
+export interface BirthdayCycleRegistration {
+  userId: string;
+  month: number;
+  day: number;
+  birthYear: number | null;
+  displayName?: string;
 }
 
 interface BirthdayAnnouncementContext {
@@ -186,7 +213,60 @@ export function normalizeBirthdayRoleConfig(value: unknown): BirthdayRoleConfig 
     announcementChannelId: normalizeDiscordId(source.announcementChannelId),
     announcementMessage,
     leapDayPolicy,
+    useIvrmApiSource: source.useIvrmApiSource === true,
     ...normalizeBirthdayCardConfig(source),
+  };
+}
+
+/**
+ * Applies the ivrm-web settings (the source of truth for delivery
+ * settings once the integration is on, #1572 S1 §4) over the local
+ * plugin config. Only the delivery-facing fields are overridden:
+ * the plugin's own toggles (enabled, assignRole, sendAnnouncement,
+ * ephemeralResponses, self-registration) and the Studio-owned card
+ * layout (element positions, background asset library) stay local.
+ * Age display is forced off on this path: the API never carries a
+ * birth year, so {age}/{ageText} render empty and the card shows
+ * name + month/day only. An Admin-uploaded backgroundUrl cannot be
+ * applied yet (the renderer only reads Studio-stored backgrounds),
+ * so the preset from the same payload is used and the caller logs
+ * the gap.
+ */
+export function applyIvrmBirthdaySettings(
+  config: BirthdayRoleConfig,
+  settings: IvrmBirthdaySettings,
+): BirthdayRoleConfig {
+  return {
+    ...config,
+    birthdayRoleId: settings.birthdayRoleId,
+    announcementChannelId: settings.announcementChannelId,
+    announcementMessage: settings.announcementMessage,
+    leapDayPolicy: settings.leapDayPolicy,
+    birthdayCardEnabled: settings.card.enabled,
+    birthdayCardPreset: settings.card.preset,
+    birthdayCardShowName: settings.card.showName,
+    birthdayCardShowAvatar: settings.card.showAvatar,
+    birthdayCardShowBirthday: settings.card.showBirthday,
+    birthdayCardShowAge: false,
+  };
+}
+
+/**
+ * Converts one API recipient into the registration shape the
+ * delivery pipeline already works with. birthYear is always null:
+ * the API does not carry it, so age-dependent behaviour (age in
+ * the message, age on the card, the celebration row's birth_year /
+ * age columns) stays empty on this path by design.
+ */
+export function toBirthdayRegistrationLike(
+  recipient: IvrmBirthdayRecipient,
+): BirthdayCycleRegistration {
+  return {
+    userId: recipient.discordUserId,
+    month: recipient.month,
+    day: recipient.day,
+    birthYear: null,
+    displayName: recipient.displayName,
   };
 }
 
@@ -267,7 +347,10 @@ export function countServerBirthdaysSinceJoin(
 export function renderBirthdayAnnouncement(
   template: string,
   registration: BirthdayRegistrationLike,
-  context: BirthdayAnnouncementContext = { age: null, serverBirthdayNumber: null },
+  context: BirthdayAnnouncementContext = {
+    age: null,
+    serverBirthdayNumber: null,
+  },
 ): string {
   const age = context.age === null ? '' : String(context.age);
   const ageText = context.age === null ? '' : `${context.age}歳の`;
@@ -341,19 +424,67 @@ export async function runBirthdayRoleCycle(
       where: { id: context.guildId },
       select: { timezone: true },
     });
-    const timeZone = guildRecord?.timezone || 'Asia/Tokyo';
-    const today = getLocalDateParts(now, timeZone);
+    const guildTimeZone = guildRecord?.timezone || 'Asia/Tokyo';
+
+    // Source resolution (#961 S5a). With useIvrmApiSource off, the
+    // legacy path below runs untouched. With it on, the day is
+    // judged on the JST date (the Web side resolves the recipients
+    // for that date, leap-day policy included), and:
+    // - enabled=false from the API is respected: no celebrations,
+    //   announcements or role grants this cycle. Stale roles from
+    //   earlier days are still cleaned up, as on any other day.
+    // - any fetch/parse failure falls back to the legacy
+    //   registrations path (fail-soft), so an ivrm-web outage
+    //   never silently stops delivery; the fallback is logged.
+    let effectiveConfig = config;
+    let timeZone = guildTimeZone;
+    let today = getLocalDateParts(now, timeZone);
+    let todaysRegistrations: BirthdayCycleRegistration[] | null = null;
+
+    if (config.useIvrmApiSource) {
+      const jstToday = getLocalDateParts(now, 'Asia/Tokyo');
+      const result = await callIvrmBirthday(context.guildId, formatLocalDate(jstToday));
+      if (result.status === 'ok' && !result.enabled) {
+        context.logger.info(
+          { guildId: context.guildId },
+          'ivrm-web連携がenabled=falseのため誕生日配信をスキップします',
+        );
+        const guild = await context.client.guilds.fetch(context.guildId);
+        await cleanupPreviousBirthdayRoles(context, guild, formatLocalDate(jstToday), new Set());
+        return;
+      }
+      if (result.status === 'ok') {
+        effectiveConfig = applyIvrmBirthdaySettings(config, result.settings);
+        timeZone = 'Asia/Tokyo';
+        today = jstToday;
+        todaysRegistrations = result.recipients.map(toBirthdayRegistrationLike);
+        if (result.settings.card.backgroundUrl) {
+          context.logger.warn(
+            { guildId: context.guildId },
+            'ivrm-webのカード背景URLは未対応のためプリセット背景を使用します',
+          );
+        }
+      } else {
+        context.logger.warn(
+          { guildId: context.guildId, status: result.status },
+          'ivrm-web連携の取得に失敗したため従来の誕生日登録へfallbackします',
+        );
+      }
+    }
+
     const localDate = formatLocalDate(today);
-    const registrations = await listBirthdayRegistrations(context.prisma, context.guildId);
-    const todaysRegistrations = registrations.filter((registration) => {
-      const effective = resolveEffectiveBirthday(
-        registration.month,
-        registration.day,
-        today.year,
-        config.leapDayPolicy,
-      );
-      return effective?.month === today.month && effective.day === today.day;
-    });
+    if (todaysRegistrations === null) {
+      const registrations = await listBirthdayRegistrations(context.prisma, context.guildId);
+      todaysRegistrations = registrations.filter((registration) => {
+        const effective = resolveEffectiveBirthday(
+          registration.month,
+          registration.day,
+          today.year,
+          effectiveConfig.leapDayPolicy,
+        );
+        return effective?.month === today.month && effective.day === today.day;
+      });
+    }
     const todaysUsers = new Set(todaysRegistrations.map((registration) => registration.userId));
     const guild = await context.client.guilds.fetch(context.guildId);
 
@@ -363,7 +494,9 @@ export async function runBirthdayRoleCycle(
         : await context.prisma.guildMember.findMany({
             where: {
               guildId: context.guildId,
-              userId: { in: todaysRegistrations.map((registration) => registration.userId) },
+              userId: {
+                in: todaysRegistrations.map((registration) => registration.userId),
+              },
             },
             select: { userId: true, joinedAt: true },
           });
@@ -379,9 +512,12 @@ export async function runBirthdayRoleCycle(
         joinedLocal,
         registration,
         today.year,
-        config.leapDayPolicy,
+        effectiveConfig.leapDayPolicy,
       );
-      celebrationByUserId.set(registration.userId, { age, serverBirthdayNumber });
+      celebrationByUserId.set(registration.userId, {
+        age,
+        serverBirthdayNumber,
+      });
       await upsertBirthdayCelebration(context.prisma, {
         guildId: context.guildId,
         userId: registration.userId,
@@ -394,11 +530,11 @@ export async function runBirthdayRoleCycle(
 
     await cleanupPreviousBirthdayRoles(context, guild, localDate, todaysUsers);
 
-    if (config.assignRole && config.birthdayRoleId) {
-      const role = await validateBirthdayRole(guild, config.birthdayRoleId);
+    if (effectiveConfig.assignRole && effectiveConfig.birthdayRoleId) {
+      const role = await validateBirthdayRole(guild, effectiveConfig.birthdayRoleId);
       if (!role) {
         context.logger.warn(
-          { roleId: config.birthdayRoleId },
+          { roleId: effectiveConfig.birthdayRoleId },
           'Birthday RoleをBotから安全に編集できません',
         );
       } else {
@@ -420,36 +556,38 @@ export async function runBirthdayRoleCycle(
       }
     }
 
-    if (config.sendAnnouncement && config.announcementChannelId) {
-      const channel = await guild.channels.fetch(config.announcementChannelId);
+    if (effectiveConfig.sendAnnouncement && effectiveConfig.announcementChannelId) {
+      const channel = await guild.channels.fetch(effectiveConfig.announcementChannelId);
       if (!channel?.isTextBased()) {
         context.logger.warn(
-          { channelId: config.announcementChannelId },
+          { channelId: effectiveConfig.announcementChannelId },
           'Birthday Roleのお祝い投稿Channelを利用できません',
         );
       } else {
         const usesStoredBirthdayCardBackground =
-          config.birthdayCardBackgroundSource === 'custom' ||
-          config.birthdayCardBackgroundSource === 'asset';
+          effectiveConfig.birthdayCardBackgroundSource === 'custom' ||
+          effectiveConfig.birthdayCardBackgroundSource === 'asset';
         const customBackground =
-          config.birthdayCardEnabled &&
+          effectiveConfig.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0
-            ? await getBirthdayCardRuntimeBackground(context.prisma, context.guildId, config).catch(
-                (error) => {
-                  context.logger.warn(
-                    {
-                      guildId: context.guildId,
-                      errorName: error instanceof Error ? error.name : 'UnknownError',
-                    },
-                    'Birthday Card背景を取得できないためプリセットへfallbackします',
-                  );
-                  return null;
-                },
-              )
+            ? await getBirthdayCardRuntimeBackground(
+                context.prisma,
+                context.guildId,
+                effectiveConfig,
+              ).catch((error) => {
+                context.logger.warn(
+                  {
+                    guildId: context.guildId,
+                    errorName: error instanceof Error ? error.name : 'UnknownError',
+                  },
+                  'Birthday Card背景を取得できないためプリセットへfallbackします',
+                );
+                return null;
+              })
             : null;
         if (
-          config.birthdayCardEnabled &&
+          effectiveConfig.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0 &&
           !customBackground
@@ -470,23 +608,39 @@ export async function runBirthdayRoleCycle(
                 serverBirthdayNumber: null,
               };
               const content = truncate(
-                renderBirthdayAnnouncement(config.announcementMessage, registration, celebration),
+                renderBirthdayAnnouncement(
+                  effectiveConfig.announcementMessage,
+                  registration,
+                  celebration,
+                ),
                 MAX_RESPONSE_LENGTH,
               );
               let files: Array<{ attachment: Buffer; name: string }> | undefined;
-              if (config.birthdayCardEnabled) {
+              if (effectiveConfig.birthdayCardEnabled) {
                 try {
                   const member = await guild.members.fetch(registration.userId);
                   const card = await renderBirthdayCard({
-                    config,
-                    displayName: member.displayName || `Member ${registration.userId.slice(-4)}`,
-                    avatarUrl: member.displayAvatarURL?.({ extension: 'png', size: 512 }) ?? null,
+                    config: effectiveConfig,
+                    displayName:
+                      member.displayName ||
+                      registration.displayName ||
+                      `Member ${registration.userId.slice(-4)}`,
+                    avatarUrl:
+                      member.displayAvatarURL?.({
+                        extension: 'png',
+                        size: 512,
+                      }) ?? null,
                     month: registration.month,
                     day: registration.day,
                     age: celebration.age,
                     customBackground: customBackground?.content ?? null,
                   });
-                  files = [{ attachment: card, name: `birthday-${registration.userId}.png` }];
+                  files = [
+                    {
+                      attachment: card,
+                      name: `birthday-${registration.userId}.png`,
+                    },
+                  ];
                 } catch (error) {
                   context.logger.warn(
                     {
