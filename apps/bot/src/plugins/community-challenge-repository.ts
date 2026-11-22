@@ -86,7 +86,7 @@ export async function ensureCommunityChallengeAssignment(
   if (normalized.length === 0)
     throw new Error('Community Challenge assignment requires at least one challenge');
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`
+    await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(
         hashtextextended(${`community-challenge-assignment:${guildId}:${periodType}:${periodKey}`}, 0)
       )
@@ -152,7 +152,7 @@ export async function syncCommunityChallengeCompletions(
   if (eligible.length === 0) return [];
   const multiplier = Math.max(1, Math.min(3, Math.trunc(input.pointMultiplier)));
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`
+    await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(
         hashtextextended(
           ${`community-challenge:${input.guildId}:${input.userId}:${input.periodType}:${input.periodKey}`},
