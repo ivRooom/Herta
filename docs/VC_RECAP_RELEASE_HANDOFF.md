@@ -1,5 +1,18 @@
 # Herta VC Recap｜実装状況・残課題・リリース判断（2026-11-01）
 
+> **2026-11-04 仕様更新（この節を最新の設計方針として優先）:** 新しい長期保存・話者別録音の本人同意は、3つの利用目的をそれぞれ明示する**単一の版管理済みPrivacy Policyへの本人1回の明示同意**を基本とする。11月1日の「3目的を別々にチェックして同意」は過去の検討経緯であり、今後の実装要件ではない。旧30日同意や管理者・ロールからの自動移行は禁止。詳細とリリースブロッカーは [#696](https://github.com/ivRooom/Herta/issues/696)、[#646](https://github.com/ivRooom/Herta/issues/646)。
+>
+> **重要:** これは将来の設計方針であり、**本番実装・録音/長期保存・Feature Flag有効化が済んだという意味ではない**。現行の3目的選択UI/API・既存30日文字起こし経路・正式な4言語Privacyは、レビューと技術実装が完了するまで現状維持。単一同意が法令/Discord規約に適合するかは人間の公開承認が必要。
+
+## 2026-11-04 現行実装との差分と公開ゲート
+
+- **To-Be:** 本人の1回の同意操作で `transcription` / `transcript_long_term` / `audio_long_term` の3つの内部権限を同一ポリシー版・単一DBトランザクション・本人owner lock下で原子的に記録する。目的・処理先・保存場所/期間・削除/撤回・復元時の再適用を1画面に明示する。
+- **As-Is:** mainの新しい長期保存用UI/DB基盤は目的ごとに選択する構成。長期保存・話者別音声永続保存は未提供で、録音コードやアーカイブWorkerには未接続。旧30日経路のAWS Transcribe/本文条件付き30日/生音声永続保存なしを維持。
+- **依存:** [#696](https://github.com/ivRooom/Herta/issues/696) 単一同意整合 → [#617](https://github.com/ivRooom/Herta/issues/617) / [#694](https://github.com/ivRooom/Herta/issues/694) / [#695](https://github.com/ivRooom/Herta/issues/695) の独立削除/隔離復元 → [#518](https://github.com/ivRooom/Herta/issues/518) 実Discord本人E2E → [#646](https://github.com/ivRooom/Herta/issues/646) 公式Privacy/費用/IAM/運営者の公開Go/No-Go。
+- **同意と削除:** 同意拒否・撤回は即時の新規取得/保存停止であり、過去コピーの本人削除要求とは別。削除の完全性は全S3 Version、派生物、Queue、Backup Restore後再適用で検証する。実証前に「完全削除」を表示しない。
+- **ロールバック:** 新機能FlagをOFFで維持。破壊的Migration、既存30日データの保存延長、旧同意の流用、無承認のAWS変更は行わない。旧Draft [PR #685](https://github.com/ivRooom/Herta/pull/685) は closed/unmerged で、無検証再利用しない。
+- **検証:** Typecheck/Unit/隔離PostgreSQL競合と同意版/拒否/撤回/二重送信/削除fence/他Guild拒否、CI/Review/Discord本人実機。目的をひとつしか取得できないDB失敗時は全面拒否（fail closed）。
+
 > 正本: [開発順序 Herta #691](https://github.com/ivRooom/Herta/issues/691) / [最終Go判定 #646](https://github.com/ivRooom/Herta/issues/646)。動的なGitHub PR/Actionsと本番AWSの実測をこの静的文書より優先する。個人データ・Secret・実際の録音はここに記載しない。
 
 ## 結論
