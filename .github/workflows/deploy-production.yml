@@ -378,6 +378,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           # SSM SecureStringから値を取得し、maskしてからGITHUB_ENVへ渡す共通処理。
           # 値そのものはlogへ出さず、長さだけを診断用に表示する。
           fetch_ssm_secret() {
@@ -515,7 +516,7 @@ jobs:
             }
             if ! validate_runtime_secret_key "${HERTA_RUNTIME_SECRET_KEY}"; then
               echo "ERROR: HERTA_RUNTIME_SECRET_KEY の形式が不正です (32-byte base64 または 64桁hexが必要)。" >&2
-              echo "       GitHub production Environment の secret HERTA_RUNTIME_SECRET_KEY を設定してください。" >&2
+              echo "       GitHub production Environment の secret HERTA_RUNTIME_SECRET_KEY の値を確認してください。" >&2
               exit 1
             fi
 
