@@ -11,6 +11,250 @@ import {
   validateProductionDeploymentAttestation,
 } from './production-provenance.mjs';
 
+import {
+  protectedProofApiError,
+  publishProtectedReleaseProof,
+} from './production-provenance-publish.mjs';
+import {
+  inspectProductionProofJobTiming,
+  inspectProductionProofRecords,
+} from './production-proof-audit.mjs';
+
+test('production proof failures identify the failing POST without logging response data', () => {
+  assert.equal(
+    protectedProofApiError('create', 500).message,
+    'Unable to record protected release proof (deployment create): HTTP 500',
+  );
+  assert.equal(
+    protectedProofApiError('status', 503).message,
+    'Unable to record protected release proof (deployment status): HTTP 503',
+  );
+  assert.equal(
+    protectedProofApiError('create', 500, 'ABCD:1234-TEST').message,
+    'Unable to record protected release proof (deployment create): HTTP 500 (GitHub request ID: ABCD:1234-TEST)',
+  );
+  for (const unsafeId of ['bad id', 'fake\\nSECRET', '<injection>', 'A'.repeat(129), '']) {
+    assert.equal(
+      protectedProofApiError('status', 500, unsafeId).message,
+      'Unable to record protected release proof (deployment status): HTTP 500',
+    );
+  }
+  assert.equal(
+    protectedProofApiError('status', 500, null).message,
+    'Unable to record protected release proof (deployment status): HTTP 500',
+  );
+  assert.throws(() => protectedProofApiError('unknown', 500), /Invalid protected/);
+  assert.throws(() => protectedProofApiError('create', Number.NaN), /Invalid protected/);
+});
+
+test('publisher reports failed POST stage and sanitized request ID without retries', async () => {
+  const sha = 'a'.repeat(40);
+  const env = {
+    GITHUB_REPOSITORY: 'ivRooom/Herta',
+    GITHUB_TOKEN: 'synthetic-not-a-secret',
+    DEPLOY_REF: sha,
+    HERTA_IMAGE: 'ghcr.io/ivrooom/herta:' + sha,
+    GITHUB_ACTOR: 'test-maintainer',
+    GITHUB_RUN_ID: '41807040824',
+    GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_JOB: 'deploy',
+    HERTA_RUNTIME_READBACK: 'HERTA_RELEASE_PROOF ' + sha + ' sha256:' + 'b'.repeat(64),
+  };
+  for (const failingStage of ['create', 'status']) {
+    const paths = [];
+    const fetchImpl = async (url, options) => {
+      const path = url.split('/repos/ivRooom/Herta/')[1];
+      paths.push(path);
+      assert.equal(options.method, 'POST');
+      if (failingStage === 'status' && path === 'deployments') {
+        return {
+          ok: true,
+          json: async () => ({ sha, environment: 'herta-runtime-attested', id: 123 }),
+        };
+      }
+      return {
+        ok: false,
+        status: 500,
+        headers: { get: () => 'ABCD:1234-TEST' },
+      };
+    };
+    const phase = failingStage === 'create' ? 'deployment create' : 'deployment status';
+    const expected = 'Unable to record protected release proof (' + phase + '): HTTP 500';
+    const requestId = ' (GitHub request ID: ABCD:1234-TEST)';
+    await assert.rejects(publishProtectedReleaseProof({ env, fetchImpl }), (error) => {
+      assert.equal(error.message, expected + requestId);
+      return true;
+    });
+    assert.equal(paths[0], 'deployments');
+    assert.equal(paths.length, failingStage === 'create' ? 1 : 2);
+    if (failingStage === 'status') {
+      assert.equal(paths[1], 'deployments/123/statuses');
+    }
+  }
+});
+
+test('read-only proof audit distinguishes partial and complete states', async () => {
+  const sha = 'a'.repeat(40);
+  const proof = {
+    id: 12,
+    sha,
+    task: 'deploy:runtime-proof',
+    environment: 'herta-runtime-attested',
+    payload: { runId: 41807040824, runAttempt: 1 },
+  };
+  const paths = [];
+  const api = async (path) => {
+    paths.push(path);
+    if (path.startsWith('deployments?')) return [proof];
+    if (path === 'deployments/12/statuses?per_page=100') return [];
+    throw new Error('Unexpected audit path');
+  };
+  const input = { sha, runId: 41807040824, runAttempt: 1 };
+  assert.deepEqual(await inspectProductionProofRecords(api, input), {
+    ...input,
+    classification: 'partial',
+    records: [
+      {
+        deploymentId: 12,
+        deploymentCreatedAt: null,
+        runMatches: true,
+        attemptMatches: true,
+        states: [],
+        statusCreatedAts: [],
+      },
+    ],
+  });
+  assert.ok(paths.every((path) => path.startsWith('deployments')));
+  const missing = await inspectProductionProofRecords(async () => [], input);
+  assert.equal(missing.classification, 'missing');
+  assert.deepEqual(missing.records, []);
+
+  const completeApi = async (path) => {
+    if (path.startsWith('deployments?')) return [proof];
+    return [{ state: 'success' }];
+  };
+  const complete = await inspectProductionProofRecords(completeApi, input);
+  assert.equal(complete.classification, 'status-present-unverified');
+  assert.deepEqual(complete.records[0].states, ['success']);
+  assert.deepEqual(complete.records[0].statusCreatedAts, [null]);
+
+  const timedApi = async (path) => {
+    if (path.startsWith('deployments?')) {
+      return [{ ...proof, created_at: '2026-11-04T10:00:00Z' }];
+    }
+    return [{ state: 'success', created_at: '2026-11-04T10:01:00Z' }];
+  };
+  const timed = await inspectProductionProofRecords(timedApi, input);
+  assert.equal(timed.records[0].deploymentCreatedAt, '2026-11-04T10:00:00Z');
+  assert.deepEqual(timed.records[0].statusCreatedAts, ['2026-11-04T10:01:00Z']);
+
+  const unmatchedApi = async (path) => {
+    if (path.startsWith('deployments?')) {
+      return [{ ...proof, payload: { runId: 7, runAttempt: 1 } }];
+    }
+    return [];
+  };
+  const unmatched = await inspectProductionProofRecords(unmatchedApi, input);
+  assert.equal(unmatched.classification, 'unmatched');
+
+  const ambiguousApi = async (path) => {
+    if (path.startsWith('deployments?')) {
+      return [proof, { ...proof, id: 13 }];
+    }
+    return [];
+  };
+  const ambiguous = await inspectProductionProofRecords(ambiguousApi, input);
+  assert.equal(ambiguous.classification, 'ambiguous');
+});
+
+test('read-only SSH job timing never attests a failed release', async () => {
+  const input = {
+    runId: 101,
+    runAttempt: 1,
+    records: [{ deploymentId: 12, deploymentCreatedAt: '2026-11-04T09:39:48Z' }],
+  };
+  const api = async (path) => {
+    assert.equal(path, 'actions/runs/101/attempts/1/jobs?per_page=100');
+    return {
+      total_count: 1,
+      jobs: [
+        {
+          name: 'SSH Deploy to Lightsail',
+          started_at: '2026-11-04T09:37:57Z',
+          completed_at: '2026-11-04T09:39:50Z',
+          conclusion: 'failure',
+        },
+      ],
+    };
+  };
+  const value = await inspectProductionProofJobTiming(api, input);
+  assert.equal(value.releaseVerified, false);
+  assert.equal(value.sshJob.conclusion, 'failure');
+  assert.equal(value.deploymentTiming[0].relativeToSshJob, 'inside');
+});
+
+test('read-only SSH job timing rejects incomplete or ambiguous history', async () => {
+  const input = { runId: 101, runAttempt: 1, records: [] };
+  const job = {
+    name: 'SSH Deploy to Lightsail',
+    started_at: '2026-11-04T09:37:57Z',
+    completed_at: '2026-11-04T09:39:50Z',
+  };
+  const missing = async () => ({ total_count: 2, jobs: [job] });
+  const duplicate = async () => ({ total_count: 2, jobs: [job, job] });
+  await assert.rejects(
+    inspectProductionProofJobTiming(missing, input),
+    /Incomplete GitHub SSH job history/,
+  );
+  await assert.rejects(
+    inspectProductionProofJobTiming(duplicate, input),
+    /Missing or ambiguous production SSH job/,
+  );
+  const invalid = async () => ({
+    total_count: 1,
+    jobs: [{ ...job, completed_at: null }],
+  });
+  await assert.rejects(
+    inspectProductionProofJobTiming(invalid, input),
+    /Missing or invalid SSH job timestamps/,
+  );
+});
+
+test('read-only proof audit refuses truncated histories and invalid states', async () => {
+  const sha = 'a'.repeat(40);
+  const input = { sha, runId: 1, runAttempt: 1 };
+  const sample = {
+    id: 42,
+    sha,
+    task: 'deploy:runtime-proof',
+    environment: 'herta-runtime-attested',
+  };
+  await assert.rejects(inspectProductionProofRecords(async () => [], { ...input, sha: 'main' }));
+  await assert.rejects(inspectProductionProofRecords(async () => [], { ...input, runId: 0 }));
+
+  const missingPage = async () => Array.from({ length: 100 }, () => sample);
+  await assert.rejects(
+    inspectProductionProofRecords(missingPage, input),
+    /Incomplete GitHub deployment history/,
+  );
+  const missingStatuses = async (path) => {
+    if (path.startsWith('deployments?')) return [sample];
+    return Array.from({ length: 100 }, () => ({ state: 'success' }));
+  };
+  await assert.rejects(
+    inspectProductionProofRecords(missingStatuses, input),
+    /Incomplete GitHub deployment status history/,
+  );
+  const invalidStatus = async (path) => {
+    if (path.startsWith('deployments?')) return [sample];
+    return [{ state: 'unexpected' }];
+  };
+  await assert.rejects(
+    inspectProductionProofRecords(invalidStatus, input),
+    /Invalid GitHub deployment status/,
+  );
+});
+
 const sha = 'a'.repeat(40);
 const oldSha = 'b'.repeat(40);
 const imageId = 'sha256:' + 'c'.repeat(64);
@@ -345,7 +589,7 @@ test('release workflow protects proof publisher behind SSH and Cloudflare health
     new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
     'utf8',
   );
-  const deploy = source.split('\n  deploy:\n')[1];
+  const deploy = source.replace(/\r\n/g, '\n').split('\n  deploy:\n')[1];
   assert.ok(deploy.includes('environment: production'));
   assert.ok(deploy.includes('deployments: write'));
   assert.ok(deploy.includes('ref: ${{ github.sha }}'));
