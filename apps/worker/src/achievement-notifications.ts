@@ -60,6 +60,13 @@ export interface AchievementNotificationRuntime {
   close(): Promise<void>;
 }
 
+export interface AchievementCardFetchInput {
+  guildId: string;
+  discordUserId: string;
+  displayName: string;
+  payload: AchievementPayload;
+}
+
 export interface StartAchievementNotificationRuntimeOptions {
   logger: Logger;
   store: AchievementNotificationStore;
@@ -67,6 +74,11 @@ export interface StartAchievementNotificationRuntimeOptions {
   guildId: string;
   /** 通知先チャンネルを解決する。null の間は送信しない (安全側)。 */
   resolveChannelId: () => Promise<string | null>;
+  /**
+   * 画像カードの取得 (Herta #965)。未指定なら従来どおりテキストのみ。
+   * fail-soft が原則で、null が返ればテキスト Embed のみで送信する。
+   */
+  fetchCardPng?: (input: AchievementCardFetchInput) => Promise<Buffer | null>;
   scanIntervalSeconds?: number;
   fetchImpl?: typeof fetch;
   now?: () => Date;
@@ -108,6 +120,10 @@ const TIER_PRESENTATION: Record<string, { label: string; emoji: string; color: n
   bronze: { label: 'ブロンズ', emoji: '🥉', color: 0xcd7f32 },
   silver: { label: 'シルバー', emoji: '🥈', color: 0xc0c0c0 },
   gold: { label: 'ゴールド', emoji: '🥇', color: 0xffd700 },
+  master: { label: 'マスター', emoji: '💠', color: 0xa78bfa },
+  diamond: { label: 'ダイヤモンド', emoji: '💎', color: 0x7dd3fc },
+  legend: { label: 'レジェンド', emoji: '👑', color: 0xfb7185 },
+  // 旧ティア名の後方互換 (diamond と同色)。
   platinum: { label: 'プラチナ', emoji: '💎', color: 0x7dd3fc },
 };
 
@@ -121,28 +137,37 @@ export interface DiscordMessageBody {
   allowed_mentions: { users: string[] };
 }
 
-/** 通知本文。載せるのは公開可能な範囲のみ (名前・ティア・報酬・解除日)。 */
+/** 画像カードを添付する際のファイル名。コンパニオン Embed の image が参照する。 */
+export const ACHIEVEMENT_CARD_FILENAME = 'achievement-card.png';
+
+/**
+ * 通知本文。載せるのは公開可能な範囲のみ (名前・ティア・報酬・解除日)。
+ * cardFileName があれば、コンパニオン Embed に添付カードへの image を付ける。
+ */
 export function buildAchievementNotificationMessage(input: {
   displayName: string;
   discordUserId: string;
   payload: AchievementPayload;
+  cardFileName?: string;
 }): DiscordMessageBody {
   const tier = tierPresentation(input.payload.tier);
   const unlockedDate = input.payload.unlockedAt.slice(0, 10);
+  const embed: Record<string, unknown> = {
+    title: `${tier.emoji} アチーブメント解除！`,
+    description: `${input.displayName} さんがアチーブメント「${input.payload.name}」を解除しました！`,
+    color: tier.color,
+    fields: [
+      { name: 'ティア', value: tier.label, inline: true },
+      { name: '報酬', value: `+${input.payload.xpReward} XP`, inline: true },
+      { name: '解除日', value: unlockedDate, inline: true },
+    ],
+  };
+  if (input.cardFileName) {
+    embed['image'] = { url: `attachment://${input.cardFileName}` };
+  }
   return {
     content: `<@${input.discordUserId}>`,
-    embeds: [
-      {
-        title: `${tier.emoji} アチーブメント解除！`,
-        description: `${input.displayName} さんがアチーブメント「${input.payload.name}」を解除しました！`,
-        color: tier.color,
-        fields: [
-          { name: 'ティア', value: tier.label, inline: true },
-          { name: '報酬', value: `+${input.payload.xpReward} XP`, inline: true },
-          { name: '解除日', value: unlockedDate, inline: true },
-        ],
-      },
-    ],
+    embeds: [embed],
     allowed_mentions: { users: [input.discordUserId] },
   };
 }
@@ -203,6 +228,43 @@ async function postDiscordChannelMessage(input: {
   }
 }
 
+/**
+ * 画像カード付きの投稿。payload_json に本文 (attachments の宣言を含む)
+ * を載せ、files[0] に PNG を添付する multipart 形式で送る。
+ * Content-Type は boundary を含むため fetch に自動で付けさせる。
+ */
+async function postDiscordChannelMessageWithCard(input: {
+  fetchImpl: typeof fetch;
+  token: string;
+  channelId: string;
+  body: DiscordMessageBody;
+  png: Buffer;
+}): Promise<void> {
+  const payloadJson = JSON.stringify({
+    ...input.body,
+    attachments: [{ id: 0, filename: ACHIEVEMENT_CARD_FILENAME }],
+  });
+  const pngBytes = new Uint8Array(input.png.length);
+  pngBytes.set(input.png);
+  const form = new FormData();
+  form.append('payload_json', payloadJson);
+  form.append('files[0]', new Blob([pngBytes], { type: 'image/png' }), ACHIEVEMENT_CARD_FILENAME);
+  const response = await input.fetchImpl(
+    `${DISCORD_API_BASE_URL}/channels/${input.channelId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${input.token}`,
+      },
+      body: form,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`discord_post_failed_${response.status}`);
+  }
+}
+
 function resolveErrorName(error: unknown): string {
   return error instanceof Error ? error.name : 'UnknownError';
 }
@@ -254,17 +316,41 @@ export async function startAchievementNotificationRuntime(
           guildId: options.guildId,
           discordUserId: recipient.discordUserId,
         });
+        const displayName = memberName ?? recipient.username;
+        // 画像カードは fail-soft: 取得できなければテキストのみで送る。
+        let cardPng: Buffer | null = null;
+        if (options.fetchCardPng) {
+          cardPng = await options
+            .fetchCardPng({
+              guildId: options.guildId,
+              discordUserId: recipient.discordUserId,
+              displayName,
+              payload,
+            })
+            .catch(() => null);
+        }
         const body = buildAchievementNotificationMessage({
-          displayName: memberName ?? recipient.username,
+          displayName,
           discordUserId: recipient.discordUserId,
           payload,
+          ...(cardPng ? { cardFileName: ACHIEVEMENT_CARD_FILENAME } : {}),
         });
-        await postDiscordChannelMessage({
-          fetchImpl,
-          token: options.discordBotToken,
-          channelId,
-          body,
-        });
+        if (cardPng) {
+          await postDiscordChannelMessageWithCard({
+            fetchImpl,
+            token: options.discordBotToken,
+            channelId,
+            body,
+            png: cardPng,
+          });
+        } else {
+          await postDiscordChannelMessage({
+            fetchImpl,
+            token: options.discordBotToken,
+            channelId,
+            body,
+          });
+        }
         await options.store.markSent(row.id, now().toISOString());
       } catch (error) {
         options.logger.warn(

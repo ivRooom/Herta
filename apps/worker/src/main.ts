@@ -2,6 +2,7 @@ import { getPrismaClient, cleanDailyBonusHistory, anonymizeOldValorantSessions }
 import { createLogger } from '@herta/logger';
 import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import { Redis } from 'ioredis';
+import { fetchAchievementCardPng, resolveAchievementCardConfig } from './achievement-card-ivrm.js';
 import {
   createAchievementNotificationStore,
   startAchievementNotificationRuntime,
@@ -178,11 +179,21 @@ async function main() {
           10,
         );
         const envChannelId = process.env['ACHIEVEMENT_NOTIFICATION_CHANNEL_ID']?.trim();
+        // 画像カード (Herta #965): Bot の quest-board と同じ env
+        // (IVRM_WEB_API_BASE_URL / HERTA_MBTI_SYNC_SECRET) が揃えば有効化する。
+        // 未設定なら従来どおりテキスト Embed のみで送信する。
+        const achievementCardConfig = resolveAchievementCardConfig(process.env);
+        if (achievementCardConfig) {
+          logger.info('アチーブメント通知の画像カードを有効化しました');
+        }
         achievementNotificationRuntime = await startAchievementNotificationRuntime({
           logger,
           store: createAchievementNotificationStore(ivrmApiDatabaseUrl),
           discordBotToken,
           guildId: ivrmIntegrationGuildId,
+          fetchCardPng: achievementCardConfig
+            ? (input) => fetchAchievementCardPng(input, achievementCardConfig)
+            : undefined,
           scanIntervalSeconds: Number.isFinite(configuredScanInterval)
             ? configuredScanInterval
             : undefined,
