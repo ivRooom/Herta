@@ -564,27 +564,28 @@ export async function runBirthdayRoleCycle(
           'Birthday Roleのお祝い投稿Channelを利用できません',
         );
       } else {
+        // Runtime background resolution must receive the effective config
+        // snapshot (worker config with any ivrm-web API overrides applied).
+        const config = effectiveConfig;
         const usesStoredBirthdayCardBackground =
-          effectiveConfig.birthdayCardBackgroundSource === 'custom' ||
-          effectiveConfig.birthdayCardBackgroundSource === 'asset';
+          config.birthdayCardBackgroundSource === 'custom' ||
+          config.birthdayCardBackgroundSource === 'asset';
         const customBackground =
-          effectiveConfig.birthdayCardEnabled &&
+          config.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0
-            ? await getBirthdayCardRuntimeBackground(
-                context.prisma,
-                context.guildId,
-                effectiveConfig,
-              ).catch((error) => {
-                context.logger.warn(
-                  {
-                    guildId: context.guildId,
-                    errorName: error instanceof Error ? error.name : 'UnknownError',
-                  },
-                  'Birthday Card背景を取得できないためプリセットへfallbackします',
-                );
-                return null;
-              })
+            ? await getBirthdayCardRuntimeBackground(context.prisma, context.guildId, config).catch(
+                (error) => {
+                  context.logger.warn(
+                    {
+                      guildId: context.guildId,
+                      errorName: error instanceof Error ? error.name : 'UnknownError',
+                    },
+                    'Birthday Card背景を取得できないためプリセットへfallbackします',
+                  );
+                  return null;
+                },
+              )
             : null;
         if (
           effectiveConfig.birthdayCardEnabled &&
