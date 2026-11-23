@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { IvrmBirthdaySettings } from './birthday-ivrm.js';
 import {
+  applyIvrmBirthdaySettings,
   birthdayRolePlugin,
   calculateBirthdayAge,
   countServerBirthdaysSinceJoin,
@@ -14,6 +16,7 @@ import {
   normalizeBirthdayRoleConfig,
   renderBirthdayAnnouncement,
   resolveEffectiveBirthday,
+  toBirthdayRegistrationLike,
 } from './birthday-role.js';
 
 describe('birthdayRolePlugin', () => {
@@ -38,7 +41,11 @@ describe('birthdayRolePlugin', () => {
 
     expect(month).toMatchObject({ minValue: 1, maxValue: 12 });
     expect(day).toMatchObject({ minValue: 1, maxValue: 31 });
-    expect(year).toMatchObject({ required: false, minValue: 1900, maxValue: 2100 });
+    expect(year).toMatchObject({
+      required: false,
+      minValue: 1900,
+      maxValue: 2100,
+    });
   });
 });
 
@@ -61,6 +68,12 @@ describe('normalizeBirthdayRoleConfig', () => {
       birthdayCardShowBirthday: true,
       birthdayCardShowAge: true,
     });
+  });
+
+  it('ivrm-web連携フラグは既定OFFで、明示した時だけONになる', () => {
+    expect(normalizeBirthdayRoleConfig({}).useIvrmApiSource).toBe(false);
+    expect(normalizeBirthdayRoleConfig({ useIvrmApiSource: true }).useIvrmApiSource).toBe(true);
+    expect(normalizeBirthdayRoleConfig({ useIvrmApiSource: 'true' }).useIvrmApiSource).toBe(false);
   });
 
   it('Discord ID・自己登録設定・メッセージを正規化する', () => {
@@ -104,6 +117,88 @@ describe('birthday announcement', () => {
         userId: '123456789012345678',
         month: 8,
         day: 14,
+      }),
+    ).toBe('🎂 <@123456789012345678> お誕生日おめでとう！');
+  });
+});
+
+describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
+  const apiSettings: IvrmBirthdaySettings = {
+    enabled: true,
+    announcementChannelId: '123456789012345678',
+    birthdayRoleId: '223456789012345678',
+    announcementMessage: '🎂 {user} お誕生日おめでとう！',
+    leapDayPolicy: 'march-1',
+    pointsAmount: 300,
+    card: {
+      enabled: true,
+      preset: 'herta-night-board',
+      backgroundUrl: 'https://example.invalid/bg.png',
+      showName: false,
+      showAvatar: true,
+      showBirthday: false,
+    },
+  };
+
+  it('配信系設定はAPI値で上書きし、年齢表示は常時OFFにする', () => {
+    const local = normalizeBirthdayRoleConfig({
+      announcementChannelId: '999999999999999999',
+      birthdayRoleId: '888888888888888888',
+      announcementMessage: 'local {user}',
+      leapDayPolicy: 'skip',
+      birthdayCardEnabled: false,
+      birthdayCardShowAge: true,
+    });
+    const applied = applyIvrmBirthdaySettings(local, apiSettings);
+    expect(applied).toMatchObject({
+      announcementChannelId: '123456789012345678',
+      birthdayRoleId: '223456789012345678',
+      announcementMessage: '🎂 {user} お誕生日おめでとう！',
+      leapDayPolicy: 'march-1',
+      birthdayCardEnabled: true,
+      birthdayCardPreset: 'herta-night-board',
+      birthdayCardShowName: false,
+      birthdayCardShowAvatar: true,
+      birthdayCardShowBirthday: false,
+      birthdayCardShowAge: false,
+    });
+  });
+
+  it('プラグイン側トグルとStudio所有のレイアウトはローカル値を維持する', () => {
+    const local = normalizeBirthdayRoleConfig({
+      assignRole: false,
+      sendAnnouncement: false,
+      birthdayCardAvatarX: 12,
+      birthdayCardBackgroundSource: 'custom',
+    });
+    const applied = applyIvrmBirthdaySettings(local, apiSettings);
+    expect(applied.assignRole).toBe(false);
+    expect(applied.sendAnnouncement).toBe(false);
+    expect(applied.birthdayCardAvatarX).toBe(12);
+    expect(applied.birthdayCardBackgroundSource).toBe('custom');
+    expect(applied.useIvrmApiSource).toBe(local.useIvrmApiSource);
+  });
+
+  it('API対象者を登録形式へ変換し、生年は常にnullにする', () => {
+    const converted = toBirthdayRegistrationLike({
+      memberId: 'member-a',
+      discordUserId: '123456789012345678',
+      displayName: 'A',
+      month: 11,
+      day: 22,
+    });
+    expect(converted).toEqual({
+      userId: '123456789012345678',
+      month: 11,
+      day: 22,
+      birthYear: null,
+      displayName: 'A',
+    });
+    // 年齢変数は空になる（カード・文面とも名前＋月日のみ）
+    expect(
+      renderBirthdayAnnouncement('🎂 {user} {ageText}お誕生日おめでとう！', converted, {
+        age: calculateBirthdayAge(converted.birthYear, 2026),
+        serverBirthdayNumber: 2,
       }),
     ).toBe('🎂 <@123456789012345678> お誕生日おめでとう！');
   });

@@ -3,7 +3,7 @@ import { BIRTHDAY_CARD_ASSET_ID_PATTERN, type PluginManifest } from '@herta/shar
 export const birthdayRoleManifest: PluginManifest = {
   id: 'birthday-role',
   name: 'Birthday Role',
-  version: '1.4.0',
+  version: '1.5.0',
   description: '誕生日の登録・確認と、誕生日当日のRole付与・お祝い通知・Birthday Cardを提供します',
   author: { name: 'Herta' },
   category: 'fun',
@@ -23,6 +23,13 @@ export const birthdayRoleManifest: PluginManifest = {
         type: 'boolean',
         title: 'Birthday Roleを有効化する',
         default: true,
+      },
+      useIvrmApiSource: {
+        type: 'boolean',
+        title: 'ivrm-web連携（プロフィール誕生日）を使う',
+        description:
+          'ONにすると当日の対象者と配信設定（お祝い投稿Channel・誕生日Role・お祝いメッセージ・2月29日の扱い・Birthday CardのON/OFFとプリセット等）を ivrm-web の署名付きAPIから取得します。連携中はこれらの配信系設定の正本は Web Admin で、この画面の同名設定より API の値が優先されます（カードのレイアウト細部と背景アセットライブラリは引き続きこの画面が正本です）。APIが「配信OFF」を返した場合は配信しません。API取得に失敗した場合は従来の登録データとこの画面の設定へ自動で切り替えて配信を継続します。OFF（既定）の間は従来どおり動作します。',
+        default: false,
       },
       ephemeralResponses: {
         type: 'boolean',
@@ -44,7 +51,8 @@ export const birthdayRoleManifest: PluginManifest = {
       birthdayRoleId: {
         type: ['string', 'null'],
         title: '誕生日Role',
-        description: '誕生日当日に付与し、翌日に解除するRoleです',
+        description:
+          '誕生日当日に付与し、翌日に解除するRoleです（ivrm-web連携中は Web Admin が正本です）',
         pattern: '^\\d+$',
         default: null,
         'x-herta-ui': {
@@ -61,7 +69,8 @@ export const birthdayRoleManifest: PluginManifest = {
       announcementChannelId: {
         type: ['string', 'null'],
         title: 'お祝い投稿Channel',
-        description: '誕生日のお祝いメッセージを投稿するChannelです',
+        description:
+          '誕生日のお祝いメッセージを投稿するChannelです（ivrm-web連携中は Web Admin が正本です）',
         pattern: '^\\d+$',
         default: null,
         'x-herta-ui': {
@@ -73,7 +82,7 @@ export const birthdayRoleManifest: PluginManifest = {
         type: 'string',
         title: 'お祝いメッセージ',
         description:
-          '{user}・{month}・{day}・{age}・{ageText}・{serverBirthdayNumber}を利用できます。生年未登録時の{age}/{ageText}は空文字です。',
+          '{user}・{month}・{day}・{age}・{ageText}・{serverBirthdayNumber}を利用できます。生年未登録時の{age}/{ageText}は空文字です（ivrm-web連携中は Web Admin が正本で、{age}/{ageText}は常に空文字です）。',
         minLength: 1,
         maxLength: 1000,
         default: '🎂 {user} {ageText}お誕生日おめでとう！',
