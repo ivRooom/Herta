@@ -168,13 +168,59 @@ jobs:
           echo "should_deploy=${{ steps.verify.outputs.should_deploy }}"
           echo "deploy_sha=${{ steps.verify.outputs.deploy_sha }}"
 
-  build-image:
-    name: Build and push production image
+  # 同一SHAガード: quality-gate が確定した deploy_sha と同一の成功済み dispatch が既にある場合は
+  # build-image / deploy をスキップする (Herta #967)。旧SHA rollback と incident_recovery は対象外。
+  same-sha-guard:
+    name: Same-SHA deploy guard
     needs: quality-gate
     if: >-
       always() &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.incident_recovery != true &&
+      (inputs.ref == '' || inputs.ref == 'main') &&
       needs.quality-gate.result == 'success' &&
       needs.quality-gate.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ needs.quality-gate.outputs.deploy_sha }}
+        run: |
+          match=""
+          if ! match=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-production.yml/runs?event=workflow_dispatch&status=success&head_sha=${TARGET_SHA}&per_page=20" --jq '[.workflow_runs[] | select(.head_sha == $ENV.TARGET_SHA and .id != ${{ github.run_id }})] | if length > 0 then "\(.[0].id) \(.[0].html_url)" else "" end'); then
+            echo "::warning::same-sha-guard: 成功済み run の照会に失敗したため fail-open でデプロイを続行します"
+            match=""
+          fi
+          if [ -n "${match}" ]; then
+            existing_url="${match#* }"
+            echo "同一SHA (${TARGET_SHA}) の成功済み dispatch run が既にあるためデプロイをスキップします: ${existing_url}"
+            {
+              echo "## same-sha-guard: デプロイをスキップしました"
+              echo ""
+              echo "同一SHA (\`${TARGET_SHA}\`) の成功済み dispatch run が既にあります: ${existing_url}"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "同一SHAの成功済み dispatch run は無いためデプロイを続行します"
+            echo "should_deploy=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+  build-image:
+    name: Build and push production image
+    needs: [quality-gate, same-sha-guard]
+    if: >-
+      always() &&
+      needs.quality-gate.result == 'success' &&
+      needs.quality-gate.outputs.should_deploy == 'true' &&
+      (needs.same-sha-guard.result == 'skipped' ||
+       needs.same-sha-guard.outputs.should_deploy == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
