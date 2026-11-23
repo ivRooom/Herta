@@ -8,15 +8,33 @@ CloudShellで手作業作成したLambda、IAM Role、EventBridge SchedulerをCl
 
 ## 管理対象
 
-- Lambda: S3最新`.dump`の鮮度確認
-- Lambda実行Role: 対象S3 prefixの一覧取得、既存SNSへのPublish、CloudWatchカスタムメトリクス送信
+- Lambda: 専用PostgreSQLバックアップの完了マニフェスト鮮度確認
+- Lambda実行Role: 専用bucketの`postgresql/`一覧取得とマニフェストGetObject、既存SNSへのPublish、CloudWatchカスタムメトリクス送信
 - EventBridge Schedulerと実行Role
 - Scheduler配信失敗用SQS DLQ
 - DLQメッセージ検知CloudWatch Alarm
 - Lambda CloudWatch Logs保持期間
 - CloudWatch Dashboard
 
+## 専用バケット監視への一本化（2026-11-23、#974 案A）
+
+旧Herta単体バックアップ（Lightsailローカル、2026-11-09にDB hostのPG17集約バックアップへ移行済み）の鮮度監視を廃し、専用バケットの完了マニフェスト監視へ一本化した。旧チェックは廃止され、`BackupBucketName`/`BackupPrefix` parameter、旧bucket向けListBucket権限、Lambdaの`S3_BUCKET`/`S3_PREFIX`環境変数は削除した。`DedicatedBackupBucketName`は必須parameterになった。カスタムメトリクス（`BackupFound`/`FreshnessOk`/`LatestBackupAgeHours`）は存続し、一本化後は専用captureを表す（`BackupFound`は完了マニフェストの検出、`LatestBackupAgeHours`はそのS3更新時刻からの経過時間）。鮮度上限は従来の固定25時間から`MaximumBackupAgeHours` parameter（既定25）に統一した。リソース名（Lambda/Scheduler/Role/Dashboard）は変更しない。
+
+既存stackの移行手順:
+
+1. 既存stackのparameters/role/SNS subscriptions/scheduleをread-onlyで照合する（ステップ0）。
+2. controlled ChangeSetで更新する。存続する7 parameter（AlertTopicArn、ResourceNameSuffix、MaximumBackupAgeHours、ScheduleExpression、ScheduleTimezone、LogRetentionDays、DashboardName）はすべてUsePreviousValueとし、`DedicatedBackupBucketName`に専用bucket名を指定する。削除される2 parameterはChangeSetに含めない。deploy.shの既定値で現行値を巻き戻さない。
+3. 通常invokeで`status=ok`を確認し、承認のうえforce_alertテストで通知到達を確認する。
+4. managed Schedulerが`ENABLED`であることを確認する。
+5. 手作業作成の旧Scheduler/Lambda（`-managed`サフィックスなし）を削除する。
+
+rollbackは一本化前のtemplateへ戻すChangeSetで行う。その場合、旧bucket監視が復活し専用captureの監視は旧来の追加方式に戻る。
+
+検証: exact inline sourceのmocked SDK12テスト、deploy shell構文、cfn-lint。実stack更新・Scheduler有効化・旧リソース削除は個別承認ゲートであり、このPR自体はcloud/IAM変更を実施しない。
+
 ## 専用PostgreSQLの完了マニフェスト監視
+
+以下は2026-10-26に追加監視として設計された完了判定の記録であり、一本化後はこの判定が唯一の監視となった。
 
 2026-10-26: `DedicatedBackupBucketName` を空文字列（既定値）から、承認済みの専用DB backup bucketへ設定すると、同じLambda/Scheduler/通知経路で追加監視する。既存Hertaのbucket/prefixを置換せず、既存監視を残す。新しいLambda、Schedule、Dashboard、metric seriesやサーバーは作成しない。実行時間・S3 request・通知利用量は増え得るため、費用と実行変更を別途確認する。
 
@@ -55,9 +73,9 @@ Lambdaは実行ごとに`Herta/BackupMonitoring`名前空間へ以下を送信�
 
 | メトリクス             | 値                               | 用途                       |
 | ---------------------- | -------------------------------- | -------------------------- |
-| `LatestBackupAgeHours` | 最新`.dump`の経過時間            | 鮮度上限との比較           |
-| `BackupFound`          | 検出時`1`、未検出時`0`           | バックアップ生成有無の確認 |
-| `FreshnessOk`          | 上限以内`1`、超過または未検出`0` | 現在状態の判定             |
+| `LatestBackupAgeHours` | 最新の完了マニフェストの経過時間 | 鮮度上限との比較           |
+| `BackupFound`          | 検出時`1`、未検出時`0`           | 完了capture生成有無の確認  |
+| `FreshnessOk`          | 検証合格`1`、失敗または未検出`0` | 現在状態の判定             |
 
 各メトリクスには`FunctionName`ディメンションが付与されます。
 
@@ -81,7 +99,7 @@ CloudWatch Dashboardには以下を表示します。
 cd /app/herta
 
 export AWS_REGION='ap-northeast-1'
-export BACKUP_BUCKET_NAME='herta-production-backups-ACCOUNT_ID-ap-northeast-1'
+export DEDICATED_BACKUP_BUCKET_NAME='ivrm-postgresql-backup-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
 export ALERT_TOPIC_ARN='arn:aws:sns:ap-northeast-1:ACCOUNT_ID:herta-backup-alerts'
 
 bash deploy/aws/backup-monitoring/deploy.sh
