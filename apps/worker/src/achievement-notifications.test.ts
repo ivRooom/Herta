@@ -5,6 +5,7 @@ import type { Logger } from '@herta/logger';
 import {
   ACHIEVEMENT_CARD_FILENAME,
   buildAchievementNotificationMessage,
+  isDiscordRoutedRank,
   normalizeAchievementScanIntervalSeconds,
   parseAchievementPayload,
   startAchievementNotificationRuntime,
@@ -346,4 +347,31 @@ test('カード取得が null や例外でも従来の JSON 投稿にフォー�
     };
     assert.equal(body.embeds[0]?.image, undefined);
   }
+});
+
+test('isDiscordRoutedRank: 既定 (master) では master 以上だけ Discord 行き', () => {
+  assert.equal(isDiscordRoutedRank('bronze', 'master'), false);
+  assert.equal(isDiscordRoutedRank('silver', 'master'), false);
+  assert.equal(isDiscordRoutedRank('gold', 'master'), false);
+  assert.equal(isDiscordRoutedRank('master', 'master'), true);
+  assert.equal(isDiscordRoutedRank('diamond', 'master'), true);
+  assert.equal(isDiscordRoutedRank('legend', 'master'), true);
+});
+
+test('isDiscordRoutedRank: 最低ランク設定に従う', () => {
+  assert.equal(isDiscordRoutedRank('gold', 'gold'), true);
+  assert.equal(isDiscordRoutedRank('silver', 'gold'), false);
+  assert.equal(isDiscordRoutedRank('legend', 'legend'), true);
+  assert.equal(isDiscordRoutedRank('diamond', 'legend'), false);
+  assert.equal(isDiscordRoutedRank('bronze', 'bronze'), true);
+});
+
+test('isDiscordRoutedRank: 未知・未設定は安全側 (未知ランクは送らない、未設定は master 扱い)', () => {
+  assert.equal(isDiscordRoutedRank('platinum', 'master'), false);
+  assert.equal(isDiscordRoutedRank(null, 'master'), false);
+  assert.equal(isDiscordRoutedRank(undefined, 'master'), false);
+  assert.equal(isDiscordRoutedRank('gold', null), false);
+  assert.equal(isDiscordRoutedRank('master', null), true);
+  assert.equal(isDiscordRoutedRank('master', undefined), true);
+  assert.equal(isDiscordRoutedRank('master', 'unknown-value'), true);
 });
