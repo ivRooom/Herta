@@ -47,6 +47,9 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     # The drain stays off by default; only an explicit env-file value enables it.
     assert local['services']['worker']['environment'].pop('ACHIEVEMENT_NOTIFICATIONS_ENABLED') == 'false'
     assert local['services']['worker']['environment'].pop('IVRM_API_DATABASE_URL') == values.get('IVRM_API_DATABASE_URL', '')
+    # The bot receives the same ivrm_api URL for the XP emitter status
+    # push (#1646). Same value as the worker; not a topology change.
+    assert local['services']['bot']['environment'].pop('IVRM_API_DATABASE_URL') == values.get('IVRM_API_DATABASE_URL', '')
     assert local['services']['worker']['environment'].pop('IVRM_INTEGRATION_GUILD_ID') == values.get('IVRM_INTEGRATION_GUILD_ID', '')
     assert local['services']['worker']['environment'].pop('ACHIEVEMENT_NOTIFICATION_CHANNEL_ID') == values.get('ACHIEVEMENT_NOTIFICATION_CHANNEL_ID', '')
     # Achievement card API settings are not a database topology change.
