@@ -20,7 +20,7 @@ export async function POST(request: Request) {
         completedAt: Date | null;
         createdAt: Date;
       }>
-    >`SELECT local_date AS date,user_id AS "discordUserId",kind,status,error_name AS "errorName",completed_at AS "completedAt",created_at AS "createdAt" FROM birthday_deliveries WHERE guild_id=${input.guildId} AND local_date>=${input.from} AND local_date<=${input.to} ORDER BY local_date DESC,created_at DESC LIMIT ${input.limit} OFFSET ${input.offset}`;
+    >`SELECT local_date AS date,user_id AS "discordUserId",kind,status,error_name AS "errorName",completed_at AS "completedAt",created_at AS "createdAt" FROM birthday_deliveries WHERE guild_id=${input.guildId} AND local_date>=${input.from} AND local_date<=${input.to} ORDER BY local_date DESC,created_at DESC,idempotency_key ASC LIMIT ${input.limit} OFFSET ${input.offset}`;
     const counts = await prisma.$queryRaw<
       Array<{ total: number }>
     >`SELECT COUNT(*)::int AS total FROM birthday_deliveries WHERE guild_id=${input.guildId} AND local_date>=${input.from} AND local_date<=${input.to}`;
