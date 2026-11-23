@@ -199,6 +199,15 @@ Plugin設定 `useIvrmApiSource`（既定OFF）をONにすると、workerは当�
 - OFFの間は従来どおり動作し、`birthday_registrations` への登録・削除（`/birthday set` / `remove`、Studio管理）も従来どおり使えます。registrationsの読み取り専用化とコマンドの案内文差し替えは、切替ゲート（ivrm-web S6-2）と同時に別途行います。
 - ロールバック: Studioで `useIvrmApiSource` をOFFに戻すだけで従来経路へ戻ります（プラグイン再有効化で反映）。API側の配信を止める場合は ivrm-web 側の `BIRTHDAY_DELIVERY_ENABLED` をOFFにします。
 
+## 配信履歴のAdmin表示（S5b、#962）
+
+配信履歴の正本は引き続き `birthday_deliveries` で、複製は持ちません。Studioに署名付きの履歴取得API `POST /api/ivrm/birthday-deliveries/read` を追加し、ivrm-web Adminの配信履歴タブが都度中継して表示します（方式は ivrm-web #1572 のS1未決事項として Kanata が案1＝中継表示で確定、2026-11-23）。
+
+- 認証は daily-fortunes 履歴取得と同じ方式です（`IVRM_INTEGRATION_TOKEN` から purpose `herta-birthday-deliveries-read-v1` で導出した鍵のHMAC、5分以内のタイムスタンプ、対象Guildは `IVRM_INTEGRATION_GUILD_ID` に固定）。契約は `contracts/ivrm/herta-birthday-deliveries-read.v1.json`。
+- リクエストは `{guildId, from, to, limit, offset}`（from/to は `local_date` の範囲、limit は最大100）。
+- レスポンスの各行は 日付・対象者（Discord User ID）・種別・状態・失敗理由の要約・完了/作成時刻 のみです。種別は保存値 `kind` をカテゴリ化したもの（`announcement`→`card`、`role-assigned:*`→`role_assign`、`role-removed:*`→`role_remove`）で、生の `kind`（ロールIDサフィックスを含む）は出しません。失敗理由は保存済みのエラー名（クラス名）だけを要約として返し、自由文は `UnknownError` に丸めます。生年・年齢はテーブルにもこのAPIにも存在しません。
+- 新しい環境変数は不要です（`IVRM_INTEGRATION_TOKEN` / `IVRM_INTEGRATION_GUILD_ID` は既存のStudio連携と共用）。未設定時は 503 で fail-closed になります。
+
 ## Database migration
 
 `20260819095000_birthday_card_v2`で次を追加します。

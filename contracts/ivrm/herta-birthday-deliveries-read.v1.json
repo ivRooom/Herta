@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "from": { "format": "date", "type": "string" },
+        "guildId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+        "limit": { "maximum": 100, "minimum": 1, "type": "integer" },
+        "offset": { "maximum": 100000, "minimum": 0, "type": "integer" },
+        "to": { "format": "date", "type": "string" }
+      },
+      "required": ["guildId", "from", "to", "limit", "offset"],
+      "type": "object"
+    },
+    "response": {
+      "additionalProperties": false,
+      "properties": {
+        "guildId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "category": {
+                "enum": ["card", "role_assign", "role_remove", "other"],
+                "type": "string"
+              },
+              "completedAt": { "format": "date-time", "type": ["string", "null"] },
+              "createdAt": { "format": "date-time", "type": "string" },
+              "date": { "format": "date", "type": "string" },
+              "discordUserId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+              "errorSummary": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+                "type": ["string", "null"]
+              },
+              "status": {
+                "enum": ["pending", "processing", "completed", "failed"],
+                "type": "string"
+              }
+            },
+            "required": [
+              "date",
+              "discordUserId",
+              "category",
+              "status",
+              "errorSummary",
+              "completedAt",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "pagination": {
+          "additionalProperties": false,
+          "properties": {
+            "hasNext": { "type": "boolean" },
+            "limit": { "maximum": 100, "minimum": 1, "type": "integer" },
+            "offset": { "maximum": 100000, "minimum": 0, "type": "integer" },
+            "total": { "minimum": 0, "type": "integer" }
+          },
+          "required": ["limit", "offset", "total", "hasNext"],
+          "type": "object"
+        },
+        "status": { "const": "ok" }
+      },
+      "required": ["status", "guildId", "items", "pagination"],
+      "type": "object"
+    }
+  },
+  "$id": "https://ivrm.jp/contracts/herta-birthday-deliveries-read/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Producer Herta Studio; consumer server-only ivrm-web. POST /api/ivrm/birthday-deliveries/read. Key=HMAC-SHA256(IVRM_INTEGRATION_TOKEN,herta-birthday-deliveries-read-v1); signature=HMAC-SHA256(key,timestamp.eventId.POST.path.rawBody). Headers X-IVRM-Timestamp ISO, X-IVRM-Event-Id UUID, X-IVRM-Signature hex. Five-minute freshness, no query, max8192bytes. The source of truth stays Herta birthday_deliveries; ivrm-web relays each read and stores no copy (#1572 S5b, relay display decided by Kanata 2026-11-23). Items carry date, Discord user id, delivery category, status and a bare error-class summary only: no raw kind, no birth year, no age. All responses private,no-store."
+}
