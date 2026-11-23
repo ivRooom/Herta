@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     def render(file, changes=None):
         entries = {**values, **(changes or {})}
         envfile.write_text('\n'.join(f'{k}={v}' for k, v in entries.items()), encoding='utf-8')
-        env = {k: v for k, v in os.environ.items() if k not in entries and k not in {'HERTA_DATABASE_MODE', 'HERTA_XP_EMITTER_ENABLED'}}
+        env = {k: v for k, v in os.environ.items() if k not in entries and k not in {'HERTA_DATABASE_MODE', 'HERTA_XP_EMITTER_ENABLED', 'HERTA_ACTIVITY_DAILY_SYNC_ENABLED'}}
         result = subprocess.run(['docker', 'compose', '--project-directory', str(ROOT), '--project-name', 'herta', '--env-file', str(envfile), '-f', str(file), 'config', '--format', 'json'], env=env, capture_output=True, text=True)
         if result.returncode:
             raise AssertionError('Synthetic Compose render failed: ' + result.stderr)
@@ -47,6 +47,9 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     # The drain stays off by default; only an explicit env-file value enables it.
     assert local['services']['worker']['environment'].pop('ACHIEVEMENT_NOTIFICATIONS_ENABLED') == 'false'
     assert local['services']['worker']['environment'].pop('IVRM_API_DATABASE_URL') == values.get('IVRM_API_DATABASE_URL', '')
+    # The bot receives the same ivrm_api URL for the XP emitter status
+    # push (#1646). Same value as the worker; not a topology change.
+    assert local['services']['bot']['environment'].pop('IVRM_API_DATABASE_URL') == values.get('IVRM_API_DATABASE_URL', '')
     assert local['services']['worker']['environment'].pop('IVRM_INTEGRATION_GUILD_ID') == values.get('IVRM_INTEGRATION_GUILD_ID', '')
     assert local['services']['worker']['environment'].pop('ACHIEVEMENT_NOTIFICATION_CHANNEL_ID') == values.get('ACHIEVEMENT_NOTIFICATION_CHANNEL_ID', '')
     # Achievement card API settings are not a database topology change.
@@ -56,6 +59,10 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     # Activity XP emitter flag is not a database topology change. It must
     # remain off by default; only an explicit env-file value enables it.
     assert local['services']['bot']['environment'].pop('HERTA_XP_EMITTER_ENABLED') == 'false'
+    # Activity daily sync flag (quest board B7e) is not a database topology
+    # change. It must remain off by default; only an explicit env-file value
+    # enables it.
+    assert local['services']['bot']['environment'].pop('HERTA_ACTIVITY_DAILY_SYNC_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('HERTA_POINTS_SECRET') == values.get('HERTA_POINTS_SECRET', '')
     # Minecraft control settings are not a database topology change.
     assert local['services']['bot']['environment'].pop('MINECRAFT_CONTROL_URL') == values.get('MINECRAFT_CONTROL_URL', '')
