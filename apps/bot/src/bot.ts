@@ -109,6 +109,7 @@ import {
   markActivityXpOutboxSent,
   touchActivityXpOutboxAuthFailure,
 } from './plugins/activity-xp-outbox-repository.js';
+import { reportActivityXpEmitterStatus } from './plugins/activity-xp-emitter-status.js';
 import { searchGuildMemberOptions, type GuildMemberOption } from './health/guild-members.js';
 import {
   getGuildBotProfile as getDiscordGuildBotProfile,
@@ -1689,6 +1690,16 @@ export class HertaBot {
       ) {
         this.logger.info(counters, 'Activity XP送信tickの結果');
       }
+
+      // 運用可視化 (ivrm-web #1646): outbox の状態スナップショットを ivrm_api へ
+      // push し、Admin で送信状態を見られるようにする。IVRM_API_DATABASE_URL が
+      // 無ければ何もせず、失敗しても送信サイクルに影響しない (fail-soft)。
+      await reportActivityXpEmitterStatus({
+        prisma: this.prisma,
+        guildId: config.guildId,
+        env: process.env,
+        logger: this.logger,
+      });
     } catch (error) {
       this.logger.warn({ err: error }, 'Activity XP送信tickに失敗しました');
     } finally {
