@@ -448,7 +448,9 @@ test('production workflow has an unprivileged CI-completion gate before build an
   assert.ok(gate.includes('should_deploy:'));
   assert.ok(gate.includes('run: node deploy/scripts/production-quality-gate.mjs'));
   assert.ok(build.includes("needs.quality-gate.outputs.should_deploy == 'true'"));
-  assert.ok(build.includes('needs: quality-gate'));
+  assert.ok(build.includes('needs: [quality-gate, same-sha-guard]'));
+  assert.ok(build.includes("needs.same-sha-guard.result == 'skipped'"));
+  assert.ok(build.includes("needs.same-sha-guard.outputs.should_deploy == 'true'"));
   assert.ok(build.includes('needs.quality-gate.outputs.deploy_sha'));
   assert.ok(build.includes('persist-credentials: false'));
   assert.ok(build.includes("github.event_name != 'workflow_dispatch'"));
