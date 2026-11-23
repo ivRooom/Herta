@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const activityRulesManifest: PluginManifest = {
   id: 'activity-rules',
   name: 'Activity Rules',
-  version: '1.5.0',
+  version: '1.6.0',
   description:
     'Community Activityの発言・リアクション・VC集計へ除外ルールとanti-spam設定を適用します',
   author: { name: 'Herta' },
@@ -171,6 +171,19 @@ export const activityRulesManifest: PluginManifest = {
         'x-herta-ui': {
           section: 'プレゼンス集計',
           help: 'Discordのプレゼンスに表示される「プレイ中」のアクティビティ名ごとの時間を集計します。Presence Intentの有効化が必要です。',
+        },
+      },
+      excludedGameActivityNames: {
+        type: 'array',
+        title: 'ゲーム集計から除外するアクティビティ名',
+        uniqueItems: true,
+        maxItems: 50,
+        default: ['Valorant Tracker App'],
+        items: { type: 'string', minLength: 1, maxLength: 128 },
+        'x-herta-ui': {
+          section: 'プレゼンス集計',
+          placeholder: '例: Valorant Tracker App',
+          help: 'ゲーム本体ではないトラッカー等の周辺アプリ名を、ゲーム時間の集計から除外します。名前の完全一致(前後空白・大文字小文字は区別しない)で判定します。除外は今後の収集から適用され、過去の蓄積データは書き換えません。空にすると除外なしになります。',
         },
       },
       countCommandPoints: {
@@ -352,6 +365,7 @@ export const activityRulesManifest: PluginManifest = {
       'countServerDeafenedVoice',
       'countOnlinePresence',
       'countGamePresence',
+      'excludedGameActivityNames',
       'countCommandPoints',
       'messagePointsPerMessage',
       'reactionPointsPerReaction',

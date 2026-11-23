@@ -79,6 +79,7 @@ import {
   communityPointsRatesFromConfig,
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
+  selectPrimaryGameActivityName,
   shouldCountCommandPoints,
   shouldCountGamePresence,
   shouldCountLfgPoints,
@@ -172,12 +173,18 @@ function presenceStatus(presence: PresenceLike | null | undefined): 'offline' | 
   return 'online';
 }
 
-/** 「プレイ中」(ActivityType.Playing)のアクティビティ名を1つだけ返す。複数ある場合は先頭。 */
-function primaryGameActivityName(presence: PresenceLike | null | undefined): string | null {
-  const activity = presence?.activities?.find(
-    (candidate) => candidate.type === ActivityType.Playing,
-  );
-  return activity?.name?.trim() || null;
+/**
+ * 計測対象のゲーム名を1つだけ返す。activities全件を走査し、種別は
+ * Playing優先・Competingをフォールバックとし、除外リスト一致は次点へ進む
+ * (優先順位の根拠は @herta/shared の selectPrimaryGameActivityName を参照)。
+ * community_game_sessions が PK(guildId, userId) で1行しか持てないため、
+ * 同時複数ゲームでもセッションは1本に絞る。
+ */
+function primaryGameActivityName(
+  presence: PresenceLike | null | undefined,
+  excludedGameActivityNames: readonly string[],
+): string | null {
+  return selectPrimaryGameActivityName(presence?.activities, excludedGameActivityNames);
 }
 
 /**
@@ -378,7 +385,10 @@ export class HertaBot {
                 await startPresenceSession(this.prisma, guildId, presence.userId);
               }
               if (shouldCountGamePresence(activityRules, { roleIds })) {
-                const gameName = primaryGameActivityName(presence);
+                const gameName = primaryGameActivityName(
+                  presence,
+                  activityRules.excludedGameActivityNames,
+                );
                 if (gameName)
                   await startGameSession(this.prisma, guildId, presence.userId, gameName);
               }
@@ -796,8 +806,18 @@ export class HertaBot {
         }
 
         if (shouldCountGamePresence(activityRules, { roleIds })) {
-          const previousGame = primaryGameActivityName(oldPresence);
-          const currentGame = primaryGameActivityName(newPresence);
+          // 除外リストは旧・新presenceの両方へ同じ設定で適用する。設定変更で
+          // 新たに除外されたゲームの進行中セッションは、次に計測対象ゲームへ
+          // 切り替わる際に上書きされ、除外後の時間は加算されない(再起動時の
+          // resetでも同様に破棄される)。
+          const previousGame = primaryGameActivityName(
+            oldPresence,
+            activityRules.excludedGameActivityNames,
+          );
+          const currentGame = primaryGameActivityName(
+            newPresence,
+            activityRules.excludedGameActivityNames,
+          );
           if (previousGame !== currentGame) {
             if (previousGame) await finishGameSession(this.prisma, guildId, userId);
             if (currentGame) await startGameSession(this.prisma, guildId, userId, currentGame);

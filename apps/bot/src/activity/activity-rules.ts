@@ -1,8 +1,12 @@
 export {
   communityPointsRatesFromConfig,
+  DEFAULT_EXCLUDED_GAME_ACTIVITY_NAMES,
   evaluateMessageActivity,
+  GAME_ACTIVITY_TYPES,
   hasMessageCooldownElapsed,
+  isExcludedGameActivityName,
   normalizeActivityRulesConfig,
+  selectPrimaryGameActivityName,
   shouldCountCommandPoints,
   shouldCountGamePresence,
   shouldCountLfgPoints,
@@ -15,6 +19,7 @@ export {
 export type {
   ActivityRulesConfig,
   CommunityPointsRates,
+  GameActivityLike,
   MessageActivityBlockingReason,
   MessageActivityCandidate,
   MessageActivityEvaluation,
