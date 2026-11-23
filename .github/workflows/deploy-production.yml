@@ -194,7 +194,7 @@ jobs:
           TARGET_SHA: ${{ needs.quality-gate.outputs.deploy_sha }}
         run: |
           match=""
-          if ! match=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-production.yml/runs?event=workflow_dispatch&status=success&per_page=20" --jq '[.workflow_runs[] | select(.head_sha == $ENV.TARGET_SHA and .id != ${{ github.run_id }})] | if length > 0 then "\(.[0].id) \(.[0].html_url)" else "" end'); then
+          if ! match=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-production.yml/runs?event=workflow_dispatch&status=success&head_sha=${TARGET_SHA}&per_page=20" --jq '[.workflow_runs[] | select(.head_sha == $ENV.TARGET_SHA and .id != ${{ github.run_id }})] | if length > 0 then "\(.[0].id) \(.[0].html_url)" else "" end'); then
             echo "::warning::same-sha-guard: 成功済み run の照会に失敗したため fail-open でデプロイを続行します"
             match=""
           fi
