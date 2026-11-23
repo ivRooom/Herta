@@ -1,0 +1,140 @@
+{
+  "$defs": {
+    "overviewResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "games": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": { "maxLength": 128, "minLength": 1, "type": "string" },
+              "playerCount": { "minimum": 0, "type": "integer" },
+              "totalSeconds": { "minimum": 0, "type": "integer" }
+            },
+            "required": ["name", "totalSeconds", "playerCount"],
+            "type": "object"
+          },
+          "maxItems": 25,
+          "type": "array"
+        },
+        "guildId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+        "meta": {
+          "additionalProperties": false,
+          "properties": { "earliestDate": { "format": "date", "type": ["string", "null"] } },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": { "const": "overview" },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": { "format": "date", "type": "string" },
+            "to": { "format": "date", "type": "string" }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "ranking": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "discordUserId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+                  "topGameName": { "maxLength": 128, "minLength": 1, "type": "string" },
+                  "totalSeconds": { "minimum": 0, "type": "integer" }
+                },
+                "required": ["discordUserId", "totalSeconds", "topGameName"],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": { "type": "boolean" },
+                "limit": { "maximum": 100, "minimum": 1, "type": "integer" },
+                "offset": { "maximum": 100000, "minimum": 0, "type": "integer" },
+                "total": { "minimum": 0, "type": "integer" }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        },
+        "status": { "const": "ok" }
+      },
+      "required": ["status", "guildId", "mode", "range", "meta", "games", "ranking"],
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "discordUserId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+        "from": { "format": "date", "type": "string" },
+        "guildId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+        "limit": { "maximum": 100, "minimum": 1, "type": "integer" },
+        "mode": { "enum": ["overview", "user"], "type": "string" },
+        "offset": { "maximum": 100000, "minimum": 0, "type": "integer" },
+        "to": { "format": "date", "type": "string" }
+      },
+      "required": ["guildId", "from", "to", "limit", "offset"],
+      "type": "object"
+    },
+    "userResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "guildId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+        "meta": {
+          "additionalProperties": false,
+          "properties": { "earliestDate": { "format": "date", "type": ["string", "null"] } },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": { "const": "user" },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": { "format": "date", "type": "string" },
+            "to": { "format": "date", "type": "string" }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "status": { "const": "ok" },
+        "user": {
+          "additionalProperties": false,
+          "properties": {
+            "discordUserId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+            "games": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "maxLength": 128, "minLength": 1, "type": "string" },
+                  "totalSeconds": { "minimum": 0, "type": "integer" }
+                },
+                "required": ["name", "totalSeconds"],
+                "type": "object"
+              },
+              "maxItems": 25,
+              "type": "array"
+            },
+            "totalSeconds": { "minimum": 0, "type": "integer" }
+          },
+          "required": ["discordUserId", "totalSeconds", "games"],
+          "type": "object"
+        }
+      },
+      "required": ["status", "guildId", "mode", "range", "meta", "user"],
+      "type": "object"
+    }
+  },
+  "$id": "https://ivrm.jp/contracts/herta-community-game-stats-read/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Producer Herta Studio; consumer server-only ivrm-web. POST /api/ivrm/community-game-stats/read. Key=HMAC-SHA256(IVRM_INTEGRATION_TOKEN,herta-community-game-stats-read-v1); signature=HMAC-SHA256(key,timestamp.eventId.POST.path.rawBody). Headers X-IVRM-Timestamp ISO, X-IVRM-Event-Id UUID, X-IVRM-Signature hex. Five-minute freshness, no query, max8192bytes. The source of truth stays Herta community_game_activity_daily; ivrm-web relays each read and stores no copy (ivrm-web #1703 S1, relay display decided by Kanata 2026-11-23). Request range from/to is a JST local_date range. mode is optional and defaults to overview: overview returns meta.earliestDate (the guild-wide first observed date, not range-limited), the top 25 games by totalSeconds with playerCount, and the user ranking paginated by limit/offset (max 100, ordered by totalSeconds desc then discordUserId asc; each entry carries its topGameName). mode=user requires discordUserId (and overview forbids it) and returns that user's totalSeconds plus their top 25 games. Items carry game names and aggregated seconds only: no Rich Presence details/state, no raw session rows. All responses private,no-store.",
+  "oneOf": [{ "$ref": "#/$defs/overviewResponse" }, { "$ref": "#/$defs/userResponse" }]
+}
