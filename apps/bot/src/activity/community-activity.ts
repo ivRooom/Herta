@@ -458,8 +458,39 @@ export async function discardGameSessionIfExcluded(
   });
   if (!session) return false;
   if (!isExcludedGameActivityName(session.activityName, excludedGameActivityNames)) return false;
-  await prisma.communityGameSession.delete({
+  // PresenceUpdateは同一ユーザーでも重なって処理されうるため、読み取った
+  // 行そのもの(ゲーム名+startedAtが一致する行)だけを条件付きで削除する。
+  // 並行処理が新しいセッションへ差し替えた場合は一致せず、そちらを消さない。
+  const deleted = await prisma.communityGameSession.deleteMany({
+    where: {
+      guildId,
+      userId,
+      activityName: session.activityName,
+      startedAt: session.startedAt,
+    },
+  });
+  return deleted.count > 0;
+}
+
+/**
+ * 計測対象ゲームが進行中なのにセッションが無い場合だけセッションを開始
+ * する(開始したらtrueを返す)。除外リストから外れたゲームがプレイ中の
+ * ままだと、旧・新presenceの名前解決が一致して差分なしと判定され、
+ * セッションが始まらないまま時間が計測されないため、その救済に使う。
+ * 既存セッション(同名・別名とも)には触れず、同名ならstartedAtを保持し、
+ * 別名なら通常の差分判定による終了・開始フローに委ねる。
+ */
+export async function ensureGameSessionStarted(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  activityName: string,
+  startedAt = new Date(),
+): Promise<boolean> {
+  const session = await prisma.communityGameSession.findUnique({
     where: { guildId_userId: { guildId, userId } },
   });
+  if (session) return false;
+  await startGameSession(prisma, guildId, userId, activityName, startedAt);
   return true;
 }

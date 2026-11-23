@@ -2,6 +2,7 @@ import type { PrismaClient } from '@herta/db';
 import { describe, expect, it } from 'vitest';
 import {
   discardGameSessionIfExcluded,
+  ensureGameSessionStarted,
   finishGameSession,
   startGameSession,
 } from './community-activity.js';
@@ -25,7 +26,9 @@ interface GameDailyKey {
  * 最小のインメモリPrisma。セッションの開始・破棄・終了加算の相互作用を
  * 実DBなしで検証するために使う。
  */
-function createFakePrisma() {
+function createFakePrisma(
+  hooks: { onGameSessionFindUnique?: (row: GameSessionRow | null) => void } = {},
+) {
   const sessions = new Map<string, GameSessionRow>();
   const daily = new Map<string, bigint>();
   const sessionKey = (guildId: string, userId: string) => `${guildId}:${userId}`;
@@ -38,8 +41,13 @@ function createFakePrisma() {
         where,
       }: {
         where: { guildId_userId: { guildId: string; userId: string } };
-      }) =>
-        sessions.get(sessionKey(where.guildId_userId.guildId, where.guildId_userId.userId)) ?? null,
+      }) => {
+        const row =
+          sessions.get(sessionKey(where.guildId_userId.guildId, where.guildId_userId.userId)) ??
+          null;
+        hooks.onGameSessionFindUnique?.(row);
+        return row;
+      },
       upsert: async ({
         where,
         create,
@@ -69,13 +77,23 @@ function createFakePrisma() {
         sessions.delete(key);
         return row;
       },
-      deleteMany: async ({ where }: { where: { guildId: string } }) => {
+      deleteMany: async ({
+        where,
+      }: {
+        where: { guildId: string; userId?: string; activityName?: string; startedAt?: Date };
+      }) => {
         let count = 0;
         for (const [key, row] of sessions) {
-          if (row.guildId === where.guildId) {
-            sessions.delete(key);
-            count += 1;
-          }
+          if (row.guildId !== where.guildId) continue;
+          if (where.userId !== undefined && row.userId !== where.userId) continue;
+          if (where.activityName !== undefined && row.activityName !== where.activityName) continue;
+          if (
+            where.startedAt !== undefined &&
+            row.startedAt.getTime() !== where.startedAt.getTime()
+          )
+            continue;
+          sessions.delete(key);
+          count += 1;
         }
         return { count };
       },
@@ -180,5 +198,48 @@ describe('ゲームセッションと除外リストの照合 (#980)', () => {
     await expect(
       discardGameSessionIfExcluded(prisma, GUILD_ID, USER_ID, [' Valorant Tracker App ']),
     ).resolves.toBe(true);
+  });
+
+  it('読み取り後に並行処理が差し替えた新しいセッションは削除しない', async () => {
+    let swapped = false;
+    const { prisma, sessions } = createFakePrisma({
+      onGameSessionFindUnique: (row) => {
+        if (!row || swapped) return;
+        swapped = true;
+        // 読み取りと削除の間に、並行するPresenceUpdateが新しい
+        // セッションへ差し替えた状況を模す
+        sessions.set(`${GUILD_ID}:${USER_ID}`, {
+          guildId: GUILD_ID,
+          userId: USER_ID,
+          activityName: 'VALORANT',
+          startedAt: new Date(T0.getTime() + 60_000),
+        });
+      },
+    });
+    await startGameSession(prisma, GUILD_ID, USER_ID, 'Valorant Tracker App', T0);
+    await expect(
+      discardGameSessionIfExcluded(prisma, GUILD_ID, USER_ID, ['Valorant Tracker App']),
+    ).resolves.toBe(false);
+    expect(sessions.get(`${GUILD_ID}:${USER_ID}`)?.activityName).toBe('VALORANT');
+  });
+
+  it('セッションが無い場合だけensureGameSessionStartedが開始し、既存は保持する', async () => {
+    const { prisma, sessions } = createFakePrisma();
+    // セッション無し: 開始される
+    await expect(ensureGameSessionStarted(prisma, GUILD_ID, USER_ID, 'VALORANT', T0)).resolves.toBe(
+      true,
+    );
+    expect(sessions.get(`${GUILD_ID}:${USER_ID}`)?.startedAt).toEqual(T0);
+    // 同名の既存セッション: startedAtが保持される
+    const later = new Date(T0.getTime() + 600_000);
+    await expect(
+      ensureGameSessionStarted(prisma, GUILD_ID, USER_ID, 'VALORANT', later),
+    ).resolves.toBe(false);
+    expect(sessions.get(`${GUILD_ID}:${USER_ID}`)?.startedAt).toEqual(T0);
+    // 別名の既存セッションにも触れない
+    await expect(
+      ensureGameSessionStarted(prisma, GUILD_ID, USER_ID, 'Overwatch', later),
+    ).resolves.toBe(false);
+    expect(sessions.get(`${GUILD_ID}:${USER_ID}`)?.activityName).toBe('VALORANT');
   });
 });

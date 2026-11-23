@@ -62,6 +62,7 @@ import {
 import type { DiscordHealthObservation } from './health/types.js';
 import {
   discardGameSessionIfExcluded,
+  ensureGameSessionStarted,
   finishGameSession,
   finishPresenceSession,
   finishVoiceSession,
@@ -843,6 +844,11 @@ export class HertaBot {
           } else if (previousGame !== currentGame) {
             if (previousGame) await finishGameSession(this.prisma, guildId, userId);
             if (currentGame) await startGameSession(this.prisma, guildId, userId, currentGame);
+          } else if (currentGame) {
+            // 除外リストから外れたゲームがプレイ中のままの場合など、差分が
+            // 無くてもセッションが存在しないことがある。その場合は開始を
+            // 救済する(既存セッションがあればstartedAtごと保持される)。
+            await ensureGameSessionStarted(this.prisma, guildId, userId, currentGame);
           }
         }
       } catch (error) {
