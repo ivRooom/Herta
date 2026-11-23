@@ -61,6 +61,7 @@ import {
 } from './health/guild-options.js';
 import type { DiscordHealthObservation } from './health/types.js';
 import {
+  discardGameSessionIfExcluded,
   finishGameSession,
   finishPresenceSession,
   finishVoiceSession,
@@ -815,10 +816,7 @@ export class HertaBot {
         }
 
         if (shouldCountGamePresence(activityRules, { roleIds })) {
-          // 除外リストは旧・新presenceの両方へ同じ設定で適用する。設定変更で
-          // 新たに除外されたゲームの進行中セッションは、次に計測対象ゲームへ
-          // 切り替わる際に上書きされ、除外後の時間は加算されない(再起動時の
-          // resetでも同様に破棄される)。
+          // 除外リストは旧・新presenceの両方へ同じ設定で適用する。
           const previousGame = primaryGameActivityName(
             oldPresence,
             activityRules.excludedGameActivityNames,
@@ -827,7 +825,22 @@ export class HertaBot {
             newPresence,
             activityRules.excludedGameActivityNames,
           );
-          if (previousGame !== currentGame) {
+          // 保存済みセッションは開始時のゲーム名を保持するため、開始後に
+          // そのゲームが除外リストへ追加されると、旧・新presenceは両方とも
+          // 除外適用後の名前へ解決されて差分なしと判定され、セッションが
+          // 残り続ける。そのまま終了すると除外後の時間まで加算されてしまう
+          // ため、保存済みセッションを現在の除外リストと照合し、除外対象
+          // なら加算せずに破棄する(計測対象ゲームが残っていない場合も含む)。
+          // 破棄した場合は現在のゲームのセッションをここから開始する。
+          const discardedExcludedSession = await discardGameSessionIfExcluded(
+            this.prisma,
+            guildId,
+            userId,
+            activityRules.excludedGameActivityNames,
+          );
+          if (discardedExcludedSession) {
+            if (currentGame) await startGameSession(this.prisma, guildId, userId, currentGame);
+          } else if (previousGame !== currentGame) {
             if (previousGame) await finishGameSession(this.prisma, guildId, userId);
             if (currentGame) await startGameSession(this.prisma, guildId, userId, currentGame);
           }

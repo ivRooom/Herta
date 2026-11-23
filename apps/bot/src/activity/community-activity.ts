@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@herta/db';
+import { isExcludedGameActivityName } from './activity-rules.js';
 
 export const COMMUNITY_ACTIVITY_METRICS = [
   'messages',
@@ -431,4 +432,34 @@ export async function finishGameSession(
 
 export async function resetGameSessions(prisma: PrismaClient, guildId: string): Promise<void> {
   await prisma.communityGameSession.deleteMany({ where: { guildId } });
+}
+
+/**
+ * 保存済みゲームセッションのゲーム名が現在の除外リストに一致する場合に、
+ * 加算せずセッションを破棄する(破棄したらtrueを返す)。
+ *
+ * セッションは開始時のゲーム名を保持するため、開始後にそのゲームが除外
+ * リストへ追加されると、presence側の名前解決では旧・新とも除外適用後の
+ * 名前へ解決されて「差分なし」と判定され、セッションが残り続ける。その
+ * まま終了すると finishGameSession が元のstartedAtから加算し、除外後の
+ * 時間まで数えてしまう。PresenceUpdateのたびに保存済みセッションを現在
+ * の除外リストと照合し、除外対象なら即座に破棄する。対象外のセッション
+ * には触れないため、計測中のゲームのstartedAtは保持される。
+ */
+export async function discardGameSessionIfExcluded(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  excludedGameActivityNames: readonly string[],
+): Promise<boolean> {
+  if (excludedGameActivityNames.length === 0) return false;
+  const session = await prisma.communityGameSession.findUnique({
+    where: { guildId_userId: { guildId, userId } },
+  });
+  if (!session) return false;
+  if (!isExcludedGameActivityName(session.activityName, excludedGameActivityNames)) return false;
+  await prisma.communityGameSession.delete({
+    where: { guildId_userId: { guildId, userId } },
+  });
+  return true;
 }

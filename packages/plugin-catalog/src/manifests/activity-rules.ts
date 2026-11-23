@@ -365,7 +365,6 @@ export const activityRulesManifest: PluginManifest = {
       'countServerDeafenedVoice',
       'countOnlinePresence',
       'countGamePresence',
-      'excludedGameActivityNames',
       'countCommandPoints',
       'messagePointsPerMessage',
       'reactionPointsPerReaction',
