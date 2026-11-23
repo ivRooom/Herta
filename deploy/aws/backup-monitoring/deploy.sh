@@ -6,7 +6,7 @@ STACK_NAME="${STACK_NAME:-herta-backup-monitoring}"
 RESOURCE_NAME_SUFFIX="${RESOURCE_NAME_SUFFIX:-managed}"
 TEMPLATE_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/template.yml"
 
-: "${BACKUP_BUCKET_NAME:?BACKUP_BUCKET_NAMEを設定してください}"
+: "${DEDICATED_BACKUP_BUCKET_NAME:?DEDICATED_BACKUP_BUCKET_NAMEを設定してください}"
 : "${ALERT_TOPIC_ARN:?ALERT_TOPIC_ARNを設定してください}"
 
 for command_name in aws; do
@@ -22,19 +22,14 @@ aws cloudformation validate-template \
   --template-body "file://${TEMPLATE_FILE}" >/dev/null
 
 PARAMETER_OVERRIDES=(
-  "BackupBucketName=${BACKUP_BUCKET_NAME}"
   "AlertTopicArn=${ALERT_TOPIC_ARN}"
   "ResourceNameSuffix=${RESOURCE_NAME_SUFFIX}"
-  "BackupPrefix=${BACKUP_PREFIX:-postgres}"
+  "DedicatedBackupBucketName=${DEDICATED_BACKUP_BUCKET_NAME}"
   "MaximumBackupAgeHours=${MAXIMUM_BACKUP_AGE_HOURS:-25}"
   "ScheduleExpression=${SCHEDULE_EXPRESSION:-cron(0 5 * * ? *)}"
   "ScheduleTimezone=${SCHEDULE_TIMEZONE:-Asia/Tokyo}"
   "LogRetentionDays=${LOG_RETENTION_DAYS:-30}"
 )
-# Omission preserves an existing stack value; explicit empty disables the option.
-if [[ ${DEDICATED_BACKUP_BUCKET_NAME+x} ]]; then
-  PARAMETER_OVERRIDES+=("DedicatedBackupBucketName=${DEDICATED_BACKUP_BUCKET_NAME}")
-fi
 
 aws cloudformation deploy \
   --region "${REGION}" \
@@ -64,4 +59,4 @@ python3 -m json.tool /tmp/herta-backup-monitoring-result.json
 
 echo "Stack: ${STACK_NAME}"
 echo "Function: ${FUNCTION_NAME}"
-echo "次に force_alert テストを実行し、通知確認後に旧Schedulerを停止してください。"
+echo "次に force_alert テストを実行し、通知到達を確認してください。既存stackの更新は原則として controlled ChangeSet で行い、このスクリプトの既定値で現行値を巻き戻さないこと。"

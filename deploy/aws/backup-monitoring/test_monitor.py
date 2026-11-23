@@ -31,17 +31,6 @@ def inline_source():
     return "\n".join(result)
 
 
-class LegacyS3:
-    def __init__(self, latest):
-        self.latest = latest
-
-    def get_paginator(self, operation):
-        assert operation == "list_objects_v2"
-        return types.SimpleNamespace(paginate=lambda **kwargs: iter([
-            {"Contents": [] if self.latest is None else [self.latest]}
-        ]))
-
-
 class DedicatedS3:
     def __init__(self, clock):
         self.clock = clock
@@ -103,18 +92,17 @@ class SNS:
 class MonitorTests(unittest.TestCase):
     def setUp(self):
         self.clock = datetime.now(timezone.utc)
-        self.legacy = LegacyS3({"Key": "postgres/legacy.dump", "LastModified": self.clock})
         self.dedicated = DedicatedS3(self.clock)
         self.sns = SNS()
         self.metrics = []
         self.dedicated_client_config = None
 
-    def load(self, enabled=True):
+    def load(self):
         def client(name, **kwargs):
             if name == "s3":
                 if "config" in kwargs:
                     self.dedicated_client_config = kwargs["config"]
-                return self.dedicated if "config" in kwargs else self.legacy
+                return self.dedicated
             if name == "sns":
                 return self.sns
             if name == "cloudwatch":
@@ -126,50 +114,36 @@ class MonitorTests(unittest.TestCase):
         botocore = types.ModuleType("botocore")
         config = types.ModuleType("botocore.config")
         config.Config = lambda **kwargs: kwargs
-        environment = {"S3_BUCKET": "fixture-legacy-bucket", "SNS_TOPIC_ARN": "fixture-topic",
+        environment = {"SNS_TOPIC_ARN": "fixture-topic",
                        "DEDICATED_BACKUP_EXPECTED_OWNER": "000000000000",
-                       "DEDICATED_BACKUP_BUCKET": "fixture-dedicated-bucket" if enabled else ""}
+                       "DEDICATED_BACKUP_BUCKET": "fixture-dedicated-bucket"}
         namespace = {}
         with patch.dict(sys.modules, {"boto3": boto, "botocore": botocore, "botocore.config": config}), patch.dict(os.environ, environment):
             exec(compile(inline_source(), str(TEMPLATE), "exec"), namespace)
         return namespace
 
-    def invoke(self, enabled=True, event=None):
+    def invoke(self, event=None):
         with contextlib.redirect_stdout(io.StringIO()):
-            return self.load(enabled)["lambda_handler"](event or {}, types.SimpleNamespace(function_name="fixture-function"))
+            return self.load()["lambda_handler"](event or {}, types.SimpleNamespace(function_name="fixture-function"))
+
+    def metric_values(self):
+        return {m["MetricName"]: m["Value"] for m in self.metrics[0]["MetricData"]}
 
     def assert_dedicated_alert(self):
         result = self.invoke()
         self.assertEqual(result["status"], "alert")
-        self.assertEqual(result["dedicated_backup"]["status"], "alert")
+        self.assertEqual(result["reason"], "capture_check_failed")
         message = self.sns.messages[0]
+        self.assertEqual(message["Subject"], "[ALERT] Dedicated PostgreSQL backup unhealthy")
         self.assertEqual(json.loads(message["Message"]), {
             "status": "alert", "component": "dedicated_postgresql_backup", "reason": "capture_check_failed", "version": 1})
         self.assertNotIn("fixture-dedicated", message["Message"])
         return result
 
-    def test_disabled_preserves_legacy_success_and_metrics(self):
-        result = self.invoke(False)
-        self.assertEqual(result["status"], "ok")
-        self.assertNotIn("dedicated_backup", result)
-        self.assertEqual(self.dedicated.listing_calls, [])
-        self.assertEqual(self.sns.messages, [])
-        self.assertEqual(len(self.metrics), 1)
-        self.assertEqual([m["MetricName"] for m in self.metrics[0]["MetricData"]], ["BackupFound", "FreshnessOk", "LatestBackupAgeHours"])
-
-    def test_disabled_preserves_missing_stale_and_force_alert(self):
-        self.legacy.latest = None
-        self.assertEqual(self.invoke(False)["reason"], "no_backup")
-        self.legacy.latest = {"Key": "postgres/legacy.dump", "LastModified": self.clock - timedelta(hours=26)}
-        self.assertEqual(self.invoke(False)["reason"], "stale_backup")
-        self.legacy.latest["LastModified"] = self.clock
-        self.assertEqual(self.invoke(False, {"force_alert": True})["status"], "test_alert")
-        self.assertEqual(self.dedicated.listing_calls, [])
-
     def test_fresh_complete_capture_and_bounded_requests(self):
         result = self.invoke()
         self.assertEqual(result["status"], "ok")
-        self.assertEqual(result["dedicated_backup"], {"status": "ok"})
+        self.assertEqual(result["capture_id"], CAPTURE)
         self.assertEqual(self.dedicated.listing_calls[0]["MaxKeys"], 1000)
         self.assertEqual(self.dedicated.listing_calls[0]["ExpectedBucketOwner"], "000000000000")
         self.assertEqual(self.dedicated.listing_calls[0]["Prefix"], "postgresql/")
@@ -181,24 +155,29 @@ class MonitorTests(unittest.TestCase):
         self.assertTrue(self.dedicated.body.closed)
         self.assertEqual(self.sns.messages, [])
         self.assertEqual(len(self.metrics), 1)
+        self.assertEqual([m["MetricName"] for m in self.metrics[0]["MetricData"]],
+                         ["BackupFound", "FreshnessOk", "LatestBackupAgeHours"])
+        values = self.metric_values()
+        self.assertEqual(values["BackupFound"], 1)
+        self.assertEqual(values["FreshnessOk"], 1)
 
-    def test_dedicated_checked_even_when_legacy_missing_or_stale(self):
-        for latest in (None, {"Key": "postgres/legacy.dump", "LastModified": self.clock - timedelta(hours=26)}):
-            with self.subTest(latest=latest):
-                self.legacy.latest = latest
-                self.dedicated.listing_calls.clear()
-                self.assertEqual(self.invoke()["dedicated_backup"]["status"], "ok")
-                self.assertEqual(len(self.dedicated.listing_calls), 1)
-
-    def test_missing_and_incomplete_latest_dump_not_healthy(self):
+    def test_missing_capture_alerts_without_age_metric(self):
         self.dedicated.listing = {"Contents": [{"Key": f"postgresql/{CAPTURE}/ivrm_ai.dump", "Size": 100, "LastModified": self.clock}]}
         self.assert_dedicated_alert()
+        self.assertEqual(self.dedicated.get_calls, [])
+        self.assertEqual(self.metric_values(), {"BackupFound": 0, "FreshnessOk": 0})
 
     def test_stale_and_future_object_rejected(self):
         for delta in (-26 * 3600, 600):
             with self.subTest(delta=delta):
                 self.dedicated.listing["Contents"][0]["LastModified"] = self.clock + timedelta(seconds=delta)
                 self.assert_dedicated_alert()
+                values = self.metric_values()
+                self.assertEqual(values["BackupFound"], 1)
+                self.assertEqual(values["FreshnessOk"], 0)
+                self.assertIn("LatestBackupAgeHours", values)
+                self.metrics.clear()
+                self.sns.messages.clear()
 
     def test_incomplete_duplicate_wrong_header_and_payload_rejected(self):
         original = copy.deepcopy(self.dedicated.manifest)
@@ -215,6 +194,8 @@ class MonitorTests(unittest.TestCase):
                 self.dedicated.manifest = copy.deepcopy(original)
                 change(self.dedicated.manifest)
                 self.assert_dedicated_alert()
+                self.sns.messages.clear()
+                self.metrics.clear()
 
     def test_stale_future_or_naive_completion_rejected(self):
         for completed in ((self.clock - timedelta(hours=26)).isoformat(),
@@ -222,11 +203,15 @@ class MonitorTests(unittest.TestCase):
             with self.subTest(completed=completed):
                 self.dedicated.manifest["completed_at"] = completed
                 self.assert_dedicated_alert()
+                self.sns.messages.clear()
+                self.metrics.clear()
 
     def test_bad_checksum_and_missing_version_rejected(self):
         self.dedicated.checksum_override = "invalid"
         self.assert_dedicated_alert()
         self.dedicated.checksum_override = None
+        self.sns.messages.clear()
+        self.metrics.clear()
         self.dedicated.version = "null"
         self.assert_dedicated_alert()
 
@@ -235,6 +220,8 @@ class MonitorTests(unittest.TestCase):
             with self.subTest(payload_size=len(payload)):
                 self.dedicated.manifest = payload
                 self.assert_dedicated_alert()
+                self.sns.messages.clear()
+                self.metrics.clear()
 
     def test_paginated_listing_fails_closed(self):
         self.dedicated.listing["IsTruncated"] = True
@@ -248,6 +235,8 @@ class MonitorTests(unittest.TestCase):
                 self.assert_dedicated_alert()
                 self.assertNotIn("private-provider-detail", self.sns.messages[-1]["Message"])
                 setattr(self.dedicated, attribute, None)
+                self.sns.messages.clear()
+                self.metrics.clear()
 
     def test_notification_failure_propagates(self):
         self.dedicated.list_error = RuntimeError("private-provider-detail")
@@ -255,9 +244,15 @@ class MonitorTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "fixture delivery failure"):
             self.invoke()
 
-    def test_dedicated_alert_overrides_legacy_force_alert_status(self):
+    def test_force_alert_on_healthy_capture_sends_test_notice(self):
+        result = self.invoke({"force_alert": True})
+        self.assertEqual(result["status"], "test_alert")
+        self.assertEqual(len(self.sns.messages), 1)
+        self.assertEqual(self.sns.messages[0]["Subject"], "[TEST] Dedicated PostgreSQL backup freshness monitor")
+
+    def test_force_alert_does_not_mask_unhealthy_capture(self):
         self.dedicated.listing = {"Contents": []}
-        self.assertEqual(self.invoke(event={"force_alert": True})["status"], "alert")
+        self.assertEqual(self.invoke({"force_alert": True})["status"], "alert")
 
 
 if __name__ == "__main__":
