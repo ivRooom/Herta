@@ -90,6 +90,12 @@ import {
   type ActivityRulesConfig,
 } from './activity/activity-rules.js';
 import {
+  collectActivityDailyRows,
+  pushActivityDailyToIvrmWeb,
+  resolveActivityDailySyncConfig,
+  type ActivityDailySyncConfig,
+} from './plugins/community-activity-daily-ivrm-sync.js';
+import {
   pushActivityStatsToIvrmWeb,
   resolveActivityIvrmSyncConfig,
   type ActivityIvrmSyncConfig,
@@ -147,6 +153,7 @@ function presenceIntentEnabled(): boolean {
 }
 
 const ACTIVITY_IVRM_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const ACTIVITY_DAILY_SYNC_INTERVAL_MS = 60 * 60 * 1000;
 const ACTIVITY_IVRM_SYNC_EPOCH = new Date('1970-01-01T00:00:00.000Z');
 const ACTIVITY_XP_EMITTER_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -262,6 +269,8 @@ export class HertaBot {
   private gatewayObservationTimer?: NodeJS.Timeout;
   private activityIvrmSyncTimer?: NodeJS.Timeout;
   private activityIvrmSyncInFlight = false;
+  private activityDailySyncTimer?: NodeJS.Timeout;
+  private activityDailySyncInFlight = false;
   private activityXpEmitterTimer?: NodeJS.Timeout;
   private activityXpEmitterInFlight = false;
   /** 401/403 を受けたらプロセス再起動まで送信を止める (設定異常のため再送しても直らない)。 */
@@ -1122,6 +1131,7 @@ export class HertaBot {
     this.gatewayObservationTimer.unref();
 
     this.startActivityIvrmSync();
+    this.startActivityDailySync();
     this.startActivityXpEmitter();
 
     const redisUrl = process.env['REDIS_URL'];
@@ -1603,6 +1613,43 @@ export class HertaBot {
   }
 
   /**
+   * クエストボード B7e 向けの日次活動集計 (reactions_given / commands) の
+   * ivrm-web への push を開始する。`HERTA_ACTIVITY_DAILY_SYNC_ENABLED=true`
+   * かつ必須envが揃っている場合のみ開始する (既定OFF)。失敗しても Bot の
+   * 他機能には影響せず、次回 cycle で同じ窓を再送する (置換 upsert で冪等)。
+   */
+  private startActivityDailySync(): void {
+    const config = resolveActivityDailySyncConfig(process.env);
+    if (!config) return;
+
+    void this.runActivityDailySync(config);
+    this.activityDailySyncTimer = setInterval(() => {
+      void this.runActivityDailySync(config);
+    }, ACTIVITY_DAILY_SYNC_INTERVAL_MS);
+    this.activityDailySyncTimer.unref();
+  }
+
+  private async runActivityDailySync(config: ActivityDailySyncConfig): Promise<void> {
+    // setInterval は前回の完了を待たないため、single-flight ガードで多重実行を防ぐ。
+    if (this.activityDailySyncInFlight) {
+      this.logger.warn('前回のivrm-web日次活動集計同期がまだ完了していないためスキップします');
+      return;
+    }
+    this.activityDailySyncInFlight = true;
+    try {
+      const rows = await collectActivityDailyRows(this.prisma, config.guildId, new Date());
+      await pushActivityDailyToIvrmWeb(config, rows, this.logger);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, guildId: config.guildId },
+        'ivrm-webへの日次活動集計同期に失敗しました',
+      );
+    } finally {
+      this.activityDailySyncInFlight = false;
+    }
+  }
+
+  /**
    * ivrm-web Points v3 Activity XP 取込 (#877) への送信を開始する。
    * `HERTA_XP_EMITTER_ENABLED=true` かつ必須envが揃っている場合のみ開始する
    * (既定OFF)。Guild XP・ランキング・Role・Community Points には一切触れない。
@@ -1730,6 +1777,10 @@ export class HertaBot {
     if (this.activityIvrmSyncTimer) {
       clearInterval(this.activityIvrmSyncTimer);
       this.activityIvrmSyncTimer = undefined;
+    }
+    if (this.activityDailySyncTimer) {
+      clearInterval(this.activityDailySyncTimer);
+      this.activityDailySyncTimer = undefined;
     }
     if (this.activityXpEmitterTimer) {
       clearInterval(this.activityXpEmitterTimer);
