@@ -41,6 +41,41 @@ describe('renderBirthdayCard custom background', () => {
   });
 });
 
+describe('renderBirthdayCard remote background (#986 S5c)', () => {
+  it('preset sourceでもAPI背景URLの画像を背景として使用する', async () => {
+    const remoteBackground = await createSolidPng(200, 30, 40);
+
+    const card = await renderWithBackgrounds({ remoteBackground });
+    const { data } = await sharp(card).raw().toBuffer({ resolveWithObject: true });
+    expect([...data.subarray(0, 3)]).toEqual([200, 30, 40]);
+  });
+
+  it('API背景URLの画像はStudio保存済みcustom背景より優先される', async () => {
+    const remoteBackground = await createSolidPng(200, 30, 40);
+    const customBackground = await createSolidPng(12, 34, 56);
+
+    const card = await renderWithBackgrounds({
+      backgroundSource: 'custom',
+      remoteBackground,
+      customBackground,
+    });
+    const { data } = await sharp(card).raw().toBuffer({ resolveWithObject: true });
+    expect([...data.subarray(0, 3)]).toEqual([200, 30, 40]);
+  });
+
+  it('API背景URLの画像が不正なbytesならcustom背景へfallbackする', async () => {
+    const customBackground = await createSolidPng(12, 34, 56);
+
+    const card = await renderWithBackgrounds({
+      backgroundSource: 'custom',
+      remoteBackground: new TextEncoder().encode('<svg></svg>'),
+      customBackground,
+    });
+    const { data } = await sharp(card).raw().toBuffer({ resolveWithObject: true });
+    expect([...data.subarray(0, 3)]).toEqual([12, 34, 56]);
+  });
+});
+
 function renderWithCustomBackground(customBackground: Uint8Array) {
   return renderBirthdayCard({
     config: {
@@ -58,6 +93,38 @@ function renderWithCustomBackground(customBackground: Uint8Array) {
     age: 25,
     customBackground,
   });
+}
+
+function renderWithBackgrounds(input: {
+  backgroundSource?: 'preset' | 'custom' | 'asset';
+  remoteBackground?: Uint8Array | null;
+  customBackground?: Uint8Array | null;
+}) {
+  return renderBirthdayCard({
+    config: {
+      ...DEFAULT_BIRTHDAY_CARD_CONFIG,
+      birthdayCardBackgroundSource: input.backgroundSource ?? 'preset',
+      birthdayCardShowAvatar: false,
+      birthdayCardShowName: false,
+      birthdayCardShowBirthday: false,
+      birthdayCardShowAge: false,
+    },
+    displayName: 'Herta Member',
+    avatarUrl: null,
+    month: 8,
+    day: 19,
+    age: 25,
+    customBackground: input.customBackground ?? null,
+    remoteBackground: input.remoteBackground ?? null,
+  });
+}
+
+async function createSolidPng(r: number, g: number, b: number): Promise<Buffer> {
+  return sharp({
+    create: { width: 1672, height: 941, channels: 3, background: { r, g, b } },
+  })
+    .png()
+    .toBuffer();
 }
 
 async function expectValidBirthdayCard(card: Uint8Array) {

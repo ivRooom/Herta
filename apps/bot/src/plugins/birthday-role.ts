@@ -3,6 +3,7 @@ import { birthdayRoleManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
 import { normalizeBirthdayCardConfig, type BirthdayCardConfig } from '@herta/shared';
 import { renderBirthdayCard } from './birthday-card.js';
+import { fetchBirthdayCardBackgroundImage } from './birthday-card-background-url.js';
 import {
   callIvrmBirthday,
   type IvrmBirthdayRecipient,
@@ -227,10 +228,11 @@ export function normalizeBirthdayRoleConfig(value: unknown): BirthdayRoleConfig 
  * layout (element positions, background asset library) stay local.
  * Age display is forced off on this path: the API never carries a
  * birth year, so {age}/{ageText} render empty and the card shows
- * name + month/day only. An Admin-uploaded backgroundUrl cannot be
- * applied yet (the renderer only reads Studio-stored backgrounds),
- * so the preset from the same payload is used and the caller logs
- * the gap.
+ * name + month/day only. The card preset also comes from the API.
+ * An Admin-uploaded backgroundUrl (settings.card.backgroundUrl)
+ * is not part of this config: the caller fetches it once per
+ * cycle and it wins over the Studio-stored background when the
+ * download validates (#986 S5c).
  */
 export function applyIvrmBirthdaySettings(
   config: BirthdayRoleConfig,
@@ -440,6 +442,7 @@ export async function runBirthdayRoleCycle(
     let timeZone = guildTimeZone;
     let today = getLocalDateParts(now, timeZone);
     let todaysRegistrations: BirthdayCycleRegistration[] | null = null;
+    let ivrmBackgroundUrl: string | null = null;
 
     if (config.useIvrmApiSource) {
       const jstToday = getLocalDateParts(now, 'Asia/Tokyo');
@@ -458,12 +461,7 @@ export async function runBirthdayRoleCycle(
         timeZone = 'Asia/Tokyo';
         today = jstToday;
         todaysRegistrations = result.recipients.map(toBirthdayRegistrationLike);
-        if (result.settings.card.backgroundUrl) {
-          context.logger.warn(
-            { guildId: context.guildId },
-            'ivrm-webのカード背景URLは未対応のためプリセット背景を使用します',
-          );
-        }
+        ivrmBackgroundUrl = result.settings.card.backgroundUrl;
       } else {
         context.logger.warn(
           { guildId: context.guildId, status: result.status },
@@ -570,7 +568,24 @@ export async function runBirthdayRoleCycle(
         const usesStoredBirthdayCardBackground =
           config.birthdayCardBackgroundSource === 'custom' ||
           config.birthdayCardBackgroundSource === 'asset';
+        // Background priority (#986 S5c): an Admin-uploaded
+        // backgroundUrl the API supplied for this cycle wins over
+        // the Studio-stored background, which wins over the
+        // bundled preset. The URL image is fetched once per
+        // cycle; any failure falls back to the stored resolution
+        // below with a warning, never to a failed delivery.
+        let remoteBackground: Buffer | null = null;
+        if (config.birthdayCardEnabled && ivrmBackgroundUrl && todaysRegistrations.length > 0) {
+          remoteBackground = await fetchBirthdayCardBackgroundImage(ivrmBackgroundUrl);
+          if (!remoteBackground) {
+            context.logger.warn(
+              { guildId: context.guildId },
+              'ivrm-webのカード背景URLを取得できないため従来の背景解決へfallbackします',
+            );
+          }
+        }
         const customBackground =
+          !remoteBackground &&
           config.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0
@@ -588,6 +603,7 @@ export async function runBirthdayRoleCycle(
               )
             : null;
         if (
+          !remoteBackground &&
           effectiveConfig.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0 &&
@@ -635,6 +651,7 @@ export async function runBirthdayRoleCycle(
                     day: registration.day,
                     age: celebration.age,
                     customBackground: customBackground?.content ?? null,
+                    remoteBackground,
                   });
                   files = [
                     {

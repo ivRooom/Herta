@@ -193,7 +193,7 @@ Role付与、Role解除、お祝い投稿には一意のidempotency keyを使用
 Plugin設定 `useIvrmApiSource`（既定OFF）をONにすると、workerは当日の対象者と配信設定を ivrm-web の署名付きAPI `POST /v2/herta/birthday`（quest-board連携と同じHMAC方式・同じenv `IVRM_WEB_API_BASE_URL` / `HERTA_MBTI_SYNC_SECRET` / `IVRM_INTEGRATION_GUILD_ID`）から取得します。
 
 - 日付判定はJST固定です。Web側がJST日付の月日で対象者を確定し（うるう日ポリシー適用込み）、Botは受け取った対象者へ配信します。年齢はAPIに含まれないため、この経路では `{age}` / `{ageText}` は空文字、カードの年齢表示はOFFになります（表示は名前＋月日のみ）。
-- 配信系設定（お祝い投稿Channel・誕生日Role・お祝いメッセージ・うるう日ポリシー・カードのON/OFF・プリセット・表示項目）はAPIの値が正本になり、この画面の同名設定より優先されます。カードのレイアウト細部（X/Y/サイズ）と背景アセットライブラリは引き続きStudioが正本です。Adminアップロードの背景URL（`card.backgroundUrl`）は未対応で、指定時はプリセット背景を使い警告ログを出します。
+- 配信系設定（お祝い投稿Channel・誕生日Role・お祝いメッセージ・うるう日ポリシー・カードのON/OFF・プリセット・表示項目）はAPIの値が正本になり、この画面の同名設定より優先されます。カードのレイアウト細部（X/Y/サイズ）と背景アセットライブラリは引き続きStudioが正本です。Adminアップロードの背景URL（`card.backgroundUrl`）が指定されている場合はそれを取得して背景に使い、Studio保存済み背景（custom/asset）より優先されます（背景の優先順位: API背景URL ＞ Studio保存済み背景 ＞ プリセット）。取得・検証に失敗した場合は警告ログを出して従来の背景解決へフォールバックします（S5c、#986）。
 - APIが `enabled=false` を返した場合は配信しません（前日以前のRole解除だけは通常どおり行います）。
 - API取得に失敗した（通信失敗・503・応答不正）場合は、従来の `birthday_registrations` とこの画面の設定へ自動で切り替えて配信を継続し、警告ログを出します（fail-soft）。
 - OFFの間は従来どおり動作し、`birthday_registrations` への登録・削除（`/birthday set` / `remove`、Studio管理）も従来どおり使えます。registrationsの読み取り専用化とコマンドの案内文差し替えは、切替ゲート（ivrm-web S6-2）と同時に別途行います。
