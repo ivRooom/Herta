@@ -23,6 +23,13 @@ export interface BirthdayCardRenderInput {
   day: number;
   age: number | null;
   customBackground?: Uint8Array | null;
+  /**
+   * Background bytes fetched from the ivrm-web API's
+   * card.backgroundUrl (#986 S5c), already download-validated by
+   * the caller. When present and composable they win over the
+   * Studio-stored custom background and the bundled preset.
+   */
+  remoteBackground?: Uint8Array | null;
 }
 
 export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promise<Buffer> {
@@ -59,6 +66,16 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
     left: 0,
     top: 0,
   });
+
+  if (input.remoteBackground && inspectBirthdayCardBackgroundImage(input.remoteBackground)) {
+    try {
+      return await composeBirthdayCard(Buffer.from(input.remoteBackground), layers);
+    } catch {
+      // A payload that passed validation can still fail to compose;
+      // continue to the Studio-stored background / preset chain
+      // instead of dropping the birthday card delivery.
+    }
+  }
 
   if (
     (input.config.birthdayCardBackgroundSource === 'custom' ||

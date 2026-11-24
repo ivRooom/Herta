@@ -35,9 +35,9 @@ export type IvrmBirthdayCardPreset = (typeof IVRM_BIRTHDAY_CARD_PRESETS)[number]
  * shape the API serves (ivrm-web birthday-core payload). Layout
  * details (element positions, background asset library) are not
  * part of it: those stay Studio-owned. `backgroundUrl` is an
- * Admin-uploaded image URL; the bot's card renderer only supports
- * Studio-stored backgrounds, so the plugin surfaces it but does
- * not apply it yet (see birthday-role.ts).
+ * Admin-uploaded image URL; the plugin fetches it once per cycle
+ * and uses it as the card background ahead of the Studio-stored
+ * backgrounds (see birthday-role.ts, #986 S5c).
  */
 export interface IvrmBirthdayCardSettings {
   enabled: boolean;
