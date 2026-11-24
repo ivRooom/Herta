@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@herta/db';
+import { isExcludedGameActivityName } from './activity-rules.js';
 
 export const COMMUNITY_ACTIVITY_METRICS = [
   'messages',
@@ -431,4 +432,65 @@ export async function finishGameSession(
 
 export async function resetGameSessions(prisma: PrismaClient, guildId: string): Promise<void> {
   await prisma.communityGameSession.deleteMany({ where: { guildId } });
+}
+
+/**
+ * 保存済みゲームセッションのゲーム名が現在の除外リストに一致する場合に、
+ * 加算せずセッションを破棄する(破棄したらtrueを返す)。
+ *
+ * セッションは開始時のゲーム名を保持するため、開始後にそのゲームが除外
+ * リストへ追加されると、presence側の名前解決では旧・新とも除外適用後の
+ * 名前へ解決されて「差分なし」と判定され、セッションが残り続ける。その
+ * まま終了すると finishGameSession が元のstartedAtから加算し、除外後の
+ * 時間まで数えてしまう。PresenceUpdateのたびに保存済みセッションを現在
+ * の除外リストと照合し、除外対象なら即座に破棄する。対象外のセッション
+ * には触れないため、計測中のゲームのstartedAtは保持される。
+ */
+export async function discardGameSessionIfExcluded(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  excludedGameActivityNames: readonly string[],
+): Promise<boolean> {
+  if (excludedGameActivityNames.length === 0) return false;
+  const session = await prisma.communityGameSession.findUnique({
+    where: { guildId_userId: { guildId, userId } },
+  });
+  if (!session) return false;
+  if (!isExcludedGameActivityName(session.activityName, excludedGameActivityNames)) return false;
+  // PresenceUpdateは同一ユーザーでも重なって処理されうるため、読み取った
+  // 行そのもの(ゲーム名+startedAtが一致する行)だけを条件付きで削除する。
+  // 並行処理が新しいセッションへ差し替えた場合は一致せず、そちらを消さない。
+  const deleted = await prisma.communityGameSession.deleteMany({
+    where: {
+      guildId,
+      userId,
+      activityName: session.activityName,
+      startedAt: session.startedAt,
+    },
+  });
+  return deleted.count > 0;
+}
+
+/**
+ * 計測対象ゲームが進行中なのにセッションが無い場合だけセッションを開始
+ * する(開始したらtrueを返す)。除外リストから外れたゲームがプレイ中の
+ * ままだと、旧・新presenceの名前解決が一致して差分なしと判定され、
+ * セッションが始まらないまま時間が計測されないため、その救済に使う。
+ * 既存セッション(同名・別名とも)には触れず、同名ならstartedAtを保持し、
+ * 別名なら通常の差分判定による終了・開始フローに委ねる。
+ */
+export async function ensureGameSessionStarted(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  activityName: string,
+  startedAt = new Date(),
+): Promise<boolean> {
+  const session = await prisma.communityGameSession.findUnique({
+    where: { guildId_userId: { guildId, userId } },
+  });
+  if (session) return false;
+  await startGameSession(prisma, guildId, userId, activityName, startedAt);
+  return true;
 }

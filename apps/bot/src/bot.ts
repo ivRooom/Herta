@@ -61,6 +61,8 @@ import {
 } from './health/guild-options.js';
 import type { DiscordHealthObservation } from './health/types.js';
 import {
+  discardGameSessionIfExcluded,
+  ensureGameSessionStarted,
   finishGameSession,
   finishPresenceSession,
   finishVoiceSession,
@@ -79,6 +81,7 @@ import {
   communityPointsRatesFromConfig,
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
+  selectPrimaryGameActivityName,
   shouldCountCommandPoints,
   shouldCountGamePresence,
   shouldCountLfgPoints,
@@ -179,12 +182,18 @@ function presenceStatus(presence: PresenceLike | null | undefined): 'offline' | 
   return 'online';
 }
 
-/** 「プレイ中」(ActivityType.Playing)のアクティビティ名を1つだけ返す。複数ある場合は先頭。 */
-function primaryGameActivityName(presence: PresenceLike | null | undefined): string | null {
-  const activity = presence?.activities?.find(
-    (candidate) => candidate.type === ActivityType.Playing,
-  );
-  return activity?.name?.trim() || null;
+/**
+ * 計測対象のゲーム名を1つだけ返す。activities全件を走査し、種別は
+ * Playing優先・Competingをフォールバックとし、除外リスト一致は次点へ進む
+ * (優先順位の根拠は @herta/shared の selectPrimaryGameActivityName を参照)。
+ * community_game_sessions が PK(guildId, userId) で1行しか持てないため、
+ * 同時複数ゲームでもセッションは1本に絞る。
+ */
+function primaryGameActivityName(
+  presence: PresenceLike | null | undefined,
+  excludedGameActivityNames: readonly string[],
+): string | null {
+  return selectPrimaryGameActivityName(presence?.activities, excludedGameActivityNames);
 }
 
 /**
@@ -387,7 +396,10 @@ export class HertaBot {
                 await startPresenceSession(this.prisma, guildId, presence.userId);
               }
               if (shouldCountGamePresence(activityRules, { roleIds })) {
-                const gameName = primaryGameActivityName(presence);
+                const gameName = primaryGameActivityName(
+                  presence,
+                  activityRules.excludedGameActivityNames,
+                );
                 if (gameName)
                   await startGameSession(this.prisma, guildId, presence.userId, gameName);
               }
@@ -805,11 +817,38 @@ export class HertaBot {
         }
 
         if (shouldCountGamePresence(activityRules, { roleIds })) {
-          const previousGame = primaryGameActivityName(oldPresence);
-          const currentGame = primaryGameActivityName(newPresence);
-          if (previousGame !== currentGame) {
+          // 除外リストは旧・新presenceの両方へ同じ設定で適用する。
+          const previousGame = primaryGameActivityName(
+            oldPresence,
+            activityRules.excludedGameActivityNames,
+          );
+          const currentGame = primaryGameActivityName(
+            newPresence,
+            activityRules.excludedGameActivityNames,
+          );
+          // 保存済みセッションは開始時のゲーム名を保持するため、開始後に
+          // そのゲームが除外リストへ追加されると、旧・新presenceは両方とも
+          // 除外適用後の名前へ解決されて差分なしと判定され、セッションが
+          // 残り続ける。そのまま終了すると除外後の時間まで加算されてしまう
+          // ため、保存済みセッションを現在の除外リストと照合し、除外対象
+          // なら加算せずに破棄する(計測対象ゲームが残っていない場合も含む)。
+          // 破棄した場合は現在のゲームのセッションをここから開始する。
+          const discardedExcludedSession = await discardGameSessionIfExcluded(
+            this.prisma,
+            guildId,
+            userId,
+            activityRules.excludedGameActivityNames,
+          );
+          if (discardedExcludedSession) {
+            if (currentGame) await startGameSession(this.prisma, guildId, userId, currentGame);
+          } else if (previousGame !== currentGame) {
             if (previousGame) await finishGameSession(this.prisma, guildId, userId);
             if (currentGame) await startGameSession(this.prisma, guildId, userId, currentGame);
+          } else if (currentGame) {
+            // 除外リストから外れたゲームがプレイ中のままの場合など、差分が
+            // 無くてもセッションが存在しないことがある。その場合は開始を
+            // 救済する(既存セッションがあればstartedAtごと保持される)。
+            await ensureGameSessionStarted(this.prisma, guildId, userId, currentGame);
           }
         }
       } catch (error) {

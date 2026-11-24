@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   communityPointsRatesFromConfig,
   evaluateMessageActivity,
+  GAME_ACTIVITY_TYPES,
   hasMessageCooldownElapsed,
+  isExcludedGameActivityName,
   normalizeActivityRulesConfig,
+  selectPrimaryGameActivityName,
   shouldCountCommandPoints,
   shouldCountGamePresence,
   shouldCountLfgPoints,
@@ -33,6 +36,7 @@ describe('Activity Rules v1.3', () => {
       countServerDeafenedVoice: true,
       countOnlinePresence: true,
       countGamePresence: true,
+      excludedGameActivityNames: ['Valorant Tracker App'],
       countCommandPoints: true,
       messagePointsPerMessage: 2,
       reactionPointsPerReaction: 1,
@@ -290,6 +294,102 @@ describe('Activity Rules v1.3', () => {
     expect(disabledRates.lfgPointsPerJoin).toBe(0);
     expect(disabledRates.teamSplitPointsPerJoin).toBe(0);
     expect(disabledRates.pollPointsPerVote).toBe(0);
+  });
+
+  it('ゲーム除外リストは未設定で既定値、明示した配列が正になる', () => {
+    // 既存Guild設定(キー無し)は既定の除外リストが適用される(後方互換の明記)
+    expect(normalizeActivityRulesConfig(undefined).excludedGameActivityNames).toEqual([
+      'Valorant Tracker App',
+    ]);
+    expect(normalizeActivityRulesConfig({}).excludedGameActivityNames).toEqual([
+      'Valorant Tracker App',
+    ]);
+    // 配列でない値は既定へフォールバックする
+    expect(
+      normalizeActivityRulesConfig({ excludedGameActivityNames: 'bad' }).excludedGameActivityNames,
+    ).toEqual(['Valorant Tracker App']);
+    // 空配列の明示は「除外なし」
+    expect(
+      normalizeActivityRulesConfig({ excludedGameActivityNames: [] }).excludedGameActivityNames,
+    ).toEqual([]);
+    // 前後空白の除去・空文字と非文字列の除外・大文字小文字を区別しない重複除去
+    expect(
+      normalizeActivityRulesConfig({
+        excludedGameActivityNames: ['  VS Code ', 'vs code', '', 42, 'Visual Studio Code'],
+      }).excludedGameActivityNames,
+    ).toEqual(['VS Code', 'Visual Studio Code']);
+  });
+
+  it('ゲーム除外判定は完全一致で大文字小文字と前後空白を区別しない', () => {
+    const excluded = ['Valorant Tracker App'];
+    expect(isExcludedGameActivityName('Valorant Tracker App', excluded)).toBe(true);
+    expect(isExcludedGameActivityName(' valorant tracker app ', excluded)).toBe(true);
+    expect(isExcludedGameActivityName('VALORANT', excluded)).toBe(false);
+    expect(isExcludedGameActivityName('Valorant Tracker App 2', excluded)).toBe(false);
+    expect(isExcludedGameActivityName('', excluded)).toBe(false);
+  });
+
+  it('ゲーム選択は全件走査しPlaying優先・Competingをフォールバックにする', () => {
+    const playing = GAME_ACTIVITY_TYPES.playing;
+    const competing = GAME_ACTIVITY_TYPES.competing;
+    // 従来挙動: 先頭のPlayingを返す(カスタムステータス等は無視)
+    expect(
+      selectPrimaryGameActivityName(
+        [
+          { type: 4, name: 'Custom Status' },
+          { type: playing, name: 'VALORANT' },
+          { type: playing, name: 'Overwatch' },
+        ],
+        [],
+      ),
+    ).toBe('VALORANT');
+    // Competingのみの場合はCompetingを対象にする
+    expect(selectPrimaryGameActivityName([{ type: competing, name: 'Arena' }], [])).toBe('Arena');
+    // 並び順が逆でもPlayingをCompetingより優先する
+    expect(
+      selectPrimaryGameActivityName(
+        [
+          { type: competing, name: 'Arena' },
+          { type: playing, name: 'VALORANT' },
+        ],
+        [],
+      ),
+    ).toBe('VALORANT');
+    // Spotify等のListeningは対象外、対象が無ければnull
+    expect(selectPrimaryGameActivityName([{ type: 2, name: 'Spotify' }], [])).toBeNull();
+    expect(selectPrimaryGameActivityName([], [])).toBeNull();
+    expect(selectPrimaryGameActivityName(undefined, [])).toBeNull();
+    expect(selectPrimaryGameActivityName([{ type: playing, name: '  ' }], [])).toBeNull();
+  });
+
+  it('ゲーム選択は除外リストに一致する候補をスキップして次点へ進む', () => {
+    const playing = GAME_ACTIVITY_TYPES.playing;
+    const competing = GAME_ACTIVITY_TYPES.competing;
+    const excluded = ['Valorant Tracker App'];
+    // 先頭が除外対象なら次のPlayingへ進む
+    expect(
+      selectPrimaryGameActivityName(
+        [
+          { type: playing, name: 'Valorant Tracker App' },
+          { type: playing, name: 'VALORANT' },
+        ],
+        excluded,
+      ),
+    ).toBe('VALORANT');
+    // Playingが全て除外ならCompetingへフォールバックする
+    expect(
+      selectPrimaryGameActivityName(
+        [
+          { type: playing, name: 'valorant tracker app' },
+          { type: competing, name: 'Arena' },
+        ],
+        excluded,
+      ),
+    ).toBe('Arena');
+    // 全候補が除外なら計測対象なし
+    expect(
+      selectPrimaryGameActivityName([{ type: playing, name: 'Valorant Tracker App' }], excluded),
+    ).toBeNull();
   });
 
   it('LFG・Team Split・Poll参加ポイントは設定OFFまたは除外Roleで無効化できる', () => {

@@ -1,6 +1,73 @@
 const DISCORD_ID_PATTERN = /^\d+$/;
 const DEFAULT_COMMAND_PREFIXES = ['/', '!'] as const;
 
+/**
+ * ゲーム集計の既定の除外リスト。ゲーム本体ではなくコンパニオン/トラッカー等の
+ * 周辺アプリが「プレイ中」として長時間表示され、統計を歪めることが実測で
+ * 確認されたものだけを入れる(S0実測: Valorant Tracker App が132.5hで全体6位)。
+ * Guild設定で excludedGameActivityNames を明示した場合はそちらが優先され、
+ * 空配列を明示すると除外なしになる。
+ */
+export const DEFAULT_EXCLUDED_GAME_ACTIVITY_NAMES: readonly string[] = ['Valorant Tracker App'];
+
+/** Discord ActivityType のうちゲーム集計の対象にする種別(数値はdiscord.jsのActivityTypeと一致)。 */
+export const GAME_ACTIVITY_TYPES = {
+  /** ActivityType.Playing */
+  playing: 0,
+  /** ActivityType.Competing */
+  competing: 5,
+} as const;
+
+/**
+ * ゲーム種別の優先順位。同時に複数ある場合はこの順で1件だけを計測対象にする。
+ * Playing を Competing より優先するのは、従来の「Playing先頭1件」という
+ * 挙動を変えずに Competing をフォールバックとして足すため。
+ */
+const GAME_ACTIVITY_TYPE_PRIORITY: readonly number[] = [
+  GAME_ACTIVITY_TYPES.playing,
+  GAME_ACTIVITY_TYPES.competing,
+];
+
+export interface GameActivityLike {
+  type: number;
+  name?: string | null;
+}
+
+/** 除外判定は前後空白を除いた完全一致(大文字小文字は区別しない)。 */
+export function isExcludedGameActivityName(
+  activityName: string,
+  excludedGameActivityNames: readonly string[],
+): boolean {
+  const normalized = activityName.trim().toLowerCase();
+  if (!normalized) return false;
+  return excludedGameActivityNames.some((excluded) => excluded.trim().toLowerCase() === normalized);
+}
+
+/**
+ * presenceのactivities全件から計測対象のゲーム名を1つだけ選ぶ。
+ *
+ * community_game_sessions は PK(guildId, userId) で進行中セッションを1行しか
+ * 持てないため、複数ゲームの同時計測(複数セッション化)はせず、優先順位で
+ * 1件に絞る。種別内ではactivitiesの並び順(従来どおり先頭優先)を維持し、
+ * 除外リストに一致するものはスキップして次点の候補へ進む。
+ */
+export function selectPrimaryGameActivityName(
+  activities: readonly GameActivityLike[] | null | undefined,
+  excludedGameActivityNames: readonly string[],
+): string | null {
+  if (!activities?.length) return null;
+  for (const type of GAME_ACTIVITY_TYPE_PRIORITY) {
+    for (const activity of activities) {
+      if (activity.type !== type) continue;
+      const name = activity.name?.trim() ?? '';
+      if (!name) continue;
+      if (isExcludedGameActivityName(name, excludedGameActivityNames)) continue;
+      return name;
+    }
+  }
+  return null;
+}
+
 export interface ActivityRulesConfig {
   excludedTextChannelIds: string[];
   excludedVoiceChannelIds: string[];
@@ -18,6 +85,7 @@ export interface ActivityRulesConfig {
   countServerDeafenedVoice: boolean;
   countOnlinePresence: boolean;
   countGamePresence: boolean;
+  excludedGameActivityNames: string[];
   countCommandPoints: boolean;
   messagePointsPerMessage: number;
   reactionPointsPerReaction: number;
@@ -140,6 +208,7 @@ export function normalizeActivityRulesConfig(value: unknown): ActivityRulesConfi
       source.countOnlinePresence === undefined ? true : source.countOnlinePresence === true,
     countGamePresence:
       source.countGamePresence === undefined ? true : source.countGamePresence === true,
+    excludedGameActivityNames: normalizedGameActivityNames(source.excludedGameActivityNames),
     countCommandPoints:
       source.countCommandPoints === undefined ? true : source.countCommandPoints === true,
     messagePointsPerMessage: clamp(toInteger(source.messagePointsPerMessage, 2), 0, 20),
@@ -337,6 +406,29 @@ function normalizedIds(value: unknown, maxItems: number): string[] {
       ),
     ),
   ].slice(0, maxItems);
+}
+
+/**
+ * 除外リストの正規化。未設定(undefined)や配列でない値のときは既定リストを
+ * 適用する(後方互換: 既存Guild設定にはこのキーが無いため)。配列が明示された
+ * 場合はその内容を正とし、空配列なら除外なしになる。ゲーム名はセッション側の
+ * 保存上限(128文字)に合わせ、重複は大文字小文字を区別せず先勝ちで除く。
+ */
+function normalizedGameActivityNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...DEFAULT_EXCLUDED_GAME_ACTIVITY_NAMES];
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const name = item.trim().slice(0, 128);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+    if (names.length >= 50) break;
+  }
+  return names;
 }
 
 function normalizedCommandPrefixes(value: unknown): string[] {
