@@ -12,6 +12,15 @@ import { Pool } from 'pg';
  * 送信と sent 化の間にクラッシュすると再送され得る (at-least-once)。
  * 冪等キーは outbox.id (= 解除記録 ID) で、payload_hash (sha256) を
  * 検証してから送信する。
+ *
+ * 通知の振り分け (ivrm-web #1589 / Herta #964): Discord へ送るのは
+ * achievement_notification_settings.discord_min_rank (既定 master)
+ * 以上のランクだけ。それ未満は Member ポータルの Web 通知ボックスが
+ * 受け皿で、outbox には route='web' / status='delivered' で積まれる
+ * ため、この Worker の claim 対象にはならない。route が NULL の行
+ * (振り分け導入前の旧行) は claim 時に定義の rank と設定で判定する。
+ * 判定に必要な列・テーブルが無い環境 (migration 0057 未適用) では
+ * claim クエリ自体が失敗し、cycle は何も送らずに終わる (fail-closed)。
  */
 
 const DEFAULT_SCAN_INTERVAL_SECONDS = 60;
@@ -114,6 +123,37 @@ export function parseAchievementPayload(payloadJson: string): AchievementPayload
 export function verifyAchievementPayloadHash(payloadJson: string, payloadHash: string): boolean {
   const digest = createHash('sha256').update(payloadJson, 'utf8').digest('hex');
   return digest === payloadHash;
+}
+
+/** ランクの順序 (ivrm-web API 側の ACHIEVEMENT_RANK_ORDER と一致させる)。 */
+export const ACHIEVEMENT_RANK_ORDER: Record<string, number> = {
+  bronze: 0,
+  silver: 1,
+  gold: 2,
+  master: 3,
+  diamond: 4,
+  legend: 5,
+};
+
+/** Discord へ送る最低ランクの既定値 (設定行が無い場合)。 */
+export const DEFAULT_DISCORD_MIN_RANK = 'master';
+
+/**
+ * そのランクの解除を Discord へ送るか。未知のランクは送らない
+ * (fail-quiet)。minRank が未知・未設定なら既定の master とみなす。
+ * claim クエリ内の CASE 式はこの関数と一致させること。
+ */
+export function isDiscordRoutedRank(
+  rank: string | null | undefined,
+  minRank: string | null | undefined,
+): boolean {
+  const rankOrder = rank != null ? ACHIEVEMENT_RANK_ORDER[rank] : undefined;
+  if (rankOrder === undefined) return false;
+  const minOrder =
+    minRank != null
+      ? (ACHIEVEMENT_RANK_ORDER[minRank] ?? ACHIEVEMENT_RANK_ORDER[DEFAULT_DISCORD_MIN_RANK])
+      : ACHIEVEMENT_RANK_ORDER[DEFAULT_DISCORD_MIN_RANK];
+  return rankOrder >= (minOrder as number);
 }
 
 const TIER_PRESENTATION: Record<string, { label: string; emoji: string; color: number }> = {
@@ -404,6 +444,10 @@ export function createAchievementNotificationStore(
   const pool = new Pool({ connectionString, max: 2 });
   return {
     async listPending(limit: number): Promise<AchievementOutboxRow[]> {
+      // Discord 行きだけを claim する (#964)。route が確定している行は
+      // それに従い、NULL の行は定義 rank と設定 (既定 master) で判定する。
+      // ランク順序の CASE は ACHIEVEMENT_RANK_ORDER と一致させること
+      // (未知ランクは -1 = web 行き、未知の最低ランクは master 扱い)。
       const result = await pool.query<{
         id: string;
         user_id: string;
@@ -412,10 +456,27 @@ export function createAchievementNotificationStore(
         payload_hash: string;
         attempts: number;
       }>(
-        `SELECT id, user_id, achievement_id, payload_json, payload_hash, attempts
-           FROM ivrm_api.achievement_notification_outbox
-          WHERE status = 'pending'
-          ORDER BY created_at ASC
+        `SELECT o.id, o.user_id, o.achievement_id, o.payload_json, o.payload_hash, o.attempts
+           FROM ivrm_api.achievement_notification_outbox o
+           JOIN ivrm_api.achievement_definitions d ON d.id = o.achievement_id
+           LEFT JOIN ivrm_api.achievement_notification_settings s ON s.id = 'default'
+          WHERE o.status = 'pending'
+            AND COALESCE(
+                  o.route,
+                  CASE WHEN
+                    CASE d."rank"
+                      WHEN 'bronze' THEN 0 WHEN 'silver' THEN 1 WHEN 'gold' THEN 2
+                      WHEN 'master' THEN 3 WHEN 'diamond' THEN 4 WHEN 'legend' THEN 5
+                      ELSE -1
+                    END >=
+                    CASE COALESCE(s.discord_min_rank, 'master')
+                      WHEN 'bronze' THEN 0 WHEN 'silver' THEN 1 WHEN 'gold' THEN 2
+                      WHEN 'master' THEN 3 WHEN 'diamond' THEN 4 WHEN 'legend' THEN 5
+                      ELSE 3
+                    END
+                  THEN 'discord' ELSE 'web' END
+                ) = 'discord'
+          ORDER BY o.created_at ASC
           LIMIT $1`,
         [limit],
       );
