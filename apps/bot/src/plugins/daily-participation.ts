@@ -481,6 +481,7 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
       ? `\n💡 解説：${Array.from(entry.explanation).slice(0, 500).join('')}`
       : '';
     const content = verdict + stats + explanation;
+    let reviewSent = false;
     if (process.env.DAILY_QUESTION_CARD_ENABLED === 'true') {
       try {
         const card = await renderDailyQuestionCard({
@@ -509,40 +510,62 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
             ...(heroFile ? [heroFile] : []),
           ],
         });
-        continue;
+        reviewSent = true;
       } catch {
         // Card rendering is presentation only; fall back to the Embed below.
       }
     }
-    const fallbackEmbed = new EmbedBuilder()
-      .setColor(0xb9a2ff)
-      .setTitle(heading)
-      .setDescription(question.prompt);
-    if (heroName) fallbackEmbed.setImage(`attachment://${heroName}`);
-    await interaction.followUp({
-      flags: MessageFlags.Ephemeral,
-      allowedMentions: { parse: [] },
-      content,
-      ...(heroFile ? { files: [heroFile] } : {}),
-      embeds: [
-        fallbackEmbed.addFields(
-          question.format === 'free_text' || !question.options.length
-            ? [
-                {
-                  name: 'あなたの回答',
-                  value: (userResponse?.text ?? '（未回答）').slice(0, 1024),
-                },
-              ]
-            : question.options.map((o, i) => ({
-                name:
-                  `選択肢 ${i + 1}` +
-                  (result.selectedOptionIndex === i ? '（あなたの回答）' : '') +
-                  (result.correctOptionIndex === i ? '（正解）' : ''),
-                value: o.label,
-              })),
-        ),
-      ],
-    });
+    if (!reviewSent) {
+      const fallbackEmbed = new EmbedBuilder()
+        .setColor(0xb9a2ff)
+        .setTitle(heading)
+        .setDescription(question.prompt);
+      if (heroName) fallbackEmbed.setImage(`attachment://${heroName}`);
+      await interaction.followUp({
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] },
+        content,
+        ...(heroFile ? { files: [heroFile] } : {}),
+        embeds: [
+          fallbackEmbed.addFields(
+            question.format === 'free_text' || !question.options.length
+              ? [
+                  {
+                    name: 'あなたの回答',
+                    value: (userResponse?.text ?? '（未回答）').slice(0, 1024),
+                  },
+                ]
+              : question.options.map((o, i) => ({
+                  name:
+                    `選択肢 ${i + 1}` +
+                    (result.selectedOptionIndex === i ? '（あなたの回答）' : '') +
+                    (result.correctOptionIndex === i ? '（正解）' : ''),
+                  value: o.label,
+                })),
+          ),
+        ],
+      });
+    }
+    // Explanation attachments (#988) follow the review message, fetched the
+    // same way as the question media above. A failed fetch drops only that
+    // attachment; the answer check itself is already shown.
+    for (const media of entry.explanationMedia ?? []) {
+      try {
+        const buffer = await fetchQuestionMedia(ctx, interaction.user.id, media);
+        await interaction.followUp({
+          flags: MessageFlags.Ephemeral,
+          allowedMentions: { parse: [] },
+          content: '解説の素材',
+          files: [
+            new AttachmentBuilder(buffer, {
+              name: `${media.id}.${media.kind === 'audio' ? 'wav' : 'webp'}`,
+            }),
+          ],
+        });
+      } catch {
+        // Skip this attachment; the review itself still stands.
+      }
+    }
   }
 }
 
