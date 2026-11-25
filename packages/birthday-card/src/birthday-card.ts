@@ -112,10 +112,27 @@ function composeBirthdayCard(background: Buffer, layers: OverlayOptions[]): Prom
 }
 
 async function readPresetBackground(presetAssetFile: string): Promise<Buffer | null> {
-  const backgroundPath = fileURLToPath(
-    new URL(`../../assets/birthday-card-presets/${presetAssetFile}`, import.meta.url),
-  );
-  return readFile(backgroundPath).catch(() => null);
+  for (const candidate of presetBackgroundCandidates(presetAssetFile)) {
+    const bytes = await readFile(candidate).catch(() => null);
+    if (bytes) return bytes;
+  }
+  return null;
+}
+
+/**
+ * Preset asset lookup order. The canonical home is this package's
+ * own assets directory; until the bundled WebP files are relocated
+ * there, the byte-identical copies bundled with the bot and Studio
+ * (kept identical by the preset-assets test) are used so the move
+ * of the renderer into this package changes no rendered output.
+ */
+function presetBackgroundCandidates(presetAssetFile: string): string[] {
+  const candidates = [
+    `../assets/birthday-card-presets/${presetAssetFile}`,
+    `../../../apps/bot/assets/birthday-card-presets/${presetAssetFile}`,
+    `../../../apps/studio/public/birthday-card-presets/${presetAssetFile}`,
+  ];
+  return candidates.map((relative) => fileURLToPath(new URL(relative, import.meta.url)));
 }
 
 function createSafeFallbackBackground(): Promise<Buffer> {
