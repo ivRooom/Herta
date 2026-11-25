@@ -5,6 +5,8 @@ import { lfgManifest } from '@herta/plugin-lfg/manifest';
 import { moderationManifest } from '@herta/plugin-moderation/manifest';
 import { quoteManifest } from '@herta/plugin-quote/manifest';
 import { teamSplitManifest } from '@herta/plugin-team-split/manifest';
+import { ticketsManifest } from './manifests/tickets.js';
+export { ticketsManifest } from './manifests/tickets.js';
 import type { PluginManifest } from '@herta/shared';
 import { achievementsManifest } from './manifests/achievements.js';
 import { activityLogManifest } from './manifests/activity-log.js';
@@ -180,6 +182,7 @@ const rawPluginManifests: PluginManifest[] = [
   suggestionManifest,
   serverStatsManifest,
   teamSplitManifest,
+  ticketsManifest,
   valorantManifest,
   vcRecapManifest,
   xpLevelManifest,
