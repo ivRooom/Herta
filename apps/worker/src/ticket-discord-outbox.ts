@@ -19,6 +19,9 @@ import { Pool } from 'pg';
  * 再送時の二重投稿を避けるため、投稿メッセージの Embed footer に
  * `ticket-outbox:<outboxId>` マーカーを埋め込み、送信前にスレッドの
  * 直近メッセージからマーカーを探す。見つかれば投稿済みとして ack する。
+ * 誤認防止のため、照合は Bot 本人 (この Worker の Bot Token のユーザー)
+ * の投稿に限定し、マーカーは ID 境界を伴う完全一致でのみ一致させる
+ * (`ticket-outbox:7` が `ticket-outbox:70` に一致したりしない)。
  * ただし取得範囲 (直近20件) を超えた再送では検出できない制約がある。
  *
  * 内部メモは Web 側でそもそも outbox に積まれない (S1)。それでも payload に
@@ -213,15 +216,41 @@ export function classifyDiscordPostStatus(status: number): DiscordPostClassifica
   return 'retryable';
 }
 
-/** 直近メッセージ群からマーカー付きの既送メッセージを探す。 */
-export function findDeliveredMessageId(messages: unknown, outboxId: string): string | null {
-  if (!Array.isArray(messages)) return null;
+/**
+ * テキスト内にマーカーが ID 境界を伴って現れるか。
+ * 単なる前方一致では `ticket-outbox:7` が `ticket-outbox:70` にも
+ * 一致してしまうため、マーカーの前後が ID を構成する文字
+ * ([0-9A-Za-z_-]) でないことを境界として要求する。
+ */
+export function textContainsOutboxMarker(text: string, outboxId: string): boolean {
   const marker = ticketOutboxMarker(outboxId);
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^0-9A-Za-z_-])${escaped}(?![0-9A-Za-z_-])`).test(text);
+}
+
+/**
+ * 直近メッセージ群からマーカー付きの既送メッセージを探す。
+ * 他者の投稿に同じ文字列があっても配送済みとはみなさないため、
+ * 投稿者 (author.id) が Bot 本人と一致するメッセージだけを対象にする。
+ * Bot 本人の ID が分からない場合は安全側に倒して null (未配送扱い)。
+ */
+export function findDeliveredMessageId(
+  messages: unknown,
+  outboxId: string,
+  botUserId: string | null | undefined,
+): string | null {
+  if (!Array.isArray(messages)) return null;
+  if (!botUserId) return null;
   for (const message of messages) {
     if (!isRecord(message)) continue;
     const id = message['id'];
     if (typeof id !== 'string') continue;
-    if (typeof message['content'] === 'string' && message['content'].includes(marker)) {
+    const author = message['author'];
+    if (!isRecord(author) || author['id'] !== botUserId) continue;
+    if (
+      typeof message['content'] === 'string' &&
+      textContainsOutboxMarker(message['content'], outboxId)
+    ) {
       return id;
     }
     const embeds = message['embeds'];
@@ -232,13 +261,32 @@ export function findDeliveredMessageId(messages: unknown, outboxId: string): str
       if (
         isRecord(footer) &&
         typeof footer['text'] === 'string' &&
-        footer['text'].includes(marker)
+        textContainsOutboxMarker(footer['text'], outboxId)
       ) {
         return id;
       }
     }
   }
   return null;
+}
+
+/** Bot Token のユーザー (Bot 本人) の ID を Discord REST から取得する。 */
+export async function fetchDiscordBotUserId(input: {
+  fetchImpl: typeof fetch;
+  token: string;
+}): Promise<string> {
+  const response = await input.fetchImpl(`${DISCORD_API_BASE_URL}/users/@me`, {
+    headers: { Authorization: `Bot ${input.token}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`discord_bot_user_failed_${response.status}`);
+  }
+  const user = (await response.json()) as { id?: unknown };
+  if (typeof user.id !== 'string' || !SNOWFLAKE_PATTERN.test(user.id)) {
+    throw new Error('discord_bot_user_missing_id');
+  }
+  return user.id;
 }
 
 export function normalizeTicketScanIntervalSeconds(value: number | undefined): number {
@@ -319,6 +367,16 @@ export async function startTicketDiscordPollerRuntime(
   let timer: NodeJS.Timeout | undefined;
   let activeCycle: Promise<void> | null = null;
   let closed = false;
+  let cachedBotUserId: string | null = null;
+
+  const resolveBotUserId = async (): Promise<string> => {
+    if (cachedBotUserId) return cachedBotUserId;
+    cachedBotUserId = await fetchDiscordBotUserId({
+      fetchImpl,
+      token: options.discordBotToken,
+    });
+    return cachedBotUserId;
+  };
 
   const deliverRow = async (row: TicketOutboxRow): Promise<void> => {
     // 内部メモは積まれていない前提だが、混入していたら絶対に送らない。
@@ -352,13 +410,15 @@ export async function startTicketDiscordPollerRuntime(
     const threadId = parsed.payload.discordThreadId;
     try {
       // 再送時の二重投稿防止: 直近メッセージにマーカーがあれば投稿済み。
-      // 履歴取得に失敗した場合は送らずに再試行へ倒す (二重投稿回避を優先)。
+      // 履歴取得や Bot 本人 ID の取得に失敗した場合は送らずに再試行へ倒す
+      // (二重投稿回避を優先)。
+      const botUserId = await resolveBotUserId();
       const history = await fetchRecentThreadMessages({
         fetchImpl,
         token: options.discordBotToken,
         threadId,
       });
-      const alreadyDeliveredId = findDeliveredMessageId(history, row.id);
+      const alreadyDeliveredId = findDeliveredMessageId(history, row.id, botUserId);
       if (alreadyDeliveredId) {
         await options.store.ackSent(row.id, alreadyDeliveredId);
         return;
@@ -406,7 +466,15 @@ export async function startTicketDiscordPollerRuntime(
     return activeCycle;
   };
 
-  await scanNow();
+  // 初回スキャンが失敗しても Poller 自体は生かし、タイマーで再試行する。
+  try {
+    await scanNow();
+  } catch (error) {
+    options.logger.error(
+      { errorName: resolveErrorName(error) },
+      'チケット outbox Poller の初回スキャンに失敗しました。タイマーで再試行します',
+    );
+  }
   timer = setInterval(() => {
     void scanNow().catch((error) => {
       options.logger.error(

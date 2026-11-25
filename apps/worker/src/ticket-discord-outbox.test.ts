@@ -3,12 +3,19 @@ import test from 'node:test';
 import {
   buildTicketDiscordMessage,
   classifyDiscordPostStatus,
+  fetchDiscordBotUserId,
   findDeliveredMessageId,
   normalizeTicketScanIntervalSeconds,
   parseTicketOutboxPayload,
   payloadDeclaresInternal,
+  startTicketDiscordPollerRuntime,
+  textContainsOutboxMarker,
   ticketOutboxMarker,
+  type TicketDiscordOutboxStore,
 } from './ticket-discord-outbox.js';
+
+const BOT_USER_ID = '100000000000000001';
+const OTHER_USER_ID = '100000000000000009';
 
 const THREAD_ID = '200000000000000002';
 const MESSAGE_PAYLOAD = {
@@ -116,21 +123,117 @@ test('Discord 応答の分類', () => {
   assert.equal(classifyDiscordPostStatus(503), 'retryable');
 });
 
-test('二重投稿検出: footer マーカーと content マーカー', () => {
+test('二重投稿検出: Bot 本人の footer マーカーと content マーカー', () => {
   const messages = [
-    { id: '300000000000000001', content: '通常の投稿', embeds: [] },
+    { id: '300000000000000001', author: { id: BOT_USER_ID }, content: '通常の投稿', embeds: [] },
     {
       id: '300000000000000002',
+      author: { id: BOT_USER_ID },
       content: '',
       embeds: [{ footer: { text: ticketOutboxMarker('7') } }],
     },
-    { id: '300000000000000003', content: `再送 ${ticketOutboxMarker('8')}`, embeds: [] },
+    {
+      id: '300000000000000003',
+      author: { id: BOT_USER_ID },
+      content: `再送 ${ticketOutboxMarker('8')}`,
+      embeds: [],
+    },
   ];
-  assert.equal(findDeliveredMessageId(messages, '7'), '300000000000000002');
-  assert.equal(findDeliveredMessageId(messages, '8'), '300000000000000003');
-  assert.equal(findDeliveredMessageId(messages, '9'), null);
-  assert.equal(findDeliveredMessageId('not-an-array', '7'), null);
-  assert.equal(findDeliveredMessageId([], '7'), null);
+  assert.equal(findDeliveredMessageId(messages, '7', BOT_USER_ID), '300000000000000002');
+  assert.equal(findDeliveredMessageId(messages, '8', BOT_USER_ID), '300000000000000003');
+  assert.equal(findDeliveredMessageId(messages, '9', BOT_USER_ID), null);
+  assert.equal(findDeliveredMessageId('not-an-array', '7', BOT_USER_ID), null);
+  assert.equal(findDeliveredMessageId([], '7', BOT_USER_ID), null);
+});
+
+test('二重投稿検出: ID の前方一致では誤認しない (ticket-outbox:7 と 70)', () => {
+  assert.equal(textContainsOutboxMarker('ticket-outbox:70', '7'), false);
+  assert.equal(textContainsOutboxMarker('ticket-outbox:7', '7'), true);
+  assert.equal(textContainsOutboxMarker('再送 ticket-outbox:7 です', '7'), true);
+  const messages = [
+    {
+      id: '300000000000000010',
+      author: { id: BOT_USER_ID },
+      content: '',
+      embeds: [{ footer: { text: ticketOutboxMarker('70') } }],
+    },
+    {
+      id: '300000000000000011',
+      author: { id: BOT_USER_ID },
+      content: `転記 ${ticketOutboxMarker('70')}`,
+      embeds: [],
+    },
+  ];
+  assert.equal(findDeliveredMessageId(messages, '7', BOT_USER_ID), null);
+  assert.equal(findDeliveredMessageId(messages, '70', BOT_USER_ID), '300000000000000010');
+});
+
+test('二重投稿検出: 他者の投稿や Bot ID 不明では配送済みにしない', () => {
+  const messages = [
+    {
+      id: '300000000000000020',
+      author: { id: OTHER_USER_ID },
+      content: '',
+      embeds: [{ footer: { text: ticketOutboxMarker('7') } }],
+    },
+    {
+      id: '300000000000000021',
+      content: `引用 ${ticketOutboxMarker('7')}`,
+      embeds: [],
+    },
+  ];
+  assert.equal(findDeliveredMessageId(messages, '7', BOT_USER_ID), null);
+  assert.equal(findDeliveredMessageId(messages, '7', null), null);
+  assert.equal(findDeliveredMessageId(messages, '7', undefined), null);
+});
+
+test('Bot 本人 ID を /users/@me から取得する', async () => {
+  const fetchImpl = (async (url: string | URL | Request) => {
+    assert.match(String(url), /\/users\/@me$/);
+    return new Response(JSON.stringify({ id: BOT_USER_ID }), { status: 200 });
+  }) as typeof fetch;
+  assert.equal(await fetchDiscordBotUserId({ fetchImpl, token: 'token' }), BOT_USER_ID);
+  const failingFetch = (async () =>
+    new Response('nope', { status: 401 })) as unknown as typeof fetch;
+  await assert.rejects(
+    fetchDiscordBotUserId({ fetchImpl: failingFetch, token: 'token' }),
+    /discord_bot_user_failed_401/,
+  );
+});
+
+test('初回スキャンが失敗してもタイマーが設置され再試行される', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  try {
+    let claimCalls = 0;
+    const store: TicketDiscordOutboxStore = {
+      async claim() {
+        claimCalls += 1;
+        if (claimCalls === 1) throw new Error('claim_failed_once');
+        return [];
+      },
+      async ackSent() {},
+      async ackFailed() {},
+      async close() {},
+    };
+    const logger = {
+      error() {},
+      warn() {},
+      info() {},
+      debug() {},
+    };
+    const runtime = await startTicketDiscordPollerRuntime({
+      logger: logger as never,
+      store,
+      discordBotToken: 'token',
+      scanIntervalSeconds: 15,
+    });
+    assert.equal(claimCalls, 1);
+    t.mock.timers.tick(15_000);
+    assert.equal(claimCalls, 2);
+    await runtime.close();
+  } finally {
+    t.mock.timers.reset();
+  }
 });
 
 test('スキャン間隔の正規化 (既定60秒、15〜600秒)', () => {
