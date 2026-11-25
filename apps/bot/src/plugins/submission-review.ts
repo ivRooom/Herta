@@ -26,7 +26,9 @@ import { memberRoleIds } from './minecraft-status.js';
  * - 承認は Studio 設定の専用ロールをハンドラ内でも再検証 (fail-closed)
  * - 差し戻しは理由モーダル必須、結果は申請者へ DM (fail-soft)
  * - 通知の dedup は運営チャンネルの Bot 自身の投稿を走査して
- *   「申請キー -> 最終通知時刻」を復元する (DB に通知履歴を持たない)
+ *   「申請キー -> 最終通知時刻」を復元する (DB に通知履歴を持たない)。
+ *   申請キーは通知ボタン (Bot 生成の customId) からだけ読み、
+ *   Embed の表示文面 (問題文・解説など) は読まない
  *
  * 審査の実処理は ivrm-web の Review Bot API (S1, PR #1830) が正本。
  * 署名形式は herta-review-service-auth.ts と対になる
@@ -573,15 +575,19 @@ export function buildSubmissionReviewEmbed(
     }
     embed.addFields({
       name: '出典',
-      value: item.today.sourceUrl
-        ? item.today.sourceLabel
-          ? `${item.today.sourceUrl}（${truncate(item.today.sourceLabel, 100)}）`
-          : item.today.sourceUrl
-        : '出典URLなし',
+      value: truncate(
+        item.today.sourceUrl
+          ? item.today.sourceLabel
+            ? `${item.today.sourceUrl}（${truncate(item.today.sourceLabel, 100)}）`
+            : item.today.sourceUrl
+          : '出典URLなし',
+        1024,
+      ),
     });
   }
 
-  // dedup (チャンネル履歴走査) の前提として、申請IDと種別キーを必ず含める
+  // 申請IDと種別キーは人間向けの表示用。dedup は通知ボタンの customId
+  // から読むため、表示文面の有無に依存しない
   embed.addFields(
     { name: '申請者', value: authorLabel(item), inline: true },
     {
@@ -791,6 +797,10 @@ export interface SubmissionReviewChannelMessage {
     footer?: { text?: string };
     fields?: { name?: string; value?: string }[];
   }[];
+  /** 通知ボタン (Bot 生成の customId `dqr:<id>` / `thr:<id>` を持つ行) */
+  components?: {
+    components?: { customId?: string; custom_id?: string }[];
+  }[];
 }
 
 interface SubmissionReviewChannel {
@@ -815,6 +825,9 @@ interface SubmissionReviewGuild {
   roles: {
     fetch(roleId: string): Promise<{ members?: { keys(): Iterable<string> } } | null>;
   };
+  members?: {
+    fetch(userId: string): Promise<{ roles?: unknown } | null>;
+  };
 }
 
 interface SubmissionReviewClient {
@@ -836,10 +849,19 @@ export interface SubmissionReviewComponentInteraction {
   user?: { id?: string };
   member?: unknown;
   fields?: { getTextInputValue(name: string): string };
+  deferred?: boolean;
+  replied?: boolean;
+  /** モーダルを開いた元メッセージ (ボタン経由の場合のみ存在) */
+  message?: { edit(options: SubmissionReviewEditOptions): Promise<unknown> } | null;
   isButton(): boolean;
   isModalSubmit(): boolean;
+  isFromMessage?(): boolean;
   reply(options: SubmissionReviewReplyOptions): Promise<unknown>;
   update(options: SubmissionReviewEditOptions): Promise<unknown>;
+  deferReply(options?: { flags?: number }): Promise<unknown>;
+  deferUpdate(): Promise<unknown>;
+  editReply(options: SubmissionReviewEditOptions): Promise<unknown>;
+  followUp(options: SubmissionReviewReplyOptions): Promise<unknown>;
   showModal(modal: APIModalInteractionResponseCallbackData): Promise<unknown>;
 }
 
@@ -852,6 +874,44 @@ async function componentEphemeralReply(
     flags: EPHEMERAL_FLAG,
     allowedMentions: { parse: [] },
   });
+}
+
+/**
+ * defer 後の審査者への返信。deferReply なら editReply、deferUpdate なら
+ * followUp (ephemeral) で返す。deferUpdate 後に editReply でエラーを返すと
+ * 元メッセージがエラー文面で上書きされてしまうため使い分ける。
+ */
+async function componentDeferredReply(
+  interaction: SubmissionReviewComponentInteraction,
+  content: string,
+  deferred: 'reply' | 'update',
+): Promise<void> {
+  if (deferred === 'update') {
+    await interaction.followUp({
+      content,
+      flags: EPHEMERAL_FLAG,
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+  await interaction.editReply({ content, allowedMentions: { parse: [] } });
+}
+
+/** defer 後の審査者への返信 (Embed 付き)。使い分けは componentDeferredReply と同じ */
+async function componentDeferredPayloadReply(
+  interaction: SubmissionReviewComponentInteraction,
+  payload: SubmissionReviewEditOptions,
+  deferred: 'reply' | 'update',
+): Promise<void> {
+  if (deferred === 'update') {
+    await interaction.followUp({
+      ...payload,
+      flags: EPHEMERAL_FLAG,
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+  await interaction.editReply(payload);
 }
 
 async function notifySubmissionReviewResult(
@@ -883,6 +943,29 @@ const SUBMISSION_REVIEW_MAX_OPERATOR_CANDIDATES = 5;
 const notificationTimers = new Map<string, NodeJS.Timeout>();
 const notificationRuns = new Map<string, Promise<void>>();
 const notificationOperators = new Map<string, string>();
+/** 実行者候補の開始位置 (ギルドごと)。全員失敗したサイクルで進める */
+const notificationOperatorOffsets = new Map<string, number>();
+/** ワーカーの世代 (ギルドごと)。停止で進み、旧世代のサイクルは送信を開始しない */
+const notificationGenerations = new Map<string, number>();
+/**
+ * 送信済み時刻のプロセス内記録 (`guild:channel:key -> ms`)。
+ * 履歴走査 (100件) を補完し、通知が100件より後ろへ流れた後も24時間
+ * 待機を守る。再起動後は履歴走査から復元する (DB に通知履歴は持たない)。
+ */
+const notificationSentTimes = new Map<string, number>();
+
+function submissionReviewSentTimeKey(guildId: string, channelId: string, key: string): string {
+  return `${guildId}:${channelId}:${key}`;
+}
+
+function recordSubmissionReviewSentTime(
+  guildId: string,
+  channelId: string,
+  key: string,
+  sentMs: number,
+): void {
+  notificationSentTimes.set(submissionReviewSentTimeKey(guildId, channelId, key), sentMs);
+}
 
 /** 承認ロールを確認できた運営者の Discord ID をギルドごとに覚える */
 export function rememberSubmissionReviewOperator(guildId: string, discordUserId: string): void {
@@ -891,13 +974,14 @@ export function rememberSubmissionReviewOperator(guildId: string, discordUserId:
   }
 }
 
-const NOTIFIED_ID_PATTERN = /申請ID:\s*([A-Za-z0-9_-]+)/g;
-const NOTIFIED_KEY_PATTERN = /種別キー:\s*(dqr:[A-Za-z0-9_-]+|thr:[A-Za-z0-9_-]+)/g;
-
 /**
  * Bot 自身の投稿から「申請キー -> 最終通知時刻 (ms)」を復元する。
- * 通知 Embed のフィールドに「申請ID: <id>」と「種別キー: dqr:<id>」が
- * 入っていることが前提 (種別キーが取れる場合はそちらを優先する)。
+ * 申請キーは通知ボタン (Bot 生成の customId `dqr:<id>` / `thr:<id>`) から
+ * だけ読む。Embed の表示文面 (問題文・解説・出典など) には申請内容が
+ * そのまま入るため、そこに別申請のキーそっくりの文字列が含まれると
+ * 誤って他申請の通知済みとして記録してしまう。表示文面は読まない。
+ * 処理済みでボタンが外れた投稿はキーを持たないが、処理済みの申請は
+ * pending から消えるため dedup には不要。
  */
 export function collectSubmissionNotificationTimes(
   messages: Iterable<SubmissionReviewChannelMessage>,
@@ -912,25 +996,13 @@ export function collectSubmissionNotificationTimes(
     if (typeof message.createdTimestamp !== 'number') continue;
     const authorId = message.author?.id ?? message.authorId;
     if (botUserId && authorId !== botUserId) continue;
-    const texts: string[] = [];
-    if (message.content) texts.push(message.content);
-    for (const embed of message.embeds ?? []) {
-      if (embed.description) texts.push(embed.description);
-      if (embed.footer?.text) texts.push(embed.footer.text);
-      for (const field of embed.fields ?? []) {
-        if (field.name) texts.push(field.name);
-        if (field.value) texts.push(field.value);
-      }
-    }
-    for (const text of texts) {
-      const keys = [...text.matchAll(NOTIFIED_KEY_PATTERN)].map((match) => match[1]!);
-      if (keys.length > 0) {
-        for (const key of keys) record(key, message.createdTimestamp);
-        continue;
-      }
-      // 種別キーが無い旧形式向けのフォールバック (ID のみ。種別は特定できない)
-      for (const match of text.matchAll(NOTIFIED_ID_PATTERN)) {
-        if (match[1]) record(match[1], message.createdTimestamp);
+    for (const row of message.components ?? []) {
+      for (const component of row.components ?? []) {
+        const customId = component.customId ?? component.custom_id;
+        if (!customId) continue;
+        const parsed = parseSubmissionReviewComponentId(customId);
+        if (!parsed) continue;
+        record(submissionReviewKey(parsed), message.createdTimestamp);
       }
     }
   }
@@ -970,10 +1042,13 @@ function startNotificationWorker(context: SubmissionReviewContext): void {
   notificationTimers.set(context.guildId, timer);
 }
 
-function stopNotificationWorker(guildId: string): void {
+export function stopNotificationWorker(guildId: string): void {
   const timer = notificationTimers.get(guildId);
   if (timer) clearInterval(timer);
   notificationTimers.delete(guildId);
+  // 進行中のサイクルを無効化する。interval の解除だけでは fetch 完了後の
+  // 送信は止まらないため、世代を進めて送信開始前に弾く
+  notificationGenerations.set(guildId, (notificationGenerations.get(guildId) ?? 0) + 1);
 }
 
 /** 承認ロールの保持者 (メンバーキャッシュにある範囲) の Discord ID を集める */
@@ -999,22 +1074,80 @@ async function discoverApproverIds(
 }
 
 /**
+ * 覚えている運営者が現在もギルド所属かつ承認ロール保持者かを検証する。
+ * 検証できない場合 (Guild/Member 取得失敗) は未検証として扱い、署名付き
+ * pending 取得の実行者には使わない (fail-closed)。過去の成功は現在の
+ * 権限を証明しない。
+ */
+async function isCurrentSubmissionReviewApprover(
+  context: SubmissionReviewContext,
+  config: SubmissionReviewConfig,
+  discordUserId: string,
+): Promise<boolean> {
+  if (!context.client.guilds) return false;
+  try {
+    const guild = await context.client.guilds.fetch(context.guildId);
+    const member = await guild?.members?.fetch(discordUserId);
+    if (!member) return false;
+    return memberRoleIds({ member }).some((role) => config.approverRoleIds.includes(role));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 実行者候補の並び: 以前成功した運営者 (検証済み) を先頭にし、残りは
+ * startOffset から回転させて並べる。1サイクルの上限は limit。
+ */
+export function orderSubmissionReviewOperatorCandidates(
+  discovered: string[],
+  remembered: string | null,
+  startOffset: number,
+  limit: number,
+): string[] {
+  const ordered: string[] = [];
+  if (remembered) ordered.push(remembered);
+  const count = discovered.length;
+  for (let index = 0; index < count; index += 1) {
+    const id = discovered[(startOffset + index) % count];
+    if (id && !ordered.includes(id)) ordered.push(id);
+  }
+  return ordered.slice(0, limit);
+}
+
+/**
  * 審査待ち一覧を、運営者の ID を実行者として取得する (mcw と同型)。
  * Bot API の pending は「実行者 = 登録済み運営者」の ID が必須のため、
  * 候補を順に試し、最初に成功した ID を次回用に覚える。
+ * 覚えている運営者は現在のロール保持を検証してから候補にし、
+ * 全員失敗したサイクルは次回の開始位置を進めて同じ先頭候補を繰り返さない。
  */
 async function fetchPendingForNotification(
   context: SubmissionReviewContext,
   api: SubmissionReviewApiConfig,
   config: SubmissionReviewConfig,
 ): Promise<SubmissionReviewPendingItem[] | null> {
-  const candidates: string[] = [];
-  for (const id of await discoverApproverIds(context, config)) {
-    if (!candidates.includes(id)) candidates.push(id);
+  const discovered = await discoverApproverIds(context, config);
+  const remembered = notificationOperators.get(context.guildId) ?? null;
+  let verifiedRemembered: string | null = null;
+  if (remembered) {
+    if (discovered.includes(remembered)) {
+      // ロール保持者一覧にいる場合は現在の権限が確認できている
+      verifiedRemembered = remembered;
+    } else if (await isCurrentSubmissionReviewApprover(context, config, remembered)) {
+      verifiedRemembered = remembered;
+    }
   }
-  const remembered = notificationOperators.get(context.guildId);
-  if (remembered && !candidates.includes(remembered)) candidates.push(remembered);
-  for (const discordUserId of candidates.slice(0, SUBMISSION_REVIEW_MAX_OPERATOR_CANDIDATES)) {
+  const startOffset = notificationOperatorOffsets.get(context.guildId) ?? 0;
+  const ordered = orderSubmissionReviewOperatorCandidates(
+    discovered,
+    verifiedRemembered,
+    startOffset,
+    SUBMISSION_REVIEW_MAX_OPERATOR_CANDIDATES,
+  );
+  let discoveredTried = 0;
+  for (const discordUserId of ordered) {
+    if (discovered.includes(discordUserId)) discoveredTried += 1;
     const items = await fetchSubmissionReviewPending(api, {
       discordUserId,
       guildId: context.guildId,
@@ -1022,8 +1155,19 @@ async function fetchPendingForNotification(
     });
     if (items) {
       notificationOperators.set(context.guildId, discordUserId);
+      const index = discovered.indexOf(discordUserId);
+      if (index >= 0 && discovered.length > 0) {
+        notificationOperatorOffsets.set(context.guildId, (index + 1) % discovered.length);
+      }
       return items;
     }
+  }
+  // 全員失敗した場合は次サイクルの開始位置を進め、同じ先頭候補を繰り返さない
+  if (discovered.length > 0 && discoveredTried > 0) {
+    notificationOperatorOffsets.set(
+      context.guildId,
+      (startOffset + discoveredTried) % discovered.length,
+    );
   }
   return null;
 }
@@ -1032,7 +1176,9 @@ export async function runSubmissionReviewCycle(
   context: SubmissionReviewContext,
   nowMs: number = Date.now(),
 ): Promise<void> {
-  const existing = notificationRuns.get(context.guildId);
+  const generation = notificationGenerations.get(context.guildId) ?? 0;
+  const runKey = `${context.guildId}:${generation}`;
+  const existing = notificationRuns.get(runKey);
   if (existing) return existing;
   const run = (async () => {
     try {
@@ -1052,31 +1198,52 @@ export async function runSubmissionReviewCycle(
         recent.values(),
         context.client.user?.id ?? null,
       );
+      // プロセス内で送信済みの時刻を重ねる (履歴の100件より後ろへ流れた分を補完)
+      const sentPrefix = `${context.guildId}:${config.opsChannelId}:`;
+      for (const [recordKey, sentMs] of notificationSentTimes) {
+        if (!recordKey.startsWith(sentPrefix)) continue;
+        const key = recordKey.slice(sentPrefix.length);
+        const current = notifiedTimes.get(key);
+        if (current === undefined || sentMs > current) notifiedTimes.set(key, sentMs);
+      }
       const { fresh, reminders } = selectSubmissionNotifications(items, notifiedTimes, nowMs);
       // 通知ポリシー: メンションは P0 レベルの緊急アラートのみ。申請通知では ping しない
-      for (const item of fresh) {
-        await channel.send({
-          embeds: [buildSubmissionReviewEmbed(item, nowMs, 'new')],
-          components: buildSubmissionReviewButtons(item),
-          allowedMentions: { parse: [] },
-        });
-      }
-      for (const item of reminders) {
-        await channel.send({
-          embeds: [buildSubmissionReviewEmbed(item, nowMs, 'reminder')],
-          components: buildSubmissionReviewButtons(item),
-          allowedMentions: { parse: [] },
-        });
-      }
+      const sendItems = async (
+        targets: SubmissionReviewPendingItem[],
+        variant: 'new' | 'reminder',
+      ): Promise<void> => {
+        for (const item of targets) {
+          // 停止された世代は次の送信を開始しない (進行中の送信は完了してよい)
+          if ((notificationGenerations.get(context.guildId) ?? 0) !== generation) return;
+          const key = submissionReviewKey(item);
+          try {
+            await channel.send({
+              embeds: [buildSubmissionReviewEmbed(item, nowMs, variant)],
+              components: buildSubmissionReviewButtons(item),
+              allowedMentions: { parse: [] },
+            });
+            recordSubmissionReviewSentTime(context.guildId, config.opsChannelId, key, nowMs);
+          } catch (error) {
+            // 1件の失敗で他件を止めない。失敗件は次周期で再試行する
+            // (申請内容はログに出さない。キーとエラーのみ)
+            context.logger?.warn(
+              { key, error: error instanceof Error ? error.message : String(error) },
+              '申請通知の送信に失敗しました',
+            );
+          }
+        }
+      };
+      await sendItems(fresh, 'new');
+      await sendItems(reminders, 'reminder');
     } catch {
       // 通知の失敗でワーカーを落とさない (次周期で再試行する)
     }
   })();
-  notificationRuns.set(context.guildId, run);
+  notificationRuns.set(runKey, run);
   try {
     await run;
   } finally {
-    notificationRuns.delete(context.guildId);
+    notificationRuns.delete(runKey);
   }
 }
 
@@ -1138,23 +1305,27 @@ export async function handleSubmissionReviewComponent(
 
   if (parsed.action === 'status') {
     if (!interaction.isButton()) return;
+    // 応答期限 (約3秒) を切らないよう、API 取得の前に defer する
+    await interaction.deferReply({ flags: EPHEMERAL_FLAG });
     const items = await fetchSubmissionReviewPending(api, base);
     if (!items) {
-      await componentEphemeralReply(
+      await componentDeferredReply(
         interaction,
         '審査待ち一覧を取得できませんでした。時間を置いて再度お試しください。',
+        'reply',
       );
       return;
     }
     const target = items.find((item) => item.kind === parsed.kind && item.id === parsed.id);
     if (!target) {
-      await componentEphemeralReply(
+      await componentDeferredReply(
         interaction,
         'この申請は審査待ちにありません。既に処理済み（承認・差し戻し・取り下げ）の可能性があります。',
+        'reply',
       );
       return;
     }
-    await componentEphemeralReply(
+    await componentDeferredReply(
       interaction,
       [
         `${submissionReviewKindLabel(target.kind)}の申請は審査待ちです。`,
@@ -1163,6 +1334,7 @@ export async function handleSubmissionReviewComponent(
         `申請日時: ${formatSubmittedAt(target.submittedAt)}（経過 約${submissionReviewElapsedHours(target, Date.now())}時間）`,
         `審査リンク: ${target.reviewLink}`,
       ].join('\n'),
+      'reply',
     );
     return;
   }
@@ -1204,6 +1376,16 @@ export async function handleSubmissionReviewComponent(
     }
   }
 
+  // 応答期限 (約3秒) を切らないよう、最初の API 呼び出しの前に defer する。
+  // ボタンは deferUpdate (成功時に editReply で元メッセージを更新する)、
+  // モーダルは deferReply (ephemeral。成功時に元メッセージも更新する)
+  const deferredKind: 'reply' | 'update' = interaction.isButton() ? 'update' : 'reply';
+  if (deferredKind === 'update') {
+    await interaction.deferUpdate();
+  } else {
+    await interaction.deferReply({ flags: EPHEMERAL_FLAG });
+  }
+
   // DM と処理済み表示のために、処理前の pending から対象を引いておく
   const before = await fetchSubmissionReviewPending(api, base);
   const target = before?.find((item) => item.kind === parsed.kind && item.id === parsed.id);
@@ -1214,7 +1396,7 @@ export async function handleSubmissionReviewComponent(
     ...(action === 'approve' ? { rewardPoints } : { reason }),
   });
   if (!result.ok || !result.data) {
-    await componentEphemeralReply(interaction, formatSubmissionReviewApiError(result));
+    await componentDeferredReply(interaction, formatSubmissionReviewApiError(result), deferredKind);
     return;
   }
 
@@ -1236,27 +1418,44 @@ export async function handleSubmissionReviewComponent(
     rewardSkipped: apiString(data['rewardSkipped']),
     reviewLink: apiString(data['reviewLink']) ?? target?.reviewLink,
   };
-  if (target) {
-    await notifySubmissionReviewResult(context, target, info);
-  }
 
   const processedEmbed = buildSubmissionReviewProcessedEmbed(info);
   if (interaction.isModalSubmit()) {
-    // モーダル送信からは元のメッセージを更新できないため、結果を新規 ephemeral で返す
-    // (mcw の既知の限界と同扱い。元の通知は次サイクルで pending から消える)
-    await interaction.reply({
-      content: action === 'approve' ? '承認しました。' : '差し戻しました。',
+    // ボタン経由で開いたモーダルは元メッセージを更新し、ボタンが残ったまま
+    // 「審査待ちに見える」状態を解消する。更新に失敗しても ephemeral の
+    // 結果表示で補う (fail-soft)
+    if (interaction.isFromMessage?.() && interaction.message) {
+      try {
+        await interaction.message.edit({
+          embeds: [processedEmbed],
+          components: [],
+          allowedMentions: { parse: [] },
+        });
+      } catch {
+        // 元メッセージの更新失敗は結果表示に影響させない
+      }
+    }
+    await componentDeferredPayloadReply(
+      interaction,
+      {
+        content: action === 'approve' ? '承認しました。' : '差し戻しました。',
+        embeds: [processedEmbed],
+        allowedMentions: { parse: [] },
+      },
+      'reply',
+    );
+  } else {
+    // deferUpdate 済みのため editReply で元メッセージを処理済み表示へ更新する
+    await interaction.editReply({
       embeds: [processedEmbed],
-      flags: EPHEMERAL_FLAG,
+      components: [],
       allowedMentions: { parse: [] },
     });
-    return;
   }
-  await interaction.update({
-    embeds: [processedEmbed],
-    components: [],
-    allowedMentions: { parse: [] },
-  });
+  // 申請者への DM は審査者への応答の後 (DM の失敗は結果表示に影響しない)
+  if (target) {
+    await notifySubmissionReviewResult(context, target, info);
+  }
 }
 
 // ---------------------------------------------------------------------------

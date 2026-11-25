@@ -40,6 +40,8 @@ export const submissionReviewManifest: PluginManifest = {
         type: 'array',
         title: '申請審査を許可するロールID（専用ロール）',
         items: { type: 'string' },
+        // ランタイムは先頭20件までしか保持しないため、保存時に同じ上限で弾く
+        maxItems: 20,
         default: [],
         'x-herta-ui': {
           section: '申請審査',

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
+import { submissionReviewManifest } from '@herta/plugin-catalog';
 import {
   buildSubmissionReviewApiRequest,
   buildSubmissionReviewApproveModal,
@@ -14,6 +15,7 @@ import {
   formatSubmissionReviewApiError,
   handleSubmissionReviewComponent,
   normalizeSubmissionReviewConfig,
+  orderSubmissionReviewOperatorCandidates,
   parseReviewPointsInput,
   parseSubmissionReviewComponentId,
   parseSubmissionReviewPending,
@@ -21,6 +23,7 @@ import {
   resolveSubmissionReviewApiConfig,
   runSubmissionReviewCycle,
   selectSubmissionNotifications,
+  stopNotificationWorker,
   submissionReviewKey,
   type SubmissionReviewPendingItem,
 } from './submission-review.js';
@@ -129,6 +132,29 @@ describe('normalizeSubmissionReviewConfig / canReviewSubmissions', () => {
     expect(canReviewSubmissions({ member: { roles: [approverRoleId] } }, config)).toBe(true);
     expect(canReviewSubmissions({ member: { roles: ['555555555555555555'] } }, config)).toBe(false);
     expect(canReviewSubmissions({ member: undefined }, config)).toBe(false);
+  });
+
+  it('マニフェストは承認ロールを20件までに制限する (ランタイムの保持上限と一致)', () => {
+    const properties = (
+      submissionReviewManifest.configSchema as {
+        properties?: { approverRoleIds?: { maxItems?: number } };
+      }
+    ).properties;
+    expect(properties?.approverRoleIds?.maxItems).toBe(20);
+  });
+});
+
+describe('orderSubmissionReviewOperatorCandidates', () => {
+  it('以前成功した運営者を先頭にし、残りを開始位置から回転させる', () => {
+    expect(
+      orderSubmissionReviewOperatorCandidates(['a', 'b', 'c', 'd', 'e', 'f'], 'c', 0, 5),
+    ).toEqual(['c', 'a', 'b', 'd', 'e']);
+    expect(orderSubmissionReviewOperatorCandidates(['a', 'b', 'c'], null, 2, 5)).toEqual([
+      'c',
+      'a',
+      'b',
+    ]);
+    expect(orderSubmissionReviewOperatorCandidates(['a', 'b'], null, 0, 5)).toEqual(['a', 'b']);
   });
 });
 
@@ -328,23 +354,44 @@ describe('通知の dedup / 振り分け', () => {
         {
           author: { id: botUserId },
           createdTimestamp: nowMs - 60 * 60 * 1000,
-          embeds: [{ fields: [{ name: '申請情報', value: '申請ID: dqs_1\n種別キー: dqr:dqs_1' }] }],
+          components: [{ components: [{ customId: 'dqr:approve:dqs_1' }] }],
         },
         {
           author: { id: 'someone-else' },
           createdTimestamp: nowMs,
-          embeds: [{ fields: [{ name: '申請情報', value: '申請ID: dqs_1\n種別キー: dqr:dqs_1' }] }],
+          components: [{ components: [{ customId: 'dqr:approve:dqs_1' }] }],
         },
         {
           author: { id: botUserId },
           createdTimestamp: nowMs - 30 * 60 * 1000,
-          embeds: [{ fields: [{ name: '申請情報', value: '申請ID: the_1\n種別キー: thr:the_1' }] }],
+          components: [{ components: [{ customId: 'thr:approve:the_1' }] }],
         },
       ],
       botUserId,
     );
     expect(times.get('dqr:dqs_1')).toBe(nowMs - 60 * 60 * 1000);
     expect(times.get('thr:the_1')).toBe(nowMs - 30 * 60 * 1000);
+  });
+
+  it('表示文面のキーそっくりの文字列は誤検出しない (ボタン customId のみ読む)', () => {
+    const times = collectSubmissionNotificationTimes(
+      [
+        {
+          author: { id: botUserId },
+          createdTimestamp: nowMs - 60 * 60 * 1000,
+          // 問題文に別申請のキーが含まれていても、ボタンが無ければ通知とみなさない
+          content: '種別キー: dqr:dqs_spoof',
+          embeds: [
+            {
+              description: '種別キー: dqr:dqs_spoof が問題文に含まれる',
+              fields: [{ name: '申請情報', value: '申請ID: dqs_1\n種別キー: dqr:dqs_1' }],
+            },
+          ],
+        },
+      ],
+      botUserId,
+    );
+    expect(times.size).toBe(0);
   });
 
   it('未通知は即時、24時間未満は送らず、24時間以上でリマインド', () => {
@@ -473,13 +520,23 @@ describe('handleSubmissionReviewComponent', () => {
       member: { roles: [approverRoleId] },
       isButton: () => true,
       isModalSubmit: () => false,
+      isFromMessage: () => false,
+      message: null,
       reply: vi.fn(async () => {}),
       update: vi.fn(async () => {}),
+      deferReply: vi.fn(async () => {}),
+      deferUpdate: vi.fn(async () => {}),
+      editReply: vi.fn(async () => {}),
+      followUp: vi.fn(async () => {}),
       showModal: vi.fn(async () => {}),
       ...overrides,
     } as unknown as Parameters<typeof handleSubmissionReviewComponent>[1] & {
       reply: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
+      deferReply: ReturnType<typeof vi.fn>;
+      deferUpdate: ReturnType<typeof vi.fn>;
+      editReply: ReturnType<typeof vi.fn>;
+      followUp: ReturnType<typeof vi.fn>;
       showModal: ReturnType<typeof vi.fn>;
     };
   }
@@ -509,14 +566,34 @@ describe('handleSubmissionReviewComponent', () => {
       approverRoleVerified: true,
       discordUserId: operatorId,
     });
-    expect(dmSend).toHaveBeenCalledTimes(1);
-    expect(interaction.update).toHaveBeenCalledTimes(1);
-    const updated = interaction.update.mock.calls[0]?.[0] as {
+    // ボタンは deferUpdate してから API を呼び、成功時に editReply で元メッセージを更新する
+    expect(interaction.deferUpdate).toHaveBeenCalledTimes(1);
+    expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    const updated = interaction.editReply.mock.calls[0]?.[0] as {
       embeds: unknown[];
       components: unknown[];
     };
     expect(updated.components).toEqual([]);
     expect(JSON.stringify(updated.embeds)).toContain('5.0 pt');
+    // DM は審査者への応答の後
+    expect(dmSend).toHaveBeenCalledTimes(1);
+    expect(interaction.editReply.mock.invocationCallOrder[0] ?? 0).toBeLessThan(
+      dmSend.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('DM が拒否されても承認は完了し、元メッセージが更新される (fail-soft)', async () => {
+    const calls = setupFetch();
+    const dmSend = vi.fn(async () => {
+      throw new Error('Cannot send messages to this user');
+    });
+    const interaction = makeInteraction({ customId: 'dqr:approve:dqs_1' });
+    await expect(
+      handleSubmissionReviewComponent(makeContext(dmSend), interaction),
+    ).resolves.toBeUndefined();
+    const approveCalls = calls.filter((call) => call.url.endsWith('/review/bot/daily/approve'));
+    expect(approveCalls).toHaveLength(1);
+    expect(interaction.editReply).toHaveBeenCalledTimes(1);
   });
 
   it('金額指定ボタンはモーダルを開くだけで API を呼ばない', async () => {
@@ -540,9 +617,32 @@ describe('handleSubmissionReviewComponent', () => {
     await handleSubmissionReviewComponent(makeContext(vi.fn(async () => {})), interaction);
     const approveCalls = calls.filter((call) => call.url.endsWith('/review/bot/daily/approve'));
     expect(approveCalls[0]?.body).toMatchObject({ rewardPoints: 7.5 });
-    // モーダル経由は元メッセージを更新できないため新規 ephemeral で返す
-    expect(interaction.reply).toHaveBeenCalledTimes(1);
+    // モーダルは deferReply してから API を呼び、結果を ephemeral で返す
+    expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+    expect(interaction.editReply).toHaveBeenCalledTimes(1);
     expect(interaction.update).not.toHaveBeenCalled();
+  });
+
+  it('ボタン経由のモーダル送信では元メッセージも処理済みに更新する', async () => {
+    setupFetch();
+    const messageEdit = vi.fn(async (_options: unknown) => {});
+    const interaction = makeInteraction({
+      customId: 'dqr:approve-submit:dqs_1',
+      isButton: () => false,
+      isModalSubmit: () => true,
+      isFromMessage: () => true,
+      message: { edit: messageEdit },
+      fields: { getTextInputValue: () => '5.0' },
+    });
+    await handleSubmissionReviewComponent(makeContext(vi.fn(async () => {})), interaction);
+    expect(messageEdit).toHaveBeenCalledTimes(1);
+    const edited = messageEdit.mock.calls[0]?.[0] as {
+      embeds: unknown[];
+      components: unknown[];
+    };
+    expect(edited.components).toEqual([]);
+    expect(JSON.stringify(edited.embeds)).toContain('5.0 pt');
+    expect(interaction.editReply).toHaveBeenCalledTimes(1);
   });
 
   it('金額モーダルの刻み違反はローカルで弾き、承認 API を呼ばない', async () => {
@@ -584,17 +684,25 @@ describe('handleSubmissionReviewComponent', () => {
     });
     const interaction = makeInteraction({ customId: 'thr:approve:the_1' });
     await handleSubmissionReviewComponent(makeContext(vi.fn(async () => {})), interaction);
-    expect(String(interaction.reply.mock.calls[0]?.[0]?.content)).toContain(
+    // ボタンは deferUpdate 済みのため、エラーは ephemeral の followUp で返す
+    expect(interaction.deferUpdate).toHaveBeenCalledTimes(1);
+    expect(interaction.followUp).toHaveBeenCalledTimes(1);
+    expect(String(interaction.followUp.mock.calls[0]?.[0]?.content)).toContain(
       '自分の申請は審査できません',
     );
-    expect(interaction.update).not.toHaveBeenCalled();
+    expect(interaction.editReply).not.toHaveBeenCalled();
   });
 
   it('状況確認は pending に無ければ処理済みの可能性を返す', async () => {
     setupFetch();
     const interaction = makeInteraction({ customId: 'thr:status:the_1' });
     await handleSubmissionReviewComponent(makeContext(vi.fn(async () => {})), interaction);
-    expect(String(interaction.reply.mock.calls[0]?.[0]?.content)).toContain('審査待ちにありません');
+    // 状況確認は deferReply してから取得し、結果を editReply で返す
+    expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+    expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    expect(String(interaction.editReply.mock.calls[0]?.[0]?.content)).toContain(
+      '審査待ちにありません',
+    );
   });
 });
 
@@ -647,6 +755,7 @@ describe('runSubmissionReviewCycle', () => {
     config?: Record<string, unknown>;
     history?: unknown[];
     send: ReturnType<typeof vi.fn>;
+    guilds?: unknown;
   }) {
     const channel = {
       guildId: `guild-${options.guildIdSuffix}`,
@@ -667,14 +776,17 @@ describe('runSubmissionReviewCycle', () => {
         user: { id: botUserId },
         channels: { fetch: async () => channel },
         users: { fetch: async () => null },
-        guilds: {
-          fetch: async () => ({
-            roles: {
-              fetch: async (roleId: string) =>
-                roleId === approverRoleId ? { members: new Map([[operatorId, {}]]) } : null,
-            },
-          }),
-        },
+        guilds:
+          'guilds' in options
+            ? options.guilds
+            : {
+                fetch: async () => ({
+                  roles: {
+                    fetch: async (roleId: string) =>
+                      roleId === approverRoleId ? { members: new Map([[operatorId, {}]]) } : null,
+                  },
+                }),
+              },
       },
     } as unknown as Parameters<typeof runSubmissionReviewCycle>[0];
   }
@@ -705,7 +817,7 @@ describe('runSubmissionReviewCycle', () => {
       {
         author: { id: botUserId },
         createdTimestamp: nowMs - 60 * 60 * 1000,
-        embeds: [{ fields: [{ name: '申請情報', value: '申請ID: dqs_1\n種別キー: dqr:dqs_1' }] }],
+        components: [{ components: [{ customId: 'dqr:approve:dqs_1' }] }],
       },
     ];
     await runSubmissionReviewCycle(makeContext({ guildIdSuffix: 'recent', send, history }), nowMs);
@@ -719,13 +831,64 @@ describe('runSubmissionReviewCycle', () => {
       {
         author: { id: botUserId },
         createdTimestamp: nowMs - 25 * 60 * 60 * 1000,
-        embeds: [{ fields: [{ name: '申請情報', value: '申請ID: dqs_1\n種別キー: dqr:dqs_1' }] }],
+        components: [{ components: [{ customId: 'dqr:approve:dqs_1' }] }],
       },
     ];
     await runSubmissionReviewCycle(makeContext({ guildIdSuffix: 'remind', send, history }), nowMs);
     expect(send).toHaveBeenCalledTimes(1);
     const payload = send.mock.calls[0]?.[0] as unknown as { embeds: { title?: string }[] };
     expect(payload.embeds[0]?.title).toContain('リマインド');
+  });
+
+  it('プロセス内で送信済みなら履歴が空でも再送しない (100件より後ろへ流れた分)', async () => {
+    setupFetch([pendingEntry()]);
+    const send = vi.fn(async () => {});
+    const context = makeContext({ guildIdSuffix: 'sent-memory', send });
+    await runSubmissionReviewCycle(context, nowMs);
+    expect(send).toHaveBeenCalledTimes(1);
+    // 履歴が空でも、プロセス内の送信記録により2回目は送らない
+    await runSubmissionReviewCycle(context, nowMs);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('1件の送信失敗で他件を止めず、失敗件は次周期で再試行する', async () => {
+    setupFetch([pendingEntry(), pendingEntry({ id: 'dqs_2' })]);
+    const send = vi.fn(async (_options: unknown) => {});
+    send.mockRejectedValueOnce(new Error('Invalid Form Body'));
+    const context = makeContext({ guildIdSuffix: 'partial-fail', send });
+    await runSubmissionReviewCycle(context, nowMs);
+    expect(send).toHaveBeenCalledTimes(2);
+    // 2件目は送れたので次周期では送らず、失敗した1件目だけ再試行する
+    await runSubmissionReviewCycle(context, nowMs);
+    expect(send).toHaveBeenCalledTimes(3);
+    const third = send.mock.calls[2]?.[0] as unknown as { embeds: unknown[] };
+    expect(JSON.stringify(third.embeds)).toContain('申請ID: dqs_1');
+  });
+
+  it('停止したワーカーは fetch 完了後の送信を開始しない', async () => {
+    process.env['IVRM_WEB_API_BASE_URL'] = 'https://api.example.test';
+    process.env['HERTA_REVIEW_BOT_SECRET'] = 'test-secret';
+    let resolvePending!: (value: unknown) => void;
+    const pendingGate = new Promise((resolve) => {
+      resolvePending = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/review/bot/pending')) {
+          await pendingGate;
+          return { ok: true, status: 200, json: async () => ({ items: [pendingEntry()] }) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      }),
+    );
+    const send = vi.fn(async () => {});
+    const context = makeContext({ guildIdSuffix: 'stopped', send });
+    const run = runSubmissionReviewCycle(context, nowMs);
+    stopNotificationWorker('guild-stopped');
+    resolvePending(undefined);
+    await run;
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('チャンネル未設定なら API も呼ばず無効のまま動く', async () => {
@@ -743,14 +906,109 @@ describe('runSubmissionReviewCycle', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('探索できなくても、操作で検証済みの運営者の記憶で取得できる', async () => {
+  it('探索できなくても、現在のロール保持を検証できた運営者の記憶で取得できる', async () => {
     const calls = setupFetch([pendingEntry()]);
     const send = vi.fn(async () => {});
-    const context = makeContext({ guildIdSuffix: 'remembered', send });
+    const context = makeContext({
+      guildIdSuffix: 'remembered',
+      send,
+      guilds: {
+        fetch: async () => ({
+          roles: { fetch: async () => null },
+          members: {
+            fetch: async (userId: string) =>
+              userId === operatorId ? { roles: [approverRoleId] } : null,
+          },
+        }),
+      },
+    });
     rememberSubmissionReviewOperator('guild-remembered', operatorId);
-    (context.client as { guilds?: unknown }).guilds = undefined;
     await runSubmissionReviewCycle(context, nowMs);
     expect(send).toHaveBeenCalledTimes(1);
     expect(calls[0]?.body).toMatchObject({ discordUserId: operatorId });
+  });
+
+  it('覚えている運営者がロールを失っていたら実行者に使わない', async () => {
+    const calls = setupFetch([pendingEntry()]);
+    const send = vi.fn(async () => {});
+    const context = makeContext({
+      guildIdSuffix: 'role-lost',
+      send,
+      guilds: {
+        fetch: async () => ({
+          roles: { fetch: async () => null },
+          members: {
+            fetch: async (userId: string) => (userId === operatorId ? { roles: [] } : null),
+          },
+        }),
+      },
+    });
+    rememberSubmissionReviewOperator('guild-role-lost', operatorId);
+    await runSubmissionReviewCycle(context, nowMs);
+    expect(send).not.toHaveBeenCalled();
+    expect(calls.filter((call) => call.url.endsWith('/review/bot/pending'))).toHaveLength(0);
+  });
+
+  it('検証手段が無ければ覚えている運営者を使わない (fail-closed)', async () => {
+    const calls = setupFetch([pendingEntry()]);
+    const send = vi.fn(async () => {});
+    const context = makeContext({ guildIdSuffix: 'unverifiable', send, guilds: undefined });
+    rememberSubmissionReviewOperator('guild-unverifiable', operatorId);
+    await runSubmissionReviewCycle(context, nowMs);
+    expect(send).not.toHaveBeenCalled();
+    expect(calls.filter((call) => call.url.endsWith('/review/bot/pending'))).toHaveLength(0);
+  });
+
+  it('全員失敗したサイクルは次回の開始位置を進め、6人目に到達する', async () => {
+    process.env['IVRM_WEB_API_BASE_URL'] = 'https://api.example.test';
+    process.env['HERTA_REVIEW_BOT_SECRET'] = 'test-secret';
+    const memberIds = [
+      '100000000000000001',
+      '100000000000000002',
+      '100000000000000003',
+      '100000000000000004',
+      '100000000000000005',
+      '100000000000000006',
+    ];
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: { body?: string }) => {
+        const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+        calls.push({ url, body });
+        if (url.endsWith('/review/bot/pending')) {
+          // 6人目だけ成功する
+          if (body['discordUserId'] === memberIds[5]) {
+            return { ok: true, status: 200, json: async () => ({ items: [pendingEntry()] }) };
+          }
+          return { ok: false, status: 403, json: async () => ({}) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      }),
+    );
+    const send = vi.fn(async () => {});
+    const context = makeContext({
+      guildIdSuffix: 'rotate',
+      send,
+      guilds: {
+        fetch: async () => ({
+          roles: {
+            fetch: async (roleId: string) =>
+              roleId === approverRoleId
+                ? { members: new Map(memberIds.map((id) => [id, {}] as [string, unknown])) }
+                : null,
+          },
+        }),
+      },
+    });
+    await runSubmissionReviewCycle(context, nowMs);
+    expect(send).not.toHaveBeenCalled();
+    await runSubmissionReviewCycle(context, nowMs);
+    expect(send).toHaveBeenCalledTimes(1);
+    const successCall = calls.find(
+      (call) =>
+        call.url.endsWith('/review/bot/pending') && call.body['discordUserId'] === memberIds[5],
+    );
+    expect(successCall).toBeDefined();
   });
 });
