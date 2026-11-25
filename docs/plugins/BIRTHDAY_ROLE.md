@@ -208,6 +208,15 @@ Plugin設定 `useIvrmApiSource`（既定OFF）をONにすると、workerは当�
 - レスポンスの各行は 日付・対象者（Discord User ID）・種別・状態・失敗理由の要約・完了/作成時刻 のみです。種別は保存値 `kind` をカテゴリ化したもの（`announcement`→`card`、`role-assigned:*`→`role_assign`、`role-removed:*`→`role_remove`）で、生の `kind`（ロールIDサフィックスを含む）は出しません。失敗理由は保存済みのエラー名（クラス名）だけを要約として返し、自由文は `UnknownError` に丸めます。生年・年齢はテーブルにもこのAPIにも存在しません。
 - 新しい環境変数は不要です（`IVRM_INTEGRATION_TOKEN` / `IVRM_INTEGRATION_GUILD_ID` は既存のStudio連携と共用）。未設定時は 503 で fail-closed になります。
 
+## カード完成形プレビューのAdmin表示（S3d、#991）
+
+Adminの設定プレビューで「実際に配信されるカードそのもの」を確認できるよう、Studioに署名付きのプレビュー描画API `POST /api/ivrm/birthday-card/preview` を追加しました（方式は ivrm-web #1775 で Kanata が案A＝Hertaへ中継描画で確定、2026-11-25）。描画は bot と同一の `@herta/birthday-card` パッケージ（D1、#989）で行います。
+
+- 認証は S5b と同じ方式です（`IVRM_INTEGRATION_TOKEN` から purpose `herta-birthday-card-preview-v1` で導出した鍵のHMAC、5分以内のタイムスタンプ、対象Guildは `IVRM_INTEGRATION_GUILD_ID` に固定）。契約は `contracts/ivrm/herta-birthday-card-preview.v1.json`。新しい環境変数は不要で、未設定時は 503 で fail-closed になります。
+- リクエストは `{guildId, card: {preset, backgroundUrl, showName, showAvatar, showBirthday}}`（Adminの下書き設定）。実効設定の組み立ては bot の API 経路と同一で、土台は Guild の Studio カード設定（レイアウト・保存済み背景）、上書きは preset と表示フラグ、年齢表示は常にOFFです。背景の優先順位も配信と同じ（背景URL ＞ Studio保存済み背景 ＞ プリセット）です。
+- 描画対象は固定サンプル（名前 `Herta Member`、11月22日、アバターはパッケージ内で生成するサンプル画像）で、実在メンバーの情報は使いません。プレビューは副作用なしで、`birthday_deliveries` への記録もしません。
+- レスポンスは PNG バイナリ（1672×941）です。Studio と bot は同一の本番イメージ（`font-noto-cjk` 入り）で動くため、フォント条件は一致します。
+
 ## Database migration
 
 `20260819095000_birthday_card_v2`で次を追加します。

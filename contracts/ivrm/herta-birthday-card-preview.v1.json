@@ -1,0 +1,30 @@
+{
+  "$defs": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "card": {
+          "additionalProperties": false,
+          "properties": {
+            "backgroundUrl": { "maxLength": 2048, "type": ["string", "null"] },
+            "preset": {
+              "enum": ["herta-night-board", "herta-lavender-tea", "herta-lavender-gifts"],
+              "type": "string"
+            },
+            "showAvatar": { "type": "boolean" },
+            "showBirthday": { "type": "boolean" },
+            "showName": { "type": "boolean" }
+          },
+          "required": ["preset", "backgroundUrl", "showName", "showAvatar", "showBirthday"],
+          "type": "object"
+        },
+        "guildId": { "pattern": "^[0-9]{17,20}$", "type": "string" }
+      },
+      "required": ["guildId", "card"],
+      "type": "object"
+    }
+  },
+  "$id": "https://ivrm.jp/contracts/herta-birthday-card-preview/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Producer Herta Studio; consumer server-only ivrm-web. POST /api/ivrm/birthday-card/preview. Key=HMAC-SHA256(IVRM_INTEGRATION_TOKEN,herta-birthday-card-preview-v1); signature=HMAC-SHA256(key,timestamp.eventId.POST.path.rawBody). Headers X-IVRM-Timestamp ISO, X-IVRM-Event-Id UUID, X-IVRM-Signature hex. Five-minute freshness, no query, max8192bytes. On success the response is the rendered card as image/png (1672x941), drawn by the same @herta/birthday-card renderer the bot uses, with the guild Studio card config as the layout base, the request card fields as overrides, age display forced off, and a fixed sample subject (sample name, November 22, generated sample avatar) — never a real member. Errors are JSON {error} with Cache-Control private,no-store: 503 unconfigured (token/guild env missing) or preview unavailable, 401 invalid_service_auth, 413 body_too_large, 422 invalid_request. The preview has no side effects: nothing is written to birthday_deliveries. (#1775 S3d, rendering relay decided by Kanata 2026-11-25.)"
+}

@@ -13,6 +13,7 @@
     "clean": "rm -rf .next"
   },
   "dependencies": {
+    "@herta/birthday-card": "workspace:*",
     "@herta/db": "workspace:*",
     "@herta/plugin-catalog": "workspace:*",
     "@herta/shared": "workspace:*",
