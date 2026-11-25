@@ -35,6 +35,12 @@ export interface AchievementPayload {
   code: string;
   name: string;
   tier: string;
+  /**
+   * 段階の正本 (ivrm-web #1865 / Herta #1005)。U1 以降の payload が
+   * 運ぶ任意フィールドで、表示はこれを tier より優先する。旧 payload
+   * (rank 無し) は tier のまま表示する (後方互換)。
+   */
+  rank?: string;
   xpReward: number;
   unlockedAt: string;
 }
@@ -115,6 +121,9 @@ export function parseAchievementPayload(payloadJson: string): AchievementPayload
     code: record['code'],
     name: record['name'],
     tier: record['tier'],
+    // rank は任意: 文字列のときだけ受理し、それ以外は無視して
+    // tier 表示にフォールバックする (行を poisoned にしない)。
+    ...(typeof record['rank'] === 'string' ? { rank: record['rank'] } : {}),
     xpReward: record['xpReward'],
     unlockedAt: record['unlockedAt'],
   };
@@ -125,8 +134,15 @@ export function verifyAchievementPayloadHash(payloadJson: string, payloadHash: s
   return digest === payloadHash;
 }
 
-/** ランクの順序 (ivrm-web API 側の ACHIEVEMENT_RANK_ORDER と一致させる)。 */
+/**
+ * ランクの順序。既存値 (bronze 0 〜 legend 5) は claim SQL の CASE と
+ * 共に従来どおりに保ち、beginner (ivrm-web #1850 で追加された最下段)
+ * だけを -1 として足す (Herta #1005)。ivrm-web API 側の
+ * ACHIEVEMENT_RANK_ORDER は beginner=0 起点の 0..6 で、絶対値ではなく
+ * 順序だけが一致する。
+ */
 export const ACHIEVEMENT_RANK_ORDER: Record<string, number> = {
+  beginner: -1,
   bronze: 0,
   silver: 1,
   gold: 2,
@@ -157,6 +173,9 @@ export function isDiscordRoutedRank(
 }
 
 const TIER_PRESENTATION: Record<string, { label: string; emoji: string; color: number }> = {
+  // beginner の絵文字・色は rank 一本化 (ivrm-web #1865) での提案値。
+  // API 側のカード描画 (ACHIEVEMENT_CARD_RANKS) と同じ値を使う。
+  beginner: { label: 'ビギナー', emoji: '🌱', color: 0x4ade80 },
   bronze: { label: 'ブロンズ', emoji: '🥉', color: 0xcd7f32 },
   silver: { label: 'シルバー', emoji: '🥈', color: 0xc0c0c0 },
   gold: { label: 'ゴールド', emoji: '🥇', color: 0xffd700 },
@@ -181,8 +200,10 @@ export interface DiscordMessageBody {
 export const ACHIEVEMENT_CARD_FILENAME = 'achievement-card.png';
 
 /**
- * 通知本文。載せるのは公開可能な範囲のみ (名前・ティア・報酬・解除日)。
- * cardFileName があれば、コンパニオン Embed に添付カードへの image を付ける。
+ * 通知本文。載せるのは公開可能な範囲のみ (名前・段階・報酬・解除日)。
+ * 段階の表示は rank を優先し (ivrm-web #1865 / Herta #1005)、rank の
+ * 無い旧 payload は tier で表示する。cardFileName があれば、
+ * コンパニオン Embed に添付カードへの image を付ける。
  */
 export function buildAchievementNotificationMessage(input: {
   displayName: string;
@@ -190,7 +211,7 @@ export function buildAchievementNotificationMessage(input: {
   payload: AchievementPayload;
   cardFileName?: string;
 }): DiscordMessageBody {
-  const tier = tierPresentation(input.payload.tier);
+  const tier = tierPresentation(input.payload.rank ?? input.payload.tier);
   const unlockedDate = input.payload.unlockedAt.slice(0, 10);
   const embed: Record<string, unknown> = {
     title: `${tier.emoji} アチーブメント解除！`,
@@ -447,7 +468,9 @@ export function createAchievementNotificationStore(
       // Discord 行きだけを claim する (#964)。route が確定している行は
       // それに従い、NULL の行は定義 rank と設定 (既定 master) で判定する。
       // ランク順序の CASE は ACHIEVEMENT_RANK_ORDER と一致させること
-      // (未知ランクは -1 = web 行き、未知の最低ランクは master 扱い)。
+      // (beginner は -1、未知ランクは beginner より下の -2 = 常に web 行き
+      // で isDiscordRoutedRank の fail-quiet と一致、未知の最低ランクは
+      // master 扱い)。
       const result = await pool.query<{
         id: string;
         user_id: string;
@@ -465,11 +488,13 @@ export function createAchievementNotificationStore(
                   o.route,
                   CASE WHEN
                     CASE d."rank"
+                      WHEN 'beginner' THEN -1
                       WHEN 'bronze' THEN 0 WHEN 'silver' THEN 1 WHEN 'gold' THEN 2
                       WHEN 'master' THEN 3 WHEN 'diamond' THEN 4 WHEN 'legend' THEN 5
-                      ELSE -1
+                      ELSE -2
                     END >=
                     CASE COALESCE(s.discord_min_rank, 'master')
+                      WHEN 'beginner' THEN -1
                       WHEN 'bronze' THEN 0 WHEN 'silver' THEN 1 WHEN 'gold' THEN 2
                       WHEN 'master' THEN 3 WHEN 'diamond' THEN 4 WHEN 'legend' THEN 5
                       ELSE 3
