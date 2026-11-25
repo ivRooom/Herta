@@ -14,20 +14,27 @@ import {
   type PluginRuntimeContext,
 } from '@herta/plugin-sdk';
 import {
+  buildTicketAttachmentPayload,
+  buildTicketAttachmentSkipNote,
   buildTicketCreatePayload,
   buildTicketMessageBody,
   buildTicketMessagePayload,
   buildTicketThreadPayload,
+  downloadTicketAttachmentBytes,
+  hasSupportedTicketAttachmentMagic,
   isTicketCategory,
   normalizeTicketsConfig,
+  planTicketAttachmentTransfers,
   resolveTicketBridgeConfig,
   sendTicketCreate,
   sendTicketOutboxPayload,
   ticketCategoryLabel,
   TICKET_BODY_MAX_LENGTH,
   TICKET_SUBJECT_MAX_LENGTH,
+  type TicketAttachmentRef,
   type TicketCategory,
   type TicketOutboxKind,
+  type TicketOutboxPayload,
   type TicketsPluginConfig,
 } from './tickets-core.js';
 import {
@@ -557,8 +564,47 @@ async function handleTicketMessage(
   if (!link) return;
 
   const attachments = attachmentRefs(message.attachments);
-  const body = buildTicketMessageBody(message.content ?? '', attachments);
+  // 第2段 (b): 添付は CDN URL を記録せず、取込時点で実体をダウンロード
+  // して upload エンドポイントへ outbox 配送する。転送できないものは
+  // 理由付きの注記だけを本文に残す (URL は残さない)。
+  const plan = planTicketAttachmentTransfers(attachments);
+  const notes: string[] = plan.skipped.map((entry) =>
+    buildTicketAttachmentSkipNote(entry.name, entry.reason),
+  );
+  const attachmentPayloads: TicketOutboxPayload[] = [];
+  for (const file of plan.transfer) {
+    const bytes = await downloadTicketAttachmentBytes(file).catch(() => null);
+    if (!bytes) {
+      notes.push(buildTicketAttachmentSkipNote(file.name, 'download_failed'));
+      continue;
+    }
+    if (!hasSupportedTicketAttachmentMagic(bytes)) {
+      notes.push(buildTicketAttachmentSkipNote(file.name, 'unsupported_format'));
+      continue;
+    }
+    attachmentPayloads.push(
+      buildTicketAttachmentPayload({
+        ticketId: link.ticketId,
+        discordMessageId: message.id,
+        fileName: file.name,
+        contentType: file.contentType ?? null,
+        bytes,
+      }),
+    );
+  }
+
+  const hasText = (message.content ?? '').trim().length > 0;
+  const body = buildTicketMessageBody(
+    hasText
+      ? (message.content ?? '')
+      : attachmentPayloads.length > 0 || notes.length > 0
+        ? '（添付ファイル）'
+        : '',
+    notes,
+  );
   if (!body.trim()) return;
+  // メッセージ本体を先に積み、添付はその後ろに続ける (Web 側で
+  // discordMessageId からメッセージへ紐付けられる順序を保つ)。
   await enqueueTicketPayloads(context.prisma, message.guildId, [
     buildTicketMessagePayload({
       ticketId: link.ticketId,
@@ -572,14 +618,35 @@ async function handleTicketMessage(
       'チケット返信の登録に失敗しました',
     ),
   );
+  if (attachmentPayloads.length > 0) {
+    await enqueueTicketPayloads(context.prisma, message.guildId, attachmentPayloads).catch(
+      (error) =>
+        context.logger.warn(
+          { err: error, ticketId: link.ticketId },
+          'チケット添付の登録に失敗しました',
+        ),
+    );
+  }
 }
 
-function attachmentRefs(attachments: unknown): Array<{ name: string; url: string }> {
-  const collect = (value: unknown): Array<{ name: string; url: string }> => {
+function attachmentRefs(attachments: unknown): TicketAttachmentRef[] {
+  const collect = (value: unknown): TicketAttachmentRef[] => {
     if (!value || typeof value !== 'object') return [];
-    const record = value as { name?: unknown; url?: unknown };
+    const record = value as {
+      name?: unknown;
+      url?: unknown;
+      size?: unknown;
+      contentType?: unknown;
+    };
     if (typeof record.name === 'string' && typeof record.url === 'string') {
-      return [{ name: record.name, url: record.url }];
+      return [
+        {
+          name: record.name,
+          url: record.url,
+          size: typeof record.size === 'number' ? record.size : null,
+          contentType: typeof record.contentType === 'string' ? record.contentType : null,
+        },
+      ];
     }
     return [];
   };
@@ -661,7 +728,7 @@ export async function runTicketOutboxCycle(context: TicketsContext): Promise<voi
 }
 
 function isTicketOutboxKind(value: string): value is TicketOutboxKind {
-  return value === 'create' || value === 'thread' || value === 'message';
+  return value === 'create' || value === 'thread' || value === 'message' || value === 'attachment';
 }
 
 function canManageTickets(
