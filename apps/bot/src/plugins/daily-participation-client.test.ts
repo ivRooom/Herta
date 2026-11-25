@@ -122,6 +122,10 @@ const yesterdayEntry = {
   },
   correctOptionId: 'a',
   explanation: 'A が正解です。',
+  // The API sends these on every entry since #1450 / #1200 (#988).
+  explanationMedia: [],
+  corrected: false,
+  correctionKind: null,
 };
 const yesterdayPayload = {
   status: 'ok',
@@ -172,6 +176,70 @@ it('accepts a yesterday review with daily, bonus and rescue entries (#917)', asy
   );
   const review = await yesterdayReview(guild, user);
   expect(review.entries.map((e) => e.question.slot)).toEqual(['daily', 'bonus', 'rescue']);
+});
+it('accepts explanation media and the correction overlay, rejects unknown kinds (#988)', async () => {
+  configure();
+  const explanationMedia = [
+    {
+      id: 'm_expl_1',
+      kind: 'image',
+      mimeType: 'image/webp',
+      url: 'https://cdn.example.test/media/m_expl_1.webp',
+      byteSize: 2048,
+      durationMs: null,
+      rights: 'original',
+    },
+    {
+      id: 'm_expl_2',
+      kind: 'audio',
+      mimeType: 'audio/wav',
+      url: 'https://cdn.example.test/media/m_expl_2.wav',
+      byteSize: 4096,
+      durationMs: 1500,
+      rights: 'licensed',
+    },
+  ];
+  const payload = {
+    ...yesterdayPayload,
+    entries: [
+      {
+        ...yesterdayEntry,
+        explanationMedia,
+        corrected: true,
+        correctionKind: 'correct_answer',
+      },
+    ],
+  };
+  expect(yesterdayReviewSchema.safeParse(payload).success).toBe(true);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json(payload)),
+  );
+  const review = await yesterdayReview(guild, user);
+  expect(review.entries[0]!.explanationMedia).toEqual(explanationMedia);
+  expect(review.entries[0]!.corrected).toBe(true);
+  expect(review.entries[0]!.correctionKind).toBe('correct_answer');
+  // Pre-reveal entries carry explanationMedia as null.
+  expect(
+    yesterdayReviewSchema.safeParse({
+      ...yesterdayPayload,
+      revealed: false,
+      entries: [{ ...yesterdayEntry, explanationMedia: null, explanation: null }],
+    }).success,
+  ).toBe(true);
+  for (const patch of [
+    { correctionKind: 'bogus' },
+    { corrected: 'yes' },
+    // The API caps explanation attachments at 2.
+    { explanationMedia: [...explanationMedia, { ...explanationMedia[0], id: 'm_expl_3' }] },
+    { explanationMedia: [{ ...explanationMedia[0], kind: 'video' }] },
+  ])
+    expect(
+      yesterdayReviewSchema.safeParse({
+        ...yesterdayPayload,
+        entries: [{ ...yesterdayEntry, ...patch }],
+      }).success,
+    ).toBe(false);
 });
 it('accepts yesterday stats and rejects malformed aggregates (#903)', async () => {
   configure();

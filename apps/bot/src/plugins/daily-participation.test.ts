@@ -90,6 +90,9 @@ const yesterdayReviewFixture = {
       },
       correctOptionId: 'a',
       explanation: 'A が正解です。',
+      explanationMedia: [],
+      corrected: false,
+      correctionKind: null,
     },
   ],
 };
@@ -530,4 +533,146 @@ it('reports a friendly error when the yesterday review cannot be fetched (#820)'
     }),
   );
   expect(i.followUp).not.toHaveBeenCalled();
+});
+const explanationMediaItem = {
+  id: 'm_expl_1',
+  kind: 'image',
+  mimeType: 'image/webp',
+  url: 'https://cdn.example.test/media/m_expl_1.webp',
+  byteSize: 4,
+  durationMs: null,
+  rights: 'original',
+};
+function yesterdayWithExplanationMedia(item: typeof explanationMediaItem = explanationMediaItem) {
+  vi.stubEnv('IVRM_WEB_API_BASE_URL', 'https://api.example.test');
+  vi.stubEnv('HERTA_POINTS_SECRET', 'synthetic-only');
+  vi.stubEnv('IVRM_INTEGRATION_GUILD_ID', f.status.guildId);
+  mocks.yesterday.mockResolvedValue({
+    ...yesterdayReviewFixture,
+    entries: [{ ...yesterdayReviewFixture.entries[0]!, explanationMedia: [item] }],
+  });
+}
+it('attaches explanation media after the yesterday review text (#988)', async () => {
+  yesterdayWithExplanationMedia();
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(bytes, {
+          headers: {
+            'X-IVRM-Media-Id': 'm_expl_1',
+            'Content-Type': 'image/webp',
+            'Content-Length': String(bytes.length),
+            'Cache-Control': 'private, no-store',
+          },
+        }),
+    ),
+  );
+  try {
+    const i = interaction('daily-participation:yesterday:2026-10-31');
+    await handleDailyParticipation(context(), i);
+    const calls = vi.mocked(i.followUp).mock.calls.map((c) => c[0]) as {
+      content?: string;
+      files?: { name: string }[];
+    }[];
+    const reviewIndex = calls.findIndex((c) => c.content?.includes('💡 解説：'));
+    const mediaIndex = calls.findIndex((c) => c.files?.[0]?.name === 'm_expl_1.webp');
+    expect(reviewIndex).toBeGreaterThanOrEqual(0);
+    expect(mediaIndex).toBeGreaterThan(reviewIndex);
+    expect(calls[mediaIndex]!.content).toBe('解説の素材');
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+it('attaches PNG explanation media with a matching .png file name (#988)', async () => {
+  const item = {
+    ...explanationMediaItem,
+    mimeType: 'image/png',
+    url: 'https://cdn.example.test/media/m_expl_1.png',
+  };
+  yesterdayWithExplanationMedia(item);
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(bytes, {
+          headers: {
+            'X-IVRM-Media-Id': 'm_expl_1',
+            'Content-Type': 'image/png',
+            'Content-Length': String(bytes.length),
+            'Cache-Control': 'private, no-store',
+          },
+        }),
+    ),
+  );
+  try {
+    const i = interaction('daily-participation:yesterday:2026-10-31');
+    await handleDailyParticipation(context(), i);
+    const calls = vi.mocked(i.followUp).mock.calls.map((c) => c[0]) as {
+      content?: string;
+      files?: { name: string }[];
+    }[];
+    expect(calls.some((c) => c.files?.some((file) => file.name === 'm_expl_1.png'))).toBe(true);
+    expect(calls.some((c) => c.files?.some((file) => file.name === 'm_expl_1.webp'))).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+it('attaches MPEG explanation audio with a matching .mp3 file name (#988)', async () => {
+  const item = {
+    ...explanationMediaItem,
+    id: 'm_expl_2',
+    kind: 'audio',
+    mimeType: 'audio/mpeg',
+    url: 'https://cdn.example.test/media/m_expl_2.mp3',
+  };
+  yesterdayWithExplanationMedia(item);
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(bytes, {
+          headers: {
+            'X-IVRM-Media-Id': 'm_expl_2',
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': String(bytes.length),
+            'Cache-Control': 'private, no-store',
+          },
+        }),
+    ),
+  );
+  try {
+    const i = interaction('daily-participation:yesterday:2026-10-31');
+    await handleDailyParticipation(context(), i);
+    const calls = vi.mocked(i.followUp).mock.calls.map((c) => c[0]) as {
+      content?: string;
+      files?: { name: string }[];
+    }[];
+    expect(calls.some((c) => c.files?.some((file) => file.name === 'm_expl_2.mp3'))).toBe(true);
+    expect(calls.some((c) => c.files?.some((file) => file.name === 'm_expl_2.wav'))).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+it('still shows the yesterday review when explanation media cannot be fetched (#988)', async () => {
+  yesterdayWithExplanationMedia();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('unavailable', { status: 404 })),
+  );
+  try {
+    const i = interaction('daily-participation:yesterday:2026-10-31');
+    await handleDailyParticipation(context(), i);
+    const calls = vi.mocked(i.followUp).mock.calls.map((c) => c[0]) as {
+      content?: string;
+      files?: { name: string }[];
+    }[];
+    expect(calls.some((c) => c.content?.includes('💡 解説：'))).toBe(true);
+    expect(calls.some((c) => c.files?.some((file) => file.name === 'm_expl_1.webp'))).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

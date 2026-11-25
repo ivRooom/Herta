@@ -166,6 +166,9 @@ export async function participationClaim(
   if (parsed.receipt.claimDateJst !== date) throw new Error('expired');
   return parsed;
 }
+// Mirrors the API's CorrectionKind (ivrm-web participation-correction.ts):
+// the kind of the newest result correction governing a reviewed question.
+const correctionKind = z.enum(['correct_answer', 'credit_all', 'void_all', 'explanation_only']);
 const reviewResponseSchema = responseSchema.omit({ questionId: true }).strict();
 const reviewStatsSchema = z
   .object({
@@ -194,6 +197,15 @@ export const yesterdayReviewSchema = z
             userResponse: reviewResponseSchema.nullable(),
             correctOptionId: id.nullable(),
             explanation: text(10000).nullable(),
+            // Explanation attachments (#1443, ivrm-web #1738 S7d): the
+            // same media shape as the question's own media, disclosed
+            // under the reveal gate together with the explanation text;
+            // null before it. The API caps the array at 2.
+            explanationMedia: z.array(media).max(2).nullable(),
+            // Result correction overlay (#1162): received so the strict
+            // schema accepts the current API payload; not rendered here.
+            corrected: z.boolean(),
+            correctionKind: correctionKind.nullable(),
             // Community stats (#903): aggregate answer counts behind the
             // same reveal gate as the correct option. Optional so a
             // pre-stats API payload (deploy order) still validates; the
