@@ -56,6 +56,13 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     assert local['services']['worker']['environment'].pop('IVRM_WEB_API_BASE_URL') == values.get('IVRM_WEB_API_BASE_URL', '')
     assert local['services']['worker']['environment'].pop('HERTA_MBTI_SYNC_SECRET') == values.get('HERTA_MBTI_SYNC_SECRET', '')
     assert local['services']['worker']['environment'].pop('ACHIEVEMENT_NOTIFICATION_SCAN_INTERVAL_SECONDS') == '60'
+    # Ticket bridge settings are not a database topology change. The bot
+    # secret stays empty unless the operator env file provides it, and the
+    # worker poller stays off by default.
+    assert local['services']['bot']['environment'].pop('HERTA_TICKET_SECRET') == values.get('HERTA_TICKET_SECRET', '')
+    assert local['services']['worker']['environment'].pop('TICKET_DISCORD_POLLER_ENABLED') == 'false'
+    assert local['services']['worker']['environment'].pop('IVRM_SERVICES_DATABASE_URL') == values.get('IVRM_SERVICES_DATABASE_URL', '')
+    assert local['services']['worker']['environment'].pop('TICKET_DISCORD_POLLER_SCAN_INTERVAL_SECONDS') == '60'
     # Activity XP emitter flag is not a database topology change. It must
     # remain off by default; only an explicit env-file value enables it.
     assert local['services']['bot']['environment'].pop('HERTA_XP_EMITTER_ENABLED') == 'false'
