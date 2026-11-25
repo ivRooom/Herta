@@ -26,6 +26,8 @@ import { dailyBonusManifest } from './manifests/daily-bonus.js';
 export { dailyBonusManifest } from './manifests/daily-bonus.js';
 import { dailyQuizManifest } from './manifests/daily-quiz.js';
 export { dailyQuizManifest } from './manifests/daily-quiz.js';
+import { decoGachaManifest } from './manifests/deco-gacha.js';
+export { decoGachaManifest } from './manifests/deco-gacha.js';
 import { mbtiManifest } from './manifests/mbti.js';
 import { miniGamesManifest } from './manifests/mini-games.js';
 import { minecraftStatusManifest } from './manifests/minecraft-status.js';
@@ -173,6 +175,7 @@ const rawPluginManifests: PluginManifest[] = [
   questBoardManifest,
   dailyBonusManifest,
   dailyQuizManifest,
+  decoGachaManifest,
   miniGamesManifest,
   minecraftStatusManifest,
   moderationManifest,
