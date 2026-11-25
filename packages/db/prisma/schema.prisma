@@ -1291,6 +1291,43 @@ model ActivityXpEventOutbox {
   @@map("activity_xp_event_outbox")
 }
 
+model TicketEventOutbox {
+  id            String    @id @default(uuid())
+  sourceEventId String    @unique @map("source_event_id")
+  eventId       String    @map("event_id")
+  guildId       String    @map("guild_id")
+  kind          String    @db.VarChar(16)
+  ticketId      String    @map("ticket_id")
+  body          String
+  status        String    @default("pending") @db.VarChar(16)
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz(3)
+  lastStatus    Int?      @map("last_status")
+  lastError     String?   @map("last_error")
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, nextAttemptAt])
+  @@index([guildId, status])
+  @@map("ticket_event_outbox")
+}
+
+model TicketThreadLink {
+  id          String   @id @default(uuid())
+  guildId     String   @map("guild_id")
+  ticketId    String   @unique @map("ticket_id")
+  channelId   String   @map("channel_id")
+  threadId    String   @unique @map("thread_id")
+  requesterId String   @map("requester_id")
+  claimedById String?  @map("claimed_by_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([guildId, threadId])
+  @@map("ticket_thread_links")
+}
+
 model FortuneProfile {
   guildId   String   @map("guild_id")
   userId    String   @map("user_id")
