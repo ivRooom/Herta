@@ -27,14 +27,14 @@ export async function POST(request: Request) {
       >`SELECT activity_name AS name, SUM(value) AS "totalSeconds"
         FROM community_game_activity_daily
         WHERE guild_id = ${input.guildId} AND user_id = ${userId}
-          AND activity_date >= ${input.from} AND activity_date <= ${input.to}
+          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
         GROUP BY activity_name
         ORDER BY SUM(value) DESC, activity_name ASC
         LIMIT ${COMMUNITY_GAME_STATS_GAMES_LIMIT}`;
       const totals = await prisma.$queryRaw<Array<{ totalSeconds: bigint | null }>>`
         SELECT SUM(value) AS "totalSeconds" FROM community_game_activity_daily
         WHERE guild_id = ${input.guildId} AND user_id = ${userId}
-          AND activity_date >= ${input.from} AND activity_date <= ${input.to}`;
+          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date`;
       return reply({
         status: 'ok',
         guildId: input.guildId,
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
         COUNT(DISTINCT user_id)::int AS "playerCount"
       FROM community_game_activity_daily
       WHERE guild_id = ${input.guildId}
-        AND activity_date >= ${input.from} AND activity_date <= ${input.to}
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
       GROUP BY activity_name
       ORDER BY SUM(value) DESC, activity_name ASC
       LIMIT ${COMMUNITY_GAME_STATS_GAMES_LIMIT}`;
@@ -64,14 +64,14 @@ export async function POST(request: Request) {
         (SELECT inner_rows.activity_name FROM community_game_activity_daily inner_rows
           WHERE inner_rows.guild_id = ${input.guildId}
             AND inner_rows.user_id = totals.user_id
-            AND inner_rows.activity_date >= ${input.from}
-            AND inner_rows.activity_date <= ${input.to}
+            AND inner_rows.activity_date >= ${input.from}::date
+            AND inner_rows.activity_date <= ${input.to}::date
           GROUP BY inner_rows.activity_name
           ORDER BY SUM(inner_rows.value) DESC, inner_rows.activity_name ASC
           LIMIT 1) AS "topGameName"
       FROM (SELECT user_id, SUM(value) AS total FROM community_game_activity_daily
         WHERE guild_id = ${input.guildId}
-          AND activity_date >= ${input.from} AND activity_date <= ${input.to}
+          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
         GROUP BY user_id) totals
       ORDER BY totals.total DESC, totals.user_id ASC
       LIMIT ${input.limit} OFFSET ${input.offset}`;
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       SELECT COUNT(*)::int AS total FROM (
         SELECT user_id FROM community_game_activity_daily
         WHERE guild_id = ${input.guildId}
-          AND activity_date >= ${input.from} AND activity_date <= ${input.to}
+          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
         GROUP BY user_id) ranked_users`;
     const total = counts[0]?.total ?? 0;
     return reply({

@@ -172,3 +172,19 @@ test('contract JSON matches the implemented endpoint', () => {
     'to',
   ]);
 });
+test('read route casts every range bound to date (PG 42883 regression)', () => {
+  // The route hands the validated from/to strings to Prisma $queryRaw,
+  // where they are bound as text; comparing them against the DATE
+  // column activity_date raises PG 42883
+  // (operator does not exist: date >= text, Prisma P2010), which the
+  // route's catch-all turned into a permanent 503. Pin the query
+  // shape: every range placeholder must carry an explicit ::date cast.
+  const route = readFileSync(
+    new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
+    'utf8',
+  );
+  const placeholders = route.match(/\$\{input\.(?:from|to)\}/g) ?? [];
+  const casted = route.match(/\$\{input\.(?:from|to)\}::date/g) ?? [];
+  assert.equal(placeholders.length, 12);
+  assert.equal(casted.length, placeholders.length);
+});
