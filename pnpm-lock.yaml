@@ -212,6 +212,9 @@ importers:
 
   apps/studio:
     dependencies:
+      '@herta/birthday-card':
+        specifier: workspace:*
+        version: link:../../packages/birthday-card
       '@herta/db':
         specifier: workspace:*
         version: link:../../packages/db
