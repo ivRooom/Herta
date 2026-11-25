@@ -17,6 +17,11 @@ import {
 import { startLfgRuntime, type LfgRuntime } from './lfg.js';
 import { startTeamSplitRuntime, type TeamSplitWorkerRuntime } from './team-split.js';
 import {
+  createTicketDiscordOutboxStore,
+  startTicketDiscordPollerRuntime,
+  type TicketDiscordPollerRuntime,
+} from './ticket-discord-outbox.js';
+import {
   startVcRecapRetentionRuntime,
   type VcRecapRetentionRuntime,
 } from './vc-recap-retention.js';
@@ -34,6 +39,7 @@ let vcRecapRetentionRuntime: VcRecapRetentionRuntime | undefined;
 let dailyContentRuntime: DailyContentRuntime | undefined;
 let discordRoleOperationRuntime: DiscordRoleOperationRuntime | undefined;
 let achievementNotificationRuntime: AchievementNotificationRuntime | undefined;
+let ticketDiscordPollerRuntime: TicketDiscordPollerRuntime | undefined;
 let lfgRuntime: LfgRuntime | undefined;
 let teamSplitRuntime: TeamSplitWorkerRuntime | undefined;
 let shuttingDown = false;
@@ -280,6 +286,43 @@ async function main() {
     }
   }
 
+  // チケット Web→Discord 配送 (ivrm-web #823 S4): 既定は無効。
+  // ivrm_services への専用接続 IVRM_SERVICES_DATABASE_URL と
+  // DISCORD_BOT_TOKEN が揃った場合のみ開始する。claim / ack は
+  // services 側の SECURITY DEFINER 関数経由 (直接 UPDATE はしない)。
+  // Herta DB (DATABASE_URL) には依存しないため上記の分岐の外で開始する。
+  const ticketDiscordPollerEnabled =
+    process.env['TICKET_DISCORD_POLLER_ENABLED']?.trim() === 'true';
+  const ivrmServicesDatabaseUrl = process.env['IVRM_SERVICES_DATABASE_URL']?.trim();
+  if (!ticketDiscordPollerEnabled) {
+    logger.info('TICKET_DISCORD_POLLER_ENABLEDが有効でないためチケット配送Pollerを開始しません');
+  } else if (!ivrmServicesDatabaseUrl || !discordBotToken) {
+    logger.warn(
+      'IVRM_SERVICES_DATABASE_URL / DISCORD_BOT_TOKEN のいずれかが未設定のためチケット配送Pollerを開始しません',
+    );
+  } else {
+    try {
+      const configuredTicketScanInterval = Number.parseInt(
+        process.env['TICKET_DISCORD_POLLER_SCAN_INTERVAL_SECONDS'] ?? '',
+        10,
+      );
+      ticketDiscordPollerRuntime = await startTicketDiscordPollerRuntime({
+        logger,
+        store: createTicketDiscordOutboxStore(ivrmServicesDatabaseUrl),
+        discordBotToken,
+        scanIntervalSeconds: Number.isFinite(configuredTicketScanInterval)
+          ? configuredTicketScanInterval
+          : undefined,
+      });
+      logger.info('チケット配送Pollerを開始しました');
+    } catch (error) {
+      logger.error(
+        { errorName: resolveErrorName(error) },
+        'チケット配送Pollerの開始に失敗しました (Worker 自体は継続します)',
+      );
+    }
+  }
+
   logger.info('Herta Worker を起動しました');
 }
 
@@ -338,6 +381,16 @@ async function shutdown(signal: string): Promise<void> {
     logger.error(
       { errorName: resolveErrorName(error) },
       'アチーブメント通知Workerの終了処理に失敗しました',
+    );
+  }
+
+  try {
+    await ticketDiscordPollerRuntime?.close();
+    ticketDiscordPollerRuntime = undefined;
+  } catch (error) {
+    logger.error(
+      { errorName: resolveErrorName(error) },
+      'チケット配送Pollerの終了処理に失敗しました',
     );
   }
 
