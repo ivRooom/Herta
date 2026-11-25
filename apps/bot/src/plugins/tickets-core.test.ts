@@ -1,9 +1,14 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
+  buildTicketActionEmbed,
   buildTicketCreatePayload,
+  buildTicketCreatedEmbed,
+  buildTicketCreatedSuccessEmbed,
+  buildTicketIntroEmbed,
   buildTicketMessageBody,
   buildTicketMessagePayload,
+  buildTicketPanelEmbed,
   buildTicketRequest,
   buildTicketThreadPayload,
   classifyTicketResponse,
@@ -11,9 +16,11 @@ import {
   isTicketCategory,
   normalizeTicketsConfig,
   resolveTicketBridgeConfig,
+  ticketCategoryColor,
   ticketCategoryLabel,
   ticketRetryDelayMs,
   TICKET_BODY_MAX_LENGTH,
+  TICKET_CATEGORY_COLORS,
 } from './tickets-core.js';
 
 const bridge = { apiBaseUrl: 'https://api.example.test', secret: 'test-secret' };
@@ -218,5 +225,119 @@ describe('normalizeTicketsConfig', () => {
       'privacy',
       'general',
     ]);
+  });
+});
+
+describe('Embed 化 (第2段 E1〜E3)', () => {
+  it('カテゴリ色は4カテゴリで一意に定義される', () => {
+    const colors = Object.values(TICKET_CATEGORY_COLORS);
+    expect(colors).toHaveLength(4);
+    expect(new Set(colors).size).toBe(4);
+    expect(ticketCategoryColor('discord')).toBe(TICKET_CATEGORY_COLORS.discord);
+    expect(ticketCategoryColor('privacy')).toBe(TICKET_CATEGORY_COLORS.privacy);
+  });
+
+  it('パネル Embed は有効カテゴリの説明フィールドだけを併記する', () => {
+    const embed = buildTicketPanelEmbed(['discord', 'privacy']);
+    expect(embed.title).toBe('🎫 問い合わせチケット');
+    expect(embed.color).toBeDefined();
+    expect(embed.fields?.map((field) => field.name)).toEqual([
+      'Discord全般',
+      'プライバシー・データ削除',
+    ]);
+    expect(embed.fields?.every((field) => field.value.length > 0)).toBe(true);
+  });
+
+  it('パネル Embed は全カテゴリ有効なら4フィールドになる', () => {
+    const embed = buildTicketPanelEmbed(['discord', 'game_server', 'privacy', 'general']);
+    expect(embed.fields).toHaveLength(4);
+  });
+
+  it('スレッド冒頭 Embed はタイトル=番号+件名、フィールドにカテゴリ・状態・起票者・Webリンクを持つ', () => {
+    const embed = buildTicketIntroEmbed({
+      ticketId: 'TK-0123456789AB',
+      category: 'game_server',
+      subject: '接続できません',
+      requesterId: '222222222222222222',
+      url: 'https://example.test/tickets/TK-0123456789AB',
+    });
+    expect(embed.title).toBe('🎫 TK-0123456789AB 接続できません');
+    expect(embed.color).toBe(TICKET_CATEGORY_COLORS.game_server);
+    expect(embed.fields).toEqual([
+      { name: 'カテゴリ', value: 'ゲーム・サーバー', inline: true },
+      { name: '状態', value: '受理', inline: true },
+      { name: '起票者', value: '<@222222222222222222>', inline: true },
+      { name: 'Web', value: '[閲覧・返信はこちら](https://example.test/tickets/TK-0123456789AB)' },
+    ]);
+  });
+
+  it('スレッド冒頭 Embed は URL が無ければ Web フィールドを出さない', () => {
+    const embed = buildTicketIntroEmbed({
+      ticketId: 'TK-0123456789AB',
+      category: 'general',
+      subject: '相談',
+      requesterId: '222222222222222222',
+      url: null,
+    });
+    expect(embed.fields?.some((field) => field.name === 'Web')).toBe(false);
+    expect(embed.fields).toHaveLength(3);
+  });
+
+  it('起票の運用通知 Embed はカテゴリ色と件名・スレッドを持つ', () => {
+    const embed = buildTicketCreatedEmbed({
+      ticketId: 'TK-0123456789AB',
+      category: 'privacy',
+      subject: '削除について',
+      threadId: '444444444444444444',
+    });
+    expect(embed.title).toBe('🎫 新しいチケット TK-0123456789AB');
+    expect(embed.color).toBe(TICKET_CATEGORY_COLORS.privacy);
+    expect(embed.fields).toContainEqual({ name: '件名', value: '削除について' });
+    expect(embed.fields).toContainEqual({
+      name: 'スレッド',
+      value: '<#444444444444444444>',
+      inline: true,
+    });
+  });
+
+  it('起票成功 Embed (E3) はチケット番号とスレッドメンションを持つ', () => {
+    const embed = buildTicketCreatedSuccessEmbed({
+      ticketId: 'TK-0123456789AB',
+      category: 'discord',
+      threadId: '444444444444444444',
+    });
+    expect(embed.title).toBe('🎫 チケット TK-0123456789AB を作成しました');
+    expect(embed.description).toContain('<#444444444444444444>');
+    expect(embed.color).toBe(TICKET_CATEGORY_COLORS.discord);
+  });
+
+  it('ボタン結果通知 Embed は3アクションでタイトルと実行者を持つ', () => {
+    for (const [action, titlePart] of [
+      ['claim', '担当希望'],
+      ['close', 'クローズ依頼'],
+      ['reopen', '再オープン依頼'],
+    ] as const) {
+      const embed = buildTicketActionEmbed({
+        action,
+        actorId: '111111111111111111',
+        ticketId: 'TK-0123456789AB',
+      });
+      expect(embed.title).toContain(titlePart);
+      expect(embed.title).toContain('TK-0123456789AB');
+      expect(embed.fields).toContainEqual({
+        name: '実行者',
+        value: '<@111111111111111111>',
+        inline: true,
+      });
+    }
+  });
+
+  it('クローズ通知 Embed はアーカイブされる旨を引き継ぐ', () => {
+    const embed = buildTicketActionEmbed({
+      action: 'close',
+      actorId: '111111111111111111',
+      ticketId: 'TK-0123456789AB',
+    });
+    expect(embed.description).toContain('アーカイブされます');
   });
 });
