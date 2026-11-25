@@ -153,6 +153,98 @@ describe('Genshin progress card model (#1010)', () => {
   });
 });
 
+describe('Genshin progress card layout guards (#1011 review fixes)', () => {
+  /** Chip rects live on the bottom row at y=766; the chip column ends at x=792. */
+  function chipRects(svg: string): { x: number; width: number }[] {
+    return [...svg.matchAll(/<rect x="([\d.]+)" y="766" width="([\d.]+)" height="34"/g)].map(
+      (match) => ({ x: Number(match[1]), width: Number(match[2]) }),
+    );
+  }
+
+  /** Stacked chest segments live at y=776; the chest column spans x=808..1528. */
+  function chestSegmentRects(svg: string): { x: number; width: number }[] {
+    return [...svg.matchAll(/<rect x="([\d.]+)" y="776" width="([\d.]+)" height="18"/g)].map(
+      (match) => ({ x: Number(match[1]), width: Number(match[2]) }),
+    );
+  }
+
+  function inputWith(
+    stats: HoyolabProgressSnapshot['stats'],
+    explorations: HoyolabProgressSnapshot['explorations'],
+  ): GenshinProgressCardInput {
+    return {
+      snapshot: {
+        gameCode: 'genshin',
+        uid: '800000001',
+        player: { nickname: 'テスト', level: 50 },
+        stats,
+        explorations,
+        endgame: [],
+      },
+      uid: '800000001',
+      fetchedAtLabel: '2026/11/26 02:00 (JST)',
+    };
+  }
+
+  it('applies the width budget to the first untouched chip too', () => {
+    // A 30-char name estimates to 28 + 30*21 = 658px wide; starting after
+    // the label at x=174 it would end at 832, past the 792 column limit
+    // and into the chest column. It must fold into the "+N" indicator.
+    const longName = 'あ'.repeat(30);
+    const model = buildGenshinProgressCardModel(
+      inputWith({}, [area('モンド', 100, 1), area(longName, 0, 2), area('空の神殿', 0, 3)]),
+    );
+    expect(model.untouched).toEqual([longName, '空の神殿']);
+    const svg = buildGenshinProgressCardSvg(model, null);
+    expect(svg).not.toContain(longName);
+    expect(svg).toContain('+2');
+    const rects = chipRects(svg);
+    expect(rects.length).toBeGreaterThan(0);
+    for (const rect of rects) {
+      expect(rect.x + rect.width).toBeLessThanOrEqual(792);
+    }
+  });
+
+  it('keeps every screenshot chip inside the chip column', () => {
+    const svg = buildGenshinProgressCardSvg(buildGenshinProgressCardModel(screenshotInput), null);
+    const rects = chipRects(svg);
+    expect(rects).toHaveLength(5);
+    for (const rect of rects) {
+      expect(rect.x + rect.width).toBeLessThanOrEqual(792);
+    }
+  });
+
+  it('shows the chest total even when the per-type breakdown is missing', () => {
+    const model = buildGenshinProgressCardModel(
+      inputWith({ totalChests: 2270 }, [area('モンド', 100, 1)]),
+    );
+    expect(model.chestTotal).toBe(2270);
+    expect(model.chestSegments).toEqual([]);
+    const svg = buildGenshinProgressCardSvg(model, null);
+    expect(svg).toContain('宝箱 合計 2,270');
+    expect(svg).not.toContain('宝箱 データなし');
+    // No breakdown means no stacked bar is drawn.
+    expect(chestSegmentRects(svg)).toEqual([]);
+  });
+
+  it('keeps the stacked bar inside its column when the breakdown exceeds the total', () => {
+    const model = buildGenshinProgressCardModel(
+      inputWith({ totalChests: 100, commonChests: 660, exquisiteChests: 532 }, [
+        area('モンド', 100, 1),
+      ]),
+    );
+    expect(model.chestTotal).toBe(100);
+    expect(model.chestSegments.reduce((sum, segment) => sum + segment.count, 0)).toBe(1192);
+    const svg = buildGenshinProgressCardSvg(model, null);
+    expect(svg).toContain('宝箱 合計 100');
+    const rects = chestSegmentRects(svg);
+    expect(rects).toHaveLength(2);
+    for (const rect of rects) {
+      expect(rect.x + rect.width).toBeLessThanOrEqual(1528);
+    }
+  });
+});
+
 describe('Genshin progress card render (#1010)', () => {
   // The background binary (apps/bot/assets/game-progress/nodkrai-frostmoon-shrine.webp,
   // 2048x1152 WebP) is added to the branch through the GitHub Web upload,

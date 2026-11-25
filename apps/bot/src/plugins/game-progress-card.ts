@@ -332,7 +332,7 @@ export function buildGenshinProgressCardSvg(
       const w = chipWidth(name);
       const remaining = model.untouched.length - shown;
       const reserve = remaining > 1 ? chipWidth(`+${remaining - 1}`) + 12 : 0;
-      if (chipX + w > chipLimit - reserve && shown > 0) break;
+      if (chipX + w > chipLimit - reserve) break;
       s += `<rect x="${chipX}" y="766" width="${w}" height="34" rx="17" fill="rgba(13,18,30,0.80)" stroke="${LINE}"/>`;
       s += text(chipX + w / 2, 789, name, 14, MUTED, 400, 'middle');
       chipX += w + 12;
@@ -350,21 +350,28 @@ export function buildGenshinProgressCardSvg(
   // Chest stacked bar (right half of the bottom row)
   const chX = 808;
   const chW = 720;
-  if (model.chestTotal !== null && model.chestTotal > 0 && model.chestSegments.length > 0) {
+  if (model.chestTotal !== null && model.chestTotal > 0) {
     s += text(chX, 764, `宝箱 合計 ${formatCount(model.chestTotal)}`, 15, FG, 800);
-    let segX = chX;
-    for (const segment of model.chestSegments) {
-      const w = (chW * segment.count) / model.chestTotal;
-      if (w > 0) {
-        s += `<rect x="${segX}" y="776" width="${Math.max(w - 3, 4)}" height="18" rx="6" fill="${segment.color}"/>`;
+    if (model.chestSegments.length > 0) {
+      // The per-type counts are independent stats and can add up to more
+      // than the reported total; normalize against the larger of the two
+      // so the stacked bar never spills out of its column.
+      const segmentTotal = model.chestSegments.reduce((sum, segment) => sum + segment.count, 0);
+      const denominator = Math.max(model.chestTotal, segmentTotal);
+      let segX = chX;
+      for (const segment of model.chestSegments) {
+        const w = (chW * segment.count) / denominator;
+        if (w > 0) {
+          s += `<rect x="${segX}" y="776" width="${Math.max(w - 3, 4)}" height="18" rx="6" fill="${segment.color}"/>`;
+        }
+        segX += w;
       }
-      segX += w;
-    }
-    let legX = chX;
-    for (const segment of model.chestSegments) {
-      s += `<circle cx="${legX + 7}" cy="822" r="7" fill="${segment.color}"/>`;
-      s += text(legX + 20, 828, `${segment.shortLabel} ${formatCount(segment.count)}`, 14, MUTED);
-      legX += 144;
+      let legX = chX;
+      for (const segment of model.chestSegments) {
+        s += `<circle cx="${legX + 7}" cy="822" r="7" fill="${segment.color}"/>`;
+        s += text(legX + 20, 828, `${segment.shortLabel} ${formatCount(segment.count)}`, 14, MUTED);
+        legX += 144;
+      }
     }
   } else {
     s += text(chX, 764, '宝箱 データなし', 15, SUBTLE, 700);
