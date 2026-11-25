@@ -33,6 +33,7 @@ import { pollPlugin } from './poll.js';
 import { reminderPlugin } from './reminder.js';
 import { roleManagerPlugin } from './role-manager.js';
 import { suggestionPlugin } from './suggestion.js';
+import { ticketsPlugin } from './tickets.js';
 import { serverStatsPlugin } from './server-stats.js';
 import { valorantPlugin } from './valorant.js';
 import { xpLevelPlugin } from './xp-level.js';
@@ -273,6 +274,7 @@ const officialPluginIds = [
   'suggestion',
   'server-stats',
   'team-split',
+  'tickets',
   'valorant',
   'vc-recap',
   'xp-level',
@@ -732,6 +734,23 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof suggestionPlugin.onEnable>>[0],
       )
     : undefined;
+  const ticketsEntry = deps
+    ? toRuntimePluginEntry(
+        ticketsPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
+          }) as Parameters<NonNullable<typeof ticketsPlugin.onEnable>>[0],
+      )
+    : undefined;
   const xpLevelEntry = deps
     ? toRuntimePluginEntry(
         xpLevelPlugin,
@@ -868,6 +887,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'server-stats' && serverStatsEntry) return [serverStatsEntry];
     if (pluginId === 'minecraft-status' && minecraftStatusEntry) return [minecraftStatusEntry];
     if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];
+    if (pluginId === 'tickets' && ticketsEntry) return [ticketsEntry];
     if (pluginId === 'valorant' && valorantEntry) return [valorantEntry];
     if (pluginId === 'vc-recap' && vcRecapEntry) return [vcRecapEntry];
     if (pluginId === 'xp-level' && xpLevelEntry) return [xpLevelEntry];
