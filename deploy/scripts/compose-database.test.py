@@ -78,6 +78,8 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     assert local['services']['bot']['environment'].pop('HERTA_MINECRAFT_SYNC_SECRET') == values.get('HERTA_MINECRAFT_SYNC_SECRET', '')
     # Submission review bot API secret is not a database topology change.
     assert local['services']['bot']['environment'].pop('HERTA_REVIEW_BOT_SECRET') == values.get('HERTA_REVIEW_BOT_SECRET', '')
+    # Deco gacha bot API secret is not a database topology change.
+    assert local['services']['bot']['environment'].pop('HERTA_DECO_BOT_SECRET') == values.get('HERTA_DECO_BOT_SECRET', '')
     # Release notification settings are not a database topology change.
     # The sender stays off by default; only an explicit env-file value enables it.
     assert local['services']['bot']['environment'].pop('HERTA_RELEASE_NOTIFY_ENABLED') == 'false'
