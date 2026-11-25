@@ -10,6 +10,14 @@ export const COMMUNITY_GAME_STATS_PURPOSE = 'herta-community-game-stats-read-v1'
  */
 export const COMMUNITY_GAME_STATS_GAMES_LIMIT = 25;
 export type CommunityGameStatsMode = 'overview' | 'user';
+/**
+ * Contract version negotiated by the signed request body:
+ * 1 (or absent) returns exactly the v1 response; 2 adds the
+ * `activity` section built from community_activity_daily.
+ * Signing is unchanged across versions (the v1 purpose string
+ * stays the key-derivation domain separator).
+ */
+export type CommunityGameStatsVersion = 1 | 2;
 export interface CommunityGameStatsInput {
   guildId: string;
   from: string;
@@ -18,6 +26,7 @@ export interface CommunityGameStatsInput {
   offset: number;
   mode: CommunityGameStatsMode;
   discordUserId: string | null;
+  version: CommunityGameStatsVersion;
 }
 export interface CommunityGameStatItem {
   name: string;
@@ -32,6 +41,39 @@ export interface CommunityGameRankingItem {
 export interface CommunityUserGameItem {
   name: string;
   totalSeconds: number;
+}
+/**
+ * Activity metrics supplied by the v2 `activity` section, read
+ * from community_activity_daily (metric / value rows). Only
+ * these three metrics are part of the contract: reactions are
+ * accumulated too sparsely to rank by, and no other metric may
+ * leak into the response. `messages` counts only the messages
+ * the Activity Rules counted (cooldown-filtered), never the
+ * guild's raw message total; `voice_seconds` is stay time in
+ * countable voice channels; `online_seconds` is a reference
+ * total (presence time inflates while merely online).
+ */
+export const COMMUNITY_ACTIVITY_METRICS = ['voice_seconds', 'messages', 'online_seconds'] as const;
+export type CommunityActivityMetric = (typeof COMMUNITY_ACTIVITY_METRICS)[number];
+export interface CommunityActivityTotals {
+  voiceSeconds: number;
+  messageCount: number;
+  onlineSeconds: number;
+  voiceMemberCount: number;
+  messageMemberCount: number;
+}
+export interface CommunityActivityVoiceRankingItem {
+  discordUserId: string;
+  totalSeconds: number;
+}
+export interface CommunityActivityMessageRankingItem {
+  discordUserId: string;
+  totalCount: number;
+}
+export interface CommunityActivityUserTotals {
+  voiceSeconds: number;
+  messageCount: number;
+  onlineSeconds: number;
 }
 const date = (value: unknown): value is string =>
   typeof value === 'string' &&
@@ -109,6 +151,92 @@ export function projectCommunityUserGameRow(row: {
     totalSeconds: toCommunityGameSeconds(row.totalSeconds),
   };
 }
+function activityUserId(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{17,20}$/.test(value))
+    throw new Error('InvalidCommunityActivityUser');
+  return value;
+}
+function activityMemberCount(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)
+    throw new Error('InvalidCommunityActivityMemberCount');
+  return value;
+}
+/**
+ * Activity projections follow the game-side rule: only the
+ * selected columns, re-validated field by field. Aggregates
+ * cross the wire through toCommunityGameSeconds, so a Decimal
+ * leaking from an uncast SUM(value) throws here instead of
+ * being forwarded (#1004).
+ */
+export function projectCommunityActivityVoiceRankingRow(row: {
+  discordUserId: unknown;
+  totalSeconds: unknown;
+}): CommunityActivityVoiceRankingItem {
+  return {
+    discordUserId: activityUserId(row.discordUserId),
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+  };
+}
+export function projectCommunityActivityMessageRankingRow(row: {
+  discordUserId: unknown;
+  totalCount: unknown;
+}): CommunityActivityMessageRankingItem {
+  return {
+    discordUserId: activityUserId(row.discordUserId),
+    totalCount: toCommunityGameSeconds(row.totalCount),
+  };
+}
+function activityMetricTotals(
+  rows: Array<{ metric: unknown; total: unknown }>,
+): Record<CommunityActivityMetric, number> {
+  const totals: Record<CommunityActivityMetric, number> = {
+    voice_seconds: 0,
+    messages: 0,
+    online_seconds: 0,
+  };
+  const seen = new Set<CommunityActivityMetric>();
+  for (const row of rows) {
+    if (
+      typeof row.metric !== 'string' ||
+      !(COMMUNITY_ACTIVITY_METRICS as readonly string[]).includes(row.metric)
+    )
+      throw new Error('InvalidCommunityActivityMetric');
+    const metric = row.metric as CommunityActivityMetric;
+    if (seen.has(metric)) throw new Error('InvalidCommunityActivityMetric');
+    seen.add(metric);
+    totals[metric] = toCommunityGameSeconds(row.total);
+  }
+  return totals;
+}
+export function projectCommunityActivityTotals(
+  rows: Array<{ metric: unknown; total: unknown; memberCount: unknown }>,
+): CommunityActivityTotals {
+  const totals = activityMetricTotals(rows);
+  const memberCounts: Record<CommunityActivityMetric, number> = {
+    voice_seconds: 0,
+    messages: 0,
+    online_seconds: 0,
+  };
+  for (const row of rows)
+    memberCounts[row.metric as CommunityActivityMetric] = activityMemberCount(row.memberCount);
+  return {
+    voiceSeconds: totals.voice_seconds,
+    messageCount: totals.messages,
+    onlineSeconds: totals.online_seconds,
+    voiceMemberCount: memberCounts.voice_seconds,
+    messageMemberCount: memberCounts.messages,
+  };
+}
+export function projectCommunityActivityUserTotals(
+  rows: Array<{ metric: unknown; total: unknown }>,
+): CommunityActivityUserTotals {
+  const totals = activityMetricTotals(rows);
+  return {
+    voiceSeconds: totals.voice_seconds,
+    messageCount: totals.messages,
+    onlineSeconds: totals.online_seconds,
+  };
+}
 /**
  * MIN(activity_date) of the guild: the day observation
  * started. The column is a DATE, so the driver hands back a
@@ -180,12 +308,14 @@ export async function authorizeCommunityGameStatsRead(
   if (!value || typeof value !== 'object' || Array.isArray(value))
     return fail(422, 'invalid_request');
   const keys = Object.keys(value).sort();
-  const allowed = ['discordUserId', 'from', 'guildId', 'limit', 'mode', 'offset', 'to'];
+  const allowed = ['discordUserId', 'from', 'guildId', 'limit', 'mode', 'offset', 'to', 'version'];
   if (
     keys.some((key) => !allowed.includes(key)) ||
     !['from', 'guildId', 'limit', 'offset', 'to'].every((key) => keys.includes(key))
   )
     return fail(422, 'invalid_request');
+  const version = value.version === undefined ? 1 : value.version;
+  if (version !== 1 && version !== 2) return fail(422, 'invalid_request');
   const mode = value.mode === undefined ? 'overview' : value.mode;
   if (mode !== 'overview' && mode !== 'user') return fail(422, 'invalid_request');
   const discordUserId = value.discordUserId === undefined ? null : value.discordUserId;
@@ -213,5 +343,6 @@ export async function authorizeCommunityGameStatsRead(
     offset: value.offset as number,
     mode,
     discordUserId: discordUserId as string | null,
+    version: version as CommunityGameStatsVersion,
   };
 }
