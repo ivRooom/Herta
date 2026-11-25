@@ -14,6 +14,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@herta/birthday-card": "workspace:*",
     "@herta/shared": "workspace:*",
     "@herta/logger": "workspace:*",
     "@herta/plugin-sdk": "workspace:*",

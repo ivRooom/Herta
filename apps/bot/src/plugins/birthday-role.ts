@@ -1,9 +1,8 @@
+import { fetchBirthdayCardBackgroundImage, renderBirthdayCard } from '@herta/birthday-card';
 import { getBirthdayCardRuntimeBackground, type PrismaClient } from '@herta/db';
 import { birthdayRoleManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
 import { normalizeBirthdayCardConfig, type BirthdayCardConfig } from '@herta/shared';
-import { renderBirthdayCard } from './birthday-card.js';
-import { fetchBirthdayCardBackgroundImage } from './birthday-card-background-url.js';
 import {
   callIvrmBirthday,
   type IvrmBirthdayRecipient,

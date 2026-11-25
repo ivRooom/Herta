@@ -69,6 +69,7 @@ RUN rm -rf \
     apps/worker/src \
     apps/studio/src \
     apps/studio/.next/cache \
+    packages/birthday-card/src \
     packages/db/src \
     packages/logger/src \
     packages/plugin-catalog/src \

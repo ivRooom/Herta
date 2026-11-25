@@ -1,0 +1,35 @@
+{
+  "dependencies": {
+    "@herta/shared": "workspace:*",
+    "sharp": "0.35.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
+  },
+  "exports": {
+    ".": {
+      "default": "./dist/index.js",
+      "types": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "assets"
+  ],
+  "main": "./dist/index.js",
+  "name": "@herta/birthday-card",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "lint": "echo 'no lint configured'",
+    "test": "vitest run --passWithNoTests",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "types": "./src/index.ts",
+  "version": "0.1.0"
+}
