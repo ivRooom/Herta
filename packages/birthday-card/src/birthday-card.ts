@@ -30,14 +30,24 @@ export interface BirthdayCardRenderInput {
    * Studio-stored custom background and the bundled preset.
    */
   remoteBackground?: Uint8Array | null;
+  /**
+   * Pre-fetched avatar image bytes, used instead of downloading
+   * `avatarUrl`. For callers that cannot hand the renderer a
+   * Discord CDN URL (the Studio preview endpoint passes its
+   * bundled sample avatar, #991 S3d-D2). The bytes must be a
+   * decodable image; the bot never sets this.
+   */
+  avatarBytes?: Uint8Array | null;
 }
 
 export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promise<Buffer> {
   const preset = birthdayCardPreset(input.config.birthdayCardPreset);
   const layers: OverlayOptions[] = [];
 
-  if (input.config.birthdayCardShowAvatar && input.avatarUrl) {
-    const avatarBytes = await downloadDiscordAvatar(input.avatarUrl).catch(() => null);
+  if (input.config.birthdayCardShowAvatar && (input.avatarUrl || input.avatarBytes)) {
+    const avatarBytes = input.avatarBytes
+      ? Buffer.from(input.avatarBytes)
+      : await downloadDiscordAvatar(input.avatarUrl as string).catch(() => null);
     if (avatarBytes) {
       const diameter = Math.max(
         64,
