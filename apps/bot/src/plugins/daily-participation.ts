@@ -102,6 +102,22 @@ async function admission(ctx: Context, interaction: Interaction) {
 
 type QuestionMedia = ParticipationQuestion['media'][number];
 
+// Attachment file names follow the media's actual MIME type (#988 review):
+// the media schema accepts six types, so the fetch guard and the file name
+// must cover all of them instead of assuming webp/wav.
+const mediaFileExtensions: Record<QuestionMedia['mimeType'], string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'audio/mpeg': 'mp3',
+  'audio/ogg': 'ogg',
+  'audio/wav': 'wav',
+};
+
+function mediaFileName(media: QuestionMedia): string {
+  return `${media.id}.${mediaFileExtensions[media.mimeType]}`;
+}
+
 async function fetchQuestionMedia(
   ctx: Context,
   userId: string,
@@ -114,7 +130,7 @@ async function fetchQuestionMedia(
     !response?.ok ||
     response.headers.get('X-IVRM-Media-Id') !== media.id ||
     response.headers.get('Content-Type') !== media.mimeType ||
-    !['image/webp', 'audio/wav'].includes(media.mimeType) ||
+    !(media.mimeType in mediaFileExtensions) ||
     Number(response.headers.get('Content-Length')) !== media.byteSize ||
     !response.headers.get('Cache-Control')?.includes('private') ||
     !response.headers.get('Cache-Control')?.includes('no-store') ||
@@ -256,7 +272,7 @@ export async function showParticipationQuestions(
               .join(' / ') || '問題の素材',
           files: [
             new AttachmentBuilder(buffer, {
-              name: `${media.id}.${media.kind === 'audio' ? 'wav' : 'webp'}`,
+              name: mediaFileName(media),
             }),
           ],
         });
@@ -272,7 +288,7 @@ export async function showParticipationQuestions(
     if (hero) {
       try {
         const buffer = await fetchQuestionMedia(ctx, interaction.user.id, hero);
-        const name = `${hero.id}.webp`;
+        const name = mediaFileName(hero);
         await interaction.followUp({
           flags: MessageFlags.Ephemeral,
           allowedMentions: { parse: [] },
@@ -406,7 +422,7 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
     if (hero) {
       try {
         const buffer = await fetchQuestionMedia(ctx, interaction.user.id, hero);
-        heroName = `${hero.id}.webp`;
+        heroName = mediaFileName(hero);
         heroFile = new AttachmentBuilder(buffer, { name: heroName });
       } catch {
         // Degrade to the no-media review.
@@ -425,7 +441,7 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
               .join(' / ') || '問題の素材',
           files: [
             new AttachmentBuilder(buffer, {
-              name: `${media.id}.${media.kind === 'audio' ? 'wav' : 'webp'}`,
+              name: mediaFileName(media),
             }),
           ],
         });
@@ -558,7 +574,7 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
           content: '解説の素材',
           files: [
             new AttachmentBuilder(buffer, {
-              name: `${media.id}.${media.kind === 'audio' ? 'wav' : 'webp'}`,
+              name: mediaFileName(media),
             }),
           ],
         });
