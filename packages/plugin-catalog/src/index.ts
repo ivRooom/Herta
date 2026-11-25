@@ -35,6 +35,7 @@ import { reminderManifest } from './manifests/reminder.js';
 import { roleManagerManifest } from './manifests/role-manager.js';
 import { suggestionManifest } from './manifests/suggestion.js';
 import { serverStatsManifest } from './manifests/server-stats.js';
+import { submissionReviewManifest } from './manifests/submission-review.js';
 import { valorantManifest } from './manifests/valorant.js';
 import { vcRecapManifest } from './manifests/vc-recap.js';
 import { xpLevelManifest } from './manifests/xp-level.js';
@@ -74,6 +75,7 @@ export {
   type ValorantAgentRole,
 } from './manifests/valorant.js';
 export { serverStatsManifest } from './manifests/server-stats.js';
+export { submissionReviewManifest } from './manifests/submission-review.js';
 export { vcRecapManifest } from './manifests/vc-recap.js';
 export { xpLevelManifest } from './manifests/xp-level.js';
 
@@ -181,6 +183,7 @@ const rawPluginManifests: PluginManifest[] = [
   roleManagerManifest,
   suggestionManifest,
   serverStatsManifest,
+  submissionReviewManifest,
   teamSplitManifest,
   ticketsManifest,
   valorantManifest,

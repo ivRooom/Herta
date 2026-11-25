@@ -32,6 +32,7 @@ import { onboardingPlugin } from './onboarding.js';
 import { pollPlugin } from './poll.js';
 import { reminderPlugin } from './reminder.js';
 import { roleManagerPlugin } from './role-manager.js';
+import { submissionReviewPlugin } from './submission-review.js';
 import { suggestionPlugin } from './suggestion.js';
 import { ticketsPlugin } from './tickets.js';
 import { serverStatsPlugin } from './server-stats.js';
@@ -271,6 +272,7 @@ const officialPluginIds = [
   'reminder',
   'quote',
   'role-manager',
+  'submission-review',
   'suggestion',
   'server-stats',
   'team-split',
@@ -802,6 +804,23 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof minecraftStatusPlugin.onEnable>>[0],
       )
     : undefined;
+  const submissionReviewEntry = deps
+    ? toRuntimePluginEntry(
+        submissionReviewPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
+          }) as Parameters<NonNullable<typeof submissionReviewPlugin.onEnable>>[0],
+      )
+    : undefined;
   const teamSplitEntry = deps
     ? toRuntimePluginEntry(
         teamSplitPlugin,
@@ -883,6 +902,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'reminder' && reminderEntry) return [reminderEntry];
     if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
     if (pluginId === 'role-manager' && roleManagerEntry) return [roleManagerEntry];
+    if (pluginId === 'submission-review' && submissionReviewEntry) return [submissionReviewEntry];
     if (pluginId === 'suggestion' && suggestionEntry) return [suggestionEntry];
     if (pluginId === 'server-stats' && serverStatsEntry) return [serverStatsEntry];
     if (pluginId === 'minecraft-status' && minecraftStatusEntry) return [minecraftStatusEntry];
