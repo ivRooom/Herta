@@ -25,6 +25,7 @@ import { gameAccountsPlugin } from './game-accounts.js';
 import { questBoardPlugin } from './quest-board.js';
 import { dailyBonusPlugin } from './daily-bonus.js';
 import { dailyQuizPlugin } from './daily-quiz.js';
+import { decoGachaPlugin } from './deco-gacha.js';
 import { mbtiPlugin } from './mbti.js';
 import { miniGamesPlugin } from './mini-games.js';
 import { minecraftStatusPlugin } from './minecraft-status.js';
@@ -257,6 +258,7 @@ const officialPluginIds = [
   'daily-content',
   'daily-bonus',
   'daily-quiz',
+  'deco-gacha',
   'event-rsvp',
   'giveaway',
   'lfg',
@@ -600,6 +602,23 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof dailyQuizPlugin.onEnable>>[0],
       )
     : undefined;
+  const decoGachaEntry = deps
+    ? toRuntimePluginEntry(
+        decoGachaPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
+          }) as Parameters<NonNullable<typeof decoGachaPlugin.onEnable>>[0],
+      )
+    : undefined;
   const miniGamesEntry = deps
     ? toRuntimePluginEntry(
         miniGamesPlugin,
@@ -894,6 +913,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'quest-board' && questBoardEntry) return [questBoardEntry];
     if (pluginId === 'daily-bonus' && dailyBonusEntry) return [dailyBonusEntry];
     if (pluginId === 'daily-quiz' && dailyQuizEntry) return [dailyQuizEntry];
+    if (pluginId === 'deco-gacha' && decoGachaEntry) return [decoGachaEntry];
     if (pluginId === 'mbti' && mbtiEntry) return [mbtiEntry];
     if (pluginId === 'mini-games' && miniGamesEntry) return [miniGamesEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
