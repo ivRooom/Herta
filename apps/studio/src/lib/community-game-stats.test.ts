@@ -188,3 +188,22 @@ test('read route casts every range bound to date (PG 42883 regression)', () => {
   assert.equal(placeholders.length, 12);
   assert.equal(casted.length, placeholders.length);
 });
+test('read route casts every SUM(value) aggregate to bigint (PG numeric regression)', () => {
+  // SUM over the BigInt `value` column returns PG numeric, which
+  // Prisma $queryRaw hands back as a Decimal object — not the
+  // bigint / number / string the projections accept — so
+  // toCommunityGameSeconds threw on every non-empty result and
+  // the route's catch-all turned it into a permanent 503 (#1004).
+  // Checking the returned values as strings masks this (a Decimal
+  // stringifies to its digits), so pin the query shape instead:
+  // every selected SUM(value) aggregate must carry an explicit
+  // ::bigint cast. ORDER BY aggregates do not cross the wire and
+  // need no cast.
+  const route = readFileSync(
+    new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
+    'utf8',
+  );
+  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 3);
+  assert.equal((route.match(/SUM\(value\)::bigint AS total/g) ?? []).length, 1);
+  assert.equal((route.match(/SUM\((?:inner_rows\.)?value\) AS/g) ?? []).length, 0);
+});

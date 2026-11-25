@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       const userId = input.discordUserId as string;
       const rows = await prisma.$queryRaw<
         Array<{ name: string; totalSeconds: bigint }>
-      >`SELECT activity_name AS name, SUM(value) AS "totalSeconds"
+      >`SELECT activity_name AS name, SUM(value)::bigint AS "totalSeconds"
         FROM community_game_activity_daily
         WHERE guild_id = ${input.guildId} AND user_id = ${userId}
           AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
         ORDER BY SUM(value) DESC, activity_name ASC
         LIMIT ${COMMUNITY_GAME_STATS_GAMES_LIMIT}`;
       const totals = await prisma.$queryRaw<Array<{ totalSeconds: bigint | null }>>`
-        SELECT SUM(value) AS "totalSeconds" FROM community_game_activity_daily
+        SELECT SUM(value)::bigint AS "totalSeconds" FROM community_game_activity_daily
         WHERE guild_id = ${input.guildId} AND user_id = ${userId}
           AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date`;
       return reply({
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     }
     const gameRows = await prisma.$queryRaw<
       Array<{ name: string; totalSeconds: bigint; playerCount: number }>
-    >`SELECT activity_name AS name, SUM(value) AS "totalSeconds",
+    >`SELECT activity_name AS name, SUM(value)::bigint AS "totalSeconds",
         COUNT(DISTINCT user_id)::int AS "playerCount"
       FROM community_game_activity_daily
       WHERE guild_id = ${input.guildId}
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
           GROUP BY inner_rows.activity_name
           ORDER BY SUM(inner_rows.value) DESC, inner_rows.activity_name ASC
           LIMIT 1) AS "topGameName"
-      FROM (SELECT user_id, SUM(value) AS total FROM community_game_activity_daily
+      FROM (SELECT user_id, SUM(value)::bigint AS total FROM community_game_activity_daily
         WHERE guild_id = ${input.guildId}
           AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
         GROUP BY user_id) totals
@@ -99,7 +99,8 @@ export async function POST(request: Request) {
         },
       },
     });
-  } catch {
+  } catch (error) {
+    console.error('community_game_stats_read_failed', error);
     return reply({ error: 'community_game_stats_unavailable' }, 503);
   }
 }
