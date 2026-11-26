@@ -16,6 +16,7 @@ import {
   normalizeBirthdayRoleConfig,
   renderBirthdayAnnouncement,
   resolveEffectiveBirthday,
+  resolveMemberBirthdayCardPreset,
   toBirthdayRegistrationLike,
 } from './birthday-role.js';
 
@@ -198,6 +199,7 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
       month: 11,
       day: 22,
       age: null,
+      cardPresetId: null,
     });
     expect(converted).toEqual({
       userId: '123456789012345678',
@@ -206,6 +208,7 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
       birthYear: null,
       displayName: 'A',
       age: null,
+      cardPresetId: null,
     });
     // 年齢変数は空になる（カード・文面とも名前＋月日のみ）
     expect(
@@ -224,6 +227,7 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
       month: 11,
       day: 22,
       age: 25,
+      cardPresetId: null,
     });
     expect(converted.birthYear).toBeNull();
     expect(converted.age).toBe(25);
@@ -235,6 +239,62 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
         serverBirthdayNumber: 2,
       }),
     ).toBe('🎂 <@123456789012345678> 25歳のお誕生日おめでとう！');
+  });
+});
+
+describe('メンバー個別プリセットの解決 (#1921 R3-H)', () => {
+  const definition = {
+    id: 'member-red',
+    label: 'メンバーの赤',
+    backgroundUrl: 'https://cdn.example.invalid/member-red.png',
+    textColor: '#ffffff',
+    textStroke: '#34255e',
+  };
+  const definitions = new Map([['member-red', definition]]);
+
+  it('API対象者の cardPresetId を登録形式へ引き継ぐ', () => {
+    const converted = toBirthdayRegistrationLike({
+      memberId: 'member-a',
+      discordUserId: '123456789012345678',
+      displayName: 'A',
+      month: 11,
+      day: 22,
+      age: null,
+      cardPresetId: 'member-red',
+    });
+    expect(converted.cardPresetId).toBe('member-red');
+  });
+
+  it('指定が無い（キー無し・null）場合は全体設定のまま（null）', () => {
+    expect(resolveMemberBirthdayCardPreset({}, definitions)).toBeNull();
+    expect(resolveMemberBirthdayCardPreset({ cardPresetId: null }, definitions)).toBeNull();
+  });
+
+  it('組み込みプリセットの指定はプリセット差し替えとして解決する', () => {
+    expect(
+      resolveMemberBirthdayCardPreset({ cardPresetId: 'herta-lavender-tea' }, definitions),
+    ).toEqual({ preset: 'herta-lavender-tea', definition: null });
+  });
+
+  it('DBプリセットの指定は定義表の定義として解決する', () => {
+    expect(resolveMemberBirthdayCardPreset({ cardPresetId: 'member-red' }, definitions)).toEqual({
+      preset: null,
+      definition,
+    });
+  });
+
+  it('定義が届いていない id（削除済み等）は未設定として扱う', () => {
+    expect(
+      resolveMemberBirthdayCardPreset({ cardPresetId: 'deleted-preset' }, definitions),
+    ).toBeNull();
+    expect(resolveMemberBirthdayCardPreset({ cardPresetId: 'member-red' }, new Map())).toBeNull();
+  });
+
+  it('組み込み id と同名の定義があっても組み込みが優先される', () => {
+    const shadowed = new Map([['herta-night-board', { ...definition, id: 'herta-night-board' }]]);
+    expect(
+      resolveMemberBirthdayCardPreset({ cardPresetId: 'herta-night-board' }, shadowed),
+    ).toEqual({ preset: 'herta-night-board', definition: null });
   });
 });
 

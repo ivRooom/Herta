@@ -125,7 +125,12 @@ describe('callIvrmBirthday', () => {
       status: 'ok',
       enabled: true,
       settings: settingsFixture,
-      recipients: recipientsFixture.map((recipient) => ({ ...recipient, age: null })),
+      recipients: recipientsFixture.map((recipient) => ({
+        ...recipient,
+        age: null,
+        cardPresetId: null,
+      })),
+      presetDefinitions: new Map(),
     });
   });
 
@@ -151,9 +156,10 @@ describe('callIvrmBirthday', () => {
       enabled: true,
       settings,
       recipients: [
-        { ...recipientsFixture[0], age: 25 },
-        { ...recipientsFixture[1], age: null },
+        { ...recipientsFixture[0], age: 25, cardPresetId: null },
+        { ...recipientsFixture[1], age: null, cardPresetId: null },
       ],
+      presetDefinitions: new Map(),
     });
   });
 
@@ -363,6 +369,176 @@ describe('callIvrmBirthday', () => {
     });
 
     vi.stubGlobal('fetch', mockApi({ enabled: true, settings: null, recipients: [] }));
+    await expect(callIvrmBirthday(guild, localDate, config)).resolves.toEqual({
+      status: 'unavailable',
+    });
+  });
+
+  it('メンバー個別プリセット（cardPresetId）と定義表を受理する (#1921 R3-H)', async () => {
+    const definition = {
+      id: 'member-red',
+      label: 'メンバーの赤',
+      backgroundUrl: 'https://cdn.example.invalid/member-red.png',
+      textColor: '#ffffff',
+      textStroke: '#34255e',
+    };
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: settingsFixture,
+        recipients: [
+          { ...recipientsFixture[0], cardPresetId: 'herta-lavender-tea' },
+          { ...recipientsFixture[1], cardPresetId: 'member-red' },
+        ],
+        presetDefinitions: { 'member-red': definition },
+      }),
+    );
+    const result = await callIvrmBirthday(guild, localDate, config);
+    expect(result).toEqual({
+      status: 'ok',
+      enabled: true,
+      settings: settingsFixture,
+      recipients: [
+        { ...recipientsFixture[0], age: null, cardPresetId: 'herta-lavender-tea' },
+        { ...recipientsFixture[1], age: null, cardPresetId: 'member-red' },
+      ],
+      presetDefinitions: new Map([['member-red', definition]]),
+    });
+  });
+
+  it('cardPresetId が null の対象者は「指定なし」として受理する', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: settingsFixture,
+        recipients: [{ ...recipientsFixture[0], cardPresetId: null }],
+      }),
+    );
+    const result = await callIvrmBirthday(guild, localDate, config);
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok' && result.enabled) {
+      expect(result.recipients[0]?.cardPresetId).toBeNull();
+    }
+  });
+
+  it('cardPresetId の形式が不正な応答は unavailable にする', async () => {
+    for (const cardPresetId of ['Bad ID!', 'UPPER', '-leading-hyphen', '', 42, true]) {
+      vi.stubGlobal(
+        'fetch',
+        mockApi({
+          enabled: true,
+          settings: settingsFixture,
+          recipients: [{ ...recipientsFixture[0], cardPresetId }],
+        }),
+      );
+      await expect(callIvrmBirthday(guild, localDate, config)).resolves.toEqual({
+        status: 'unavailable',
+      });
+    }
+  });
+
+  it('不正な定義はその id だけを落とし、他の定義と配信は受理する', async () => {
+    const valid = {
+      id: 'member-red',
+      label: 'メンバーの赤',
+      backgroundUrl: 'https://cdn.example.invalid/member-red.png',
+      textColor: '#ffffff',
+      textStroke: '#34255e',
+    };
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: settingsFixture,
+        recipients: recipientsFixture,
+        presetDefinitions: {
+          'member-red': valid,
+          // http の背景は定義として不正
+          'member-http': {
+            ...valid,
+            id: 'member-http',
+            backgroundUrl: 'http://example.invalid/x.png',
+          },
+          // テーブルのキーと定義の id が一致しない
+          'member-mismatch': { ...valid, id: 'member-other' },
+        },
+      }),
+    );
+    const result = await callIvrmBirthday(guild, localDate, config);
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok' && result.enabled) {
+      expect(result.presetDefinitions).toEqual(new Map([['member-red', valid]]));
+    }
+  });
+
+  it('定義表のキーは Map で保持し、__proto__ を混ぜても汚染しない', async () => {
+    const valid = {
+      id: 'member-red',
+      label: 'メンバーの赤',
+      backgroundUrl: 'https://cdn.example.invalid/member-red.png',
+      textColor: '#ffffff',
+      textStroke: '#34255e',
+    };
+    // JSON 経由なら __proto__ も own property として届く。slug として
+    // 不正なので定義ごと落ち、Object.prototype へは何も書かれない。
+    const presetDefinitions = JSON.parse(
+      JSON.stringify({
+        'member-red': valid,
+        constructor: { ...valid, id: 'constructor' },
+        ['__proto__']: { ...valid, id: '__proto__' },
+      }),
+    ) as Record<string, unknown>;
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: settingsFixture,
+        recipients: recipientsFixture,
+        presetDefinitions,
+      }),
+    );
+    const result = await callIvrmBirthday(guild, localDate, config);
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok' && result.enabled) {
+      expect(result.presetDefinitions).toBeInstanceOf(Map);
+      expect(result.presetDefinitions.get('member-red')).toEqual(valid);
+      // 'constructor' は正規の slug なので Map のキーとして保持される
+      expect(result.presetDefinitions.get('constructor')).toEqual({
+        ...valid,
+        id: 'constructor',
+      });
+      expect(result.presetDefinitions.has('__proto__')).toBe(false);
+    }
+    expect((Object.prototype as Record<string, unknown>)['member-red']).toBeUndefined();
+  });
+
+  it('定義表がオブジェクトでない応答は unavailable にする', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: settingsFixture,
+        recipients: recipientsFixture,
+        presetDefinitions: ['member-red'],
+      }),
+    );
+    await expect(callIvrmBirthday(guild, localDate, config)).resolves.toEqual({
+      status: 'unavailable',
+    });
+  });
+
+  it('cardPresetId が付いていても生年キーが混入した応答は unavailable にする', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: settingsFixture,
+        recipients: [{ ...recipientsFixture[0], cardPresetId: 'member-red', birthYear: 1990 }],
+        presetDefinitions: {},
+      }),
+    );
     await expect(callIvrmBirthday(guild, localDate, config)).resolves.toEqual({
       status: 'unavailable',
     });
