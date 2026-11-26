@@ -789,9 +789,7 @@ export async function runBirthdayRoleCycle(
                     age: celebration.age,
                     customBackground: memberPreset ? null : (customBackground?.content ?? null),
                     remoteBackground: memberPreset ? null : remoteBackground,
-                    presetDefinition: memberPreset
-                      ? memberPreset.definition
-                      : ivrmPresetDefinition,
+                    presetDefinition: memberPreset ? memberPreset.definition : ivrmPresetDefinition,
                     definitionBackground: memberPreset
                       ? memberPreset.definition
                         ? (memberDefinitionBackgrounds.get(memberPreset.definition.id) ?? null)

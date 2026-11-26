@@ -3,10 +3,6 @@ import {
   type BirthdayCardPresetDefinition,
 } from '@herta/shared';
 import { createHmac, randomUUID } from 'node:crypto';
-import {
-  parseBirthdayCardPresetDefinition,
-  type BirthdayCardPresetDefinition,
-} from '@herta/shared';
 import { resolveQuestBoardConfig, type QuestBoardConfig } from './quest-board-ivrm.js';
 
 export const BIRTHDAY_PATH = '/v2/herta/birthday';
