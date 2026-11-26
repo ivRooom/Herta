@@ -2,7 +2,12 @@ import { fetchBirthdayCardBackgroundImage, renderBirthdayCard } from '@herta/bir
 import { getBirthdayCardRuntimeBackground, type PrismaClient } from '@herta/db';
 import { birthdayRoleManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
-import { normalizeBirthdayCardConfig, type BirthdayCardConfig } from '@herta/shared';
+import {
+  BIRTHDAY_CARD_PRESETS,
+  normalizeBirthdayCardConfig,
+  type BirthdayCardConfig,
+  type BirthdayCardPresetDefinition,
+} from '@herta/shared';
 import {
   callIvrmBirthday,
   type IvrmBirthdayRecipient,
@@ -78,7 +83,9 @@ interface BirthdayRegistrationLike {
  * the API sends the age the member turns this year (never the
  * birth year) while the settings' card.showAge is on, and the
  * cycle uses it directly instead of deriving an age from a
- * birth year it does not have.
+ * birth year it does not have. `cardPresetId` only rides along
+ * on the API path too (#1921 R3-H): the member's own card
+ * preset pick, resolved per recipient at render time.
  */
 export interface BirthdayCycleRegistration {
   userId: string;
@@ -87,6 +94,7 @@ export interface BirthdayCycleRegistration {
   birthYear: number | null;
   displayName?: string;
   age?: number | null;
+  cardPresetId?: string | null;
 }
 
 interface BirthdayAnnouncementContext {
@@ -280,7 +288,44 @@ export function toBirthdayRegistrationLike(
     birthYear: null,
     displayName: recipient.displayName,
     age: recipient.age,
+    cardPresetId: recipient.cardPresetId,
   };
+}
+
+/**
+ * The per-recipient card preset resolution (#1921 R3-H): what
+ * a member's own preset pick means for their card render.
+ * Exactly one of the two fields is set — a bundled preset id
+ * to swap into the render config, or a database preset
+ * definition to draw with (background bytes are fetched by the
+ * caller through the validated download path).
+ */
+export interface MemberBirthdayCardPreset {
+  preset: BirthdayCardConfig['birthdayCardPreset'] | null;
+  definition: BirthdayCardPresetDefinition | null;
+}
+
+/**
+ * Resolves one recipient's preset pick against the bundled
+ * presets and the definitions the supply API carried. The
+ * member's pick outranks the global backgroundUrl and the
+ * global preset (確定事項6); a pick that resolves to nothing —
+ * a database preset deleted after the pick, whose definition
+ * therefore never arrived — counts as no pick at all, so the
+ * member simply gets the global card and delivery continues.
+ */
+export function resolveMemberBirthdayCardPreset(
+  registration: Pick<BirthdayCycleRegistration, 'cardPresetId'>,
+  presetDefinitions: Record<string, BirthdayCardPresetDefinition>,
+): MemberBirthdayCardPreset | null {
+  const cardPresetId = registration.cardPresetId;
+  if (!cardPresetId) return null;
+  if (BIRTHDAY_CARD_PRESETS.some((preset) => preset.id === cardPresetId)) {
+    return { preset: cardPresetId as BirthdayCardConfig['birthdayCardPreset'], definition: null };
+  }
+  const definition = presetDefinitions[cardPresetId];
+  if (definition) return { preset: null, definition };
+  return null;
 }
 
 export function isValidBirthday(month: number, day: number): boolean {
@@ -454,6 +499,7 @@ export async function runBirthdayRoleCycle(
     let today = getLocalDateParts(now, timeZone);
     let todaysRegistrations: BirthdayCycleRegistration[] | null = null;
     let ivrmBackgroundUrl: string | null = null;
+    let ivrmPresetDefinitions: Record<string, BirthdayCardPresetDefinition> = {};
 
     if (config.useIvrmApiSource) {
       const jstToday = getLocalDateParts(now, 'Asia/Tokyo');
@@ -473,6 +519,7 @@ export async function runBirthdayRoleCycle(
         today = jstToday;
         todaysRegistrations = result.recipients.map(toBirthdayRegistrationLike);
         ivrmBackgroundUrl = result.settings.card.backgroundUrl;
+        ivrmPresetDefinitions = result.presetDefinitions;
       } else {
         context.logger.warn(
           { guildId: context.guildId, status: result.status },
@@ -597,6 +644,38 @@ export async function runBirthdayRoleCycle(
             );
           }
         }
+        // Member preset resolution (#1921 R3-H): each
+        // recipient's own pick is resolved once per cycle, and
+        // the backgrounds of the database definitions actually
+        // picked are fetched once per definition through the
+        // same validated path as the backgroundUrl above. A
+        // member with a resolved pick is rendered from their
+        // preset alone — the pick outranks the global
+        // backgroundUrl and the stored background — while
+        // everyone else keeps the global resolution untouched.
+        const memberCardPresets = new Map<string, MemberBirthdayCardPreset>();
+        const memberDefinitionBackgrounds = new Map<string, Buffer | null>();
+        if (config.birthdayCardEnabled && todaysRegistrations.length > 0) {
+          for (const registration of todaysRegistrations) {
+            const memberPreset = resolveMemberBirthdayCardPreset(
+              registration,
+              ivrmPresetDefinitions,
+            );
+            if (memberPreset) memberCardPresets.set(registration.userId, memberPreset);
+          }
+          for (const memberPreset of memberCardPresets.values()) {
+            const definition = memberPreset.definition;
+            if (!definition || memberDefinitionBackgrounds.has(definition.id)) continue;
+            const background = await fetchBirthdayCardBackgroundImage(definition.backgroundUrl);
+            if (!background) {
+              context.logger.warn(
+                { guildId: context.guildId },
+                'メンバー個別プリセットの背景URLを取得できないため従来の背景解決へfallbackします',
+              );
+            }
+            memberDefinitionBackgrounds.set(definition.id, background);
+          }
+        }
         const customBackground =
           !remoteBackground &&
           config.birthdayCardEnabled &&
@@ -649,8 +728,18 @@ export async function runBirthdayRoleCycle(
               if (effectiveConfig.birthdayCardEnabled) {
                 try {
                   const member = await guild.members.fetch(registration.userId);
+                  // A resolved member preset (#1921 R3-H) swaps
+                  // the whole background chain for this render:
+                  // neither the global backgroundUrl bytes nor
+                  // the Studio-stored background apply, and a
+                  // database definition supplies the background
+                  // and the text colors. Members without a
+                  // resolved pick render exactly as before.
+                  const memberPreset = memberCardPresets.get(registration.userId) ?? null;
                   const card = await renderBirthdayCard({
-                    config: effectiveConfig,
+                    config: memberPreset?.preset
+                      ? { ...effectiveConfig, birthdayCardPreset: memberPreset.preset }
+                      : effectiveConfig,
                     displayName:
                       member.displayName ||
                       registration.displayName ||
@@ -663,8 +752,12 @@ export async function runBirthdayRoleCycle(
                     month: registration.month,
                     day: registration.day,
                     age: celebration.age,
-                    customBackground: customBackground?.content ?? null,
-                    remoteBackground,
+                    customBackground: memberPreset ? null : (customBackground?.content ?? null),
+                    remoteBackground: memberPreset ? null : remoteBackground,
+                    presetDefinition: memberPreset?.definition ?? null,
+                    definitionBackground: memberPreset?.definition
+                      ? (memberDefinitionBackgrounds.get(memberPreset.definition.id) ?? null)
+                      : null,
                   });
                   files = [
                     {
