@@ -35,6 +35,7 @@ declare module 'sharp' {
     composite(overlays: OverlayOptions[]): Sharp;
     png(options?: { compressionLevel?: number; adaptiveFiltering?: boolean }): Sharp;
     webp(options?: { quality?: number; delay?: number | number[]; loop?: number }): Sharp;
+    jpeg(options?: { quality?: number }): Sharp;
     gif(options?: { delay?: number | number[]; loop?: number }): Sharp;
     raw(): Sharp;
     metadata(): Promise<SharpMetadata>;
