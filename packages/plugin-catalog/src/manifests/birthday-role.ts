@@ -3,7 +3,7 @@ import { BIRTHDAY_CARD_ASSET_ID_PATTERN, type PluginManifest } from '@herta/shar
 export const birthdayRoleManifest: PluginManifest = {
   id: 'birthday-role',
   name: 'Birthday Role',
-  version: '1.6.0',
+  version: '1.7.0',
   description: '誕生日の登録・確認と、誕生日当日のRole付与・お祝い通知・Birthday Cardを提供します',
   author: { name: 'Herta' },
   category: 'fun',

@@ -16,6 +16,12 @@ export interface BirthdayCardPreviewCardInput {
   showName: boolean;
   showAvatar: boolean;
   showBirthday: boolean;
+  /**
+   * Optional for backward compatibility: requests minted
+   * before the key existed carry no showAge, which means the
+   * sample card is drawn without an age (#1914 S-F).
+   */
+  showAge?: boolean;
 }
 
 export interface BirthdayCardPreviewInput {
@@ -111,8 +117,16 @@ export async function authorizeBirthdayCardPreview(
     !card ||
     typeof card !== 'object' ||
     Array.isArray(card) ||
-    Object.keys(card).sort().join() !==
-      ['backgroundUrl', 'preset', 'showAvatar', 'showBirthday', 'showName'].sort().join()
+    // The required keys must all be present; `showAge` is the
+    // only optional key, anything else is rejected.
+    !Object.keys(card).every((key) =>
+      ['backgroundUrl', 'preset', 'showAvatar', 'showBirthday', 'showName', 'showAge'].includes(
+        key,
+      ),
+    ) ||
+    !['backgroundUrl', 'preset', 'showAvatar', 'showBirthday', 'showName'].every((key) =>
+      Object.hasOwn(card, key),
+    )
   )
     return fail(422, 'invalid_request');
   const candidate = card as Record<string, unknown>;
@@ -122,7 +136,8 @@ export async function authorizeBirthdayCardPreview(
     !isValidBackgroundUrl(candidate.backgroundUrl) ||
     typeof candidate.showName !== 'boolean' ||
     typeof candidate.showAvatar !== 'boolean' ||
-    typeof candidate.showBirthday !== 'boolean'
+    typeof candidate.showBirthday !== 'boolean' ||
+    !(candidate.showAge === undefined || typeof candidate.showAge === 'boolean')
   )
     return fail(422, 'invalid_request');
   return value as unknown as BirthdayCardPreviewInput;
@@ -133,7 +148,8 @@ export async function authorizeBirthdayCardPreview(
  * the bot's API path does: the guild's Studio card config is
  * the base (layout and stored background stay Studio-owned),
  * the request overrides preset and the show flags, and age
- * display is forced off. The card is rendered even when the
+ * display follows the request's showAge (absent = off, as on
+ * the delivery path). The card is rendered even when the
  * guild has card delivery disabled — previewing before
  * activation is the point — so `birthdayCardEnabled` is
  * treated as on for the render only.
@@ -149,6 +165,6 @@ export function buildBirthdayCardPreviewConfig(
     birthdayCardShowName: card.showName,
     birthdayCardShowAvatar: card.showAvatar,
     birthdayCardShowBirthday: card.showBirthday,
-    birthdayCardShowAge: false,
+    birthdayCardShowAge: card.showAge === true,
   };
 }
