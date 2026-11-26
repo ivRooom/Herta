@@ -395,7 +395,11 @@ export function buildGenshinProgressCardSvg(
 async function loadBackgroundDataUri(): Promise<string | null> {
   try {
     const bytes = await readFile(BACKGROUND_PATH);
-    return `data:image/webp;base64,${bytes.toString('base64')}`;
+    // librsvg (sharp's SVG rasterizer) cannot rasterize WebP data URIs and
+    // silently drops the <image>, leaving a flat card (#1036). Re-encode
+    // the asset as JPEG, which librsvg does paint, before embedding it.
+    const jpeg = await sharp(bytes).jpeg({ quality: 82 }).toBuffer();
+    return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
   } catch {
     // A missing decorative asset must not prevent the card (fortune-card pattern);
     // the plugin still falls back to the text embed if the render itself fails.
