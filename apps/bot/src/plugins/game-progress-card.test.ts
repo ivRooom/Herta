@@ -245,6 +245,49 @@ describe('Genshin progress card layout guards (#1011 review fixes)', () => {
   });
 });
 
+describe('Genshin progress card zero-value handling (#1011 second review)', () => {
+  it('does not claim "no measured areas" when every measured area is at 0%', () => {
+    const model = buildGenshinProgressCardModel({
+      snapshot: {
+        gameCode: 'genshin',
+        uid: '800000002',
+        player: { nickname: 'テスト', level: 10 },
+        stats: {},
+        explorations: [area('エリア甲', 0, 1), area('エリア乙', 0, 2)],
+        endgame: [],
+      },
+      uid: '800000002',
+      fetchedAtLabel: '未取得',
+    });
+    expect(model.measuredAreaCount).toBe(2);
+    expect(model.bars).toEqual([]);
+    expect(model.untouched).toEqual(['エリア甲', 'エリア乙']);
+    const svg = buildGenshinProgressCardSvg(model, null);
+    expect(svg).not.toContain('計測済みのエリアはまだありません');
+    expect(svg).toContain('計測済みのエリアはすべて 0% です');
+    expect(svg).toContain('エリア甲');
+  });
+
+  it('shows a chest total of 0 instead of "no data"', () => {
+    const model = buildGenshinProgressCardModel({
+      snapshot: {
+        gameCode: 'genshin',
+        uid: '800000003',
+        player: { nickname: 'テスト', level: 1 },
+        stats: { totalChests: 0 },
+        explorations: [],
+        endgame: [],
+      },
+      uid: '800000003',
+      fetchedAtLabel: '未取得',
+    });
+    expect(model.chestTotal).toBe(0);
+    const svg = buildGenshinProgressCardSvg(model, null);
+    expect(svg).toContain('宝箱 合計 0');
+    expect(svg).not.toContain('宝箱 データなし');
+  });
+});
+
 describe('Genshin progress card render (#1010)', () => {
   // The background binary (apps/bot/assets/game-progress/nodkrai-frostmoon-shrine.webp,
   // 2048x1152 WebP) is added to the branch through the GitHub Web upload,

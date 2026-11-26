@@ -315,7 +315,18 @@ export function buildGenshinProgressCardSvg(
     s += bar(x, y + 24, colW, area.percent);
   });
   if (model.bars.length === 0) {
-    s += text(56, 470, '計測済みのエリアはまだありません', 16, MUTED);
+    // Areas measured at 0% are not "not measured yet": they are folded into
+    // the untouched chips below. Only claim there are no measurements when
+    // nothing was measured at all.
+    s += text(
+      56,
+      470,
+      model.measuredAreaCount === 0
+        ? '計測済みのエリアはまだありません'
+        : '計測済みのエリアはすべて 0% です',
+      16,
+      MUTED,
+    );
   }
 
   // Untouched chips (left half of the bottom row)
@@ -350,7 +361,7 @@ export function buildGenshinProgressCardSvg(
   // Chest stacked bar (right half of the bottom row)
   const chX = 808;
   const chW = 720;
-  if (model.chestTotal !== null && model.chestTotal > 0) {
+  if (model.chestTotal !== null) {
     s += text(chX, 764, `宝箱 合計 ${formatCount(model.chestTotal)}`, 15, FG, 800);
     if (model.chestSegments.length > 0) {
       // The per-type counts are independent stats and can add up to more
