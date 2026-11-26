@@ -4,6 +4,7 @@ import type { PrismaClient } from '@herta/db';
 import { gameAccountsManifest } from '@herta/plugin-catalog';
 import type { PluginRuntimeContext } from '@herta/plugin-sdk';
 import {
+  buildProgressViewReply,
   buildRankingView,
   buildRankingViewReply,
   buildScoreViewReply,
@@ -875,7 +876,7 @@ describe('game command reply visibility (#923)', () => {
     expect(lastEditEmbedsJson(calls)).toContain('探索度（HoYoLAB戦績）の表示に未対応です');
   });
 
-  it('renders the progress embed when the API returns a snapshot', async () => {
+  it('renders the progress image card when the API returns a Genshin snapshot', async () => {
     vi.stubEnv('IVRM_WEB_API_BASE_URL', 'https://api.ivrm.jp');
     vi.stubEnv('HERTA_MBTI_SYNC_SECRET', 'test-secret');
     vi.stubEnv('IVRM_INTEGRATION_GUILD_ID', guild);
@@ -912,10 +913,69 @@ describe('game command reply visibility (#923)', () => {
 
     const calls = await runCommand('progress');
     expect(deferFlags(calls)).toBeUndefined();
-    const embeds = lastEditEmbedsJson(calls);
+    const lastEdit = calls.filter((call) => call.method === 'editReply').at(-1);
+    const options = lastEdit?.options as
+      { files?: Array<{ name?: string }>; content?: string; embeds?: unknown } | undefined;
+    expect(options?.files).toHaveLength(1);
+    expect(options?.files?.[0]?.name).toBe('genshin-progress-card.png');
+    expect(options?.content).toContain('原神の探索度');
+    expect(options?.embeds).toEqual([]);
+  }, 30_000);
+
+  it('falls back to the progress text embed when the card render fails', async () => {
+    const result: IvrmGameAccountsResult = {
+      status: 'ok',
+      action: 'progress',
+      gameCode: 'genshin',
+      uid: '812468719',
+      progressStatus: 'ok',
+      fetchedAt: '2026-11-16T01:15:00.000Z',
+      succeededAt: '2026-11-16T01:15:00.000Z',
+      hasProgress: true,
+      progress: {
+        gameCode: 'genshin',
+        uid: '812468719',
+        player: { nickname: 'いゔる。', level: 56 },
+        stats: { totalChests: 2270 },
+        explorations: [{ id: 1, name: 'フォンテーヌ', percent: 100, level: 10, offerings: [] }],
+        endgame: [],
+      },
+    };
+    const view = await buildProgressViewReply(result, async () => {
+      throw new Error('render failed');
+    });
+    expect(view.files).toBeUndefined();
+    expect(view.content).toBeUndefined();
+    const embeds = JSON.stringify(view.embeds);
     expect(embeds).toContain('エリア別探索度');
     expect(embeds).toContain('フォンテーヌ');
     expect(embeds).toContain('合計 2,270');
+  });
+
+  it('keeps StarRail progress on the text embed without rendering a card', async () => {
+    const result: IvrmGameAccountsResult = {
+      status: 'ok',
+      action: 'progress',
+      gameCode: 'starrail',
+      uid: '800000002',
+      progressStatus: 'ok',
+      fetchedAt: '2026-11-16T01:15:00.000Z',
+      succeededAt: '2026-11-16T01:15:00.000Z',
+      hasProgress: true,
+      progress: {
+        gameCode: 'starrail',
+        uid: '800000002',
+        player: { nickname: 'いゔる。', level: 70 },
+        stats: { chests: 123 },
+        explorations: [],
+        endgame: [],
+      },
+    };
+    const render = vi.fn(async () => Buffer.from('png'));
+    const view = await buildProgressViewReply(result, render as never);
+    expect(render).not.toHaveBeenCalled();
+    expect(view.files).toBeUndefined();
+    expect(JSON.stringify(view.embeds)).toContain('記録');
   });
 });
 

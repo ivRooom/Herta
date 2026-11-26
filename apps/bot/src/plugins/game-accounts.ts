@@ -37,6 +37,7 @@ import {
   buildRankingEmbed,
   buildUnsupportedProgressEmbed,
   buildUnsupportedScoreEmbed,
+  formatJstDateTime,
   gameDefinition,
   gameName,
   isProgressSupported,
@@ -56,6 +57,10 @@ import {
   type GameEmbed,
   type RankingSelection,
 } from './game-accounts-core.js';
+import {
+  GENSHIN_PROGRESS_CARD_FILE_NAME,
+  renderGenshinProgressCard,
+} from './game-progress-card.js';
 
 const UNLINK_CUSTOM_ID_PREFIX = 'game-accounts:unlink:';
 const SCORE_CUSTOM_ID_PREFIX = 'game-accounts:score:';
@@ -861,6 +866,51 @@ export async function buildRankingViewReply(
   return view;
 }
 
+export interface ProgressViewReply {
+  content?: string;
+  embeds: GameEmbed[];
+  files?: AttachmentBuilder[];
+}
+
+/**
+ * Builds the progress reply (#1010): for Genshin with a stored
+ * snapshot, the reply is the generated image card plus a short
+ * caption; every other case (StarRail, no snapshot yet, non-ok
+ * results) keeps the text embed. A card render failure silently
+ * degrades to the text embed, exactly like the ranking card.
+ * Exported for tests.
+ */
+export async function buildProgressViewReply(
+  result: IvrmGameAccountsResult,
+  renderCard: typeof renderGenshinProgressCard = renderGenshinProgressCard,
+): Promise<ProgressViewReply> {
+  if (result.status !== 'ok') {
+    return { embeds: [buildGameAccountsErrorEmbed(result)] };
+  }
+  if (result.action !== 'progress') {
+    return {
+      embeds: [buildNoticeEmbed('処理できませんでした。少し待ってからお試しください。', 'error')],
+    };
+  }
+  if (result.gameCode === 'genshin' && result.hasProgress && result.progress) {
+    try {
+      const png = await renderCard({
+        snapshot: result.progress,
+        uid: result.uid,
+        fetchedAtLabel: formatJstDateTime(result.succeededAt ?? result.fetchedAt),
+      });
+      return {
+        content: `🗺️ ${gameName(result.gameCode)}の探索度`,
+        embeds: [],
+        files: [new AttachmentBuilder(png, { name: GENSHIN_PROGRESS_CARD_FILE_NAME })],
+      };
+    } catch {
+      // A failed render is just the text view; never fail the progress reply.
+    }
+  }
+  return { embeds: [buildProgressEmbed(result)] };
+}
+
 function nextRankingSelection(
   parsed: {
     kind: RankingSelectKind;
@@ -1194,18 +1244,12 @@ export const gameAccountsPlugin = definePlugin<GameAccountsConfig, unknown, Pris
                 await interaction.editReply({ embeds: [buildUnsupportedProgressEmbed(gameCode)] });
                 return;
               }
-              await interaction.editReply({
-                embeds: [
-                  result.status !== 'ok'
-                    ? buildGameAccountsErrorEmbed(result)
-                    : result.action === 'progress'
-                      ? buildProgressEmbed(result)
-                      : buildNoticeEmbed(
-                          '処理できませんでした。少し待ってからお試しください。',
-                          'error',
-                        ),
-                ],
-              });
+              const view = await buildProgressViewReply(result);
+              await interaction.editReply(
+                view.files
+                  ? { content: view.content, embeds: view.embeds, files: view.files }
+                  : { embeds: view.embeds },
+              );
               return;
             }
             await interaction.editReply('不明な操作です。');
