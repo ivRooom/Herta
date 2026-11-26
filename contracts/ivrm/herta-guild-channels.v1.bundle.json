@@ -1,0 +1,55 @@
+{
+  "authentication": { "guildScoped": true, "scheme": "bearer", "type": "http" },
+  "bundleVersion": 1,
+  "cacheControl": "private, no-store",
+  "contract": {
+    "id": "herta-guild-channels",
+    "sourceRepository": "ivRooom/ivrm-contracts",
+    "version": "1.0.0"
+  },
+  "errorStatusCodes": [401, 404, 503],
+  "method": "GET",
+  "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/channels",
+  "responseSchema": {
+    "$id": "https://ivrm.jp/contracts/herta/guild-channels/v1/directory.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "description": "Configured-guild channel directory limited to announcement targets: text and announcement channels the Bot can view. Forum, thread, voice and non-viewable channels are excluded. No token, permission bitset, role or member information is returned.",
+    "properties": {
+      "channels": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "Decimal Discord snowflake string; older channel IDs can have fewer than 17 digits.",
+              "pattern": "^[0-9]{1,20}$",
+              "type": "string"
+            },
+            "kind": { "enum": ["text", "announcement"], "type": "string" },
+            "name": { "maxLength": 100, "minLength": 1, "type": "string" },
+            "parentId": {
+              "description": "Category channel ID, or null when the channel is not inside a category.",
+              "pattern": "^[0-9]{1,20}$",
+              "type": ["string", "null"]
+            },
+            "position": { "minimum": 0, "type": "integer" }
+          },
+          "required": ["id", "name", "kind", "position", "parentId"],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "fetchedAt": { "format": "date-time", "type": "string" },
+      "guildId": {
+        "description": "Must exactly equal the guildId path parameter of the authenticated request; consumers must reject a mismatch before caching or displaying channels.",
+        "pattern": "^[0-9]{17,20}$",
+        "type": "string",
+        "x-ivrm-equals-path-parameter": "guildId"
+      },
+      "status": { "const": "ok" }
+    },
+    "required": ["status", "guildId", "channels", "fetchedAt"],
+    "title": "Herta guild channel directory v1",
+    "type": "object"
+  }
+}
