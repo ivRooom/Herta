@@ -7,6 +7,18 @@
           "additionalProperties": false,
           "properties": {
             "backgroundUrl": { "maxLength": 2048, "type": ["string", "null"] },
+            "presetDefinition": {
+              "additionalProperties": false,
+              "properties": {
+                "backgroundUrl": { "maxLength": 2048, "minLength": 1, "type": "string" },
+                "id": { "pattern": "^[a-z0-9][a-z0-9-]{1,62}$", "type": "string" },
+                "label": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "textColor": { "pattern": "^#[0-9a-fA-F]{6}$", "type": "string" },
+                "textStroke": { "pattern": "^#[0-9a-fA-F]{6}$", "type": "string" }
+              },
+              "required": ["id", "label", "backgroundUrl", "textColor", "textStroke"],
+              "type": ["object", "null"]
+            },
             "preset": {
               "enum": ["herta-night-board", "herta-lavender-tea", "herta-lavender-gifts"],
               "type": "string"
@@ -27,5 +39,5 @@
   },
   "$id": "https://ivrm.jp/contracts/herta-birthday-card-preview/v1",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Producer Herta Studio; consumer server-only ivrm-web. POST /api/ivrm/birthday-card/preview. Key=HMAC-SHA256(IVRM_INTEGRATION_TOKEN,herta-birthday-card-preview-v1); signature=HMAC-SHA256(key,timestamp.eventId.POST.path.rawBody). Headers X-IVRM-Timestamp ISO, X-IVRM-Event-Id UUID, X-IVRM-Signature hex. Five-minute freshness, no query, max8192bytes. On success the response is the rendered card as image/png (1672x941), drawn by the same @herta/birthday-card renderer the bot uses, with the guild Studio card config as the layout base, the request card fields as overrides, age display following the request's optional showAge flag (absent means off; when on, the fixed sample subject is drawn with a fixed sample age), and a fixed sample subject (sample name, November 22, generated sample avatar) — never a real member. Errors are JSON {error} with Cache-Control private,no-store: 503 unconfigured (token/guild env missing) or preview unavailable, 401 invalid_service_auth, 413 body_too_large, 422 invalid_request. The preview has no side effects: nothing is written to birthday_deliveries. (#1775 S3d, rendering relay decided by Kanata 2026-11-25.)"
+  "description": "Producer Herta Studio; consumer server-only ivrm-web. POST /api/ivrm/birthday-card/preview. Key=HMAC-SHA256(IVRM_INTEGRATION_TOKEN,herta-birthday-card-preview-v1); signature=HMAC-SHA256(key,timestamp.eventId.POST.path.rawBody). Headers X-IVRM-Timestamp ISO, X-IVRM-Event-Id UUID, X-IVRM-Signature hex. Five-minute freshness, no query, max8192bytes. On success the response is the rendered card as image/png (1672x941), drawn by the same @herta/birthday-card renderer the bot uses, with the guild Studio card config as the layout base, the request card fields as overrides, age display following the request's optional showAge flag (absent means off; when on, the fixed sample subject is drawn with a fixed sample age), the request's optional presetDefinition (a database preset carried whole, #1028 R3-E: absent or null means the bundled preset alone decides; when present it must validate whole or the request is a 422, its background ranks below backgroundUrl and above the Studio-stored background, and its text colors apply whichever background wins), and a fixed sample subject (sample name, November 22, generated sample avatar) — never a real member. Errors are JSON {error} with Cache-Control private,no-store: 503 unconfigured (token/guild env missing) or preview unavailable, 401 invalid_service_auth, 413 body_too_large, 422 invalid_request. The preview has no side effects: nothing is written to birthday_deliveries. (#1775 S3d, rendering relay decided by Kanata 2026-11-25.)"
 }

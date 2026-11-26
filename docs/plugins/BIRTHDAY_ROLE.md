@@ -194,7 +194,7 @@ Plugin設定 `useIvrmApiSource`（既定OFF）をONにすると、workerは当�
 
 - 日付判定はJST固定です。Web側がJST日付の月日で対象者を確定し（うるう日ポリシー適用込み）、Botは受け取った対象者へ配信します。
 - 契約は schemaVersion 2 です（Round 2、#1023 S-F）。設定の `card.showAge` がONのときだけ、APIは対象者ごとに「その年に迎える年齢」の整数を `age` として含め、カードに年齢を表示します。生年そのものはAPIに含まれません（生年らしきキーが混入した応答は丸ごと不正として扱います）。showAge がOFF（またはキー自体が無い旧設定）のときは `age` キー自体が無く、表示は名前＋月日のみです。お祝いメッセージの変数はWeb側の検証どおりで、`{age}` / `{ageText}` はこの経路のメッセージには含まれません。v1形式の応答しか返らない相手（API未着地）では連携取得を失敗として扱い、従来経路へフォールバックします。
-- 配信系設定（お祝い投稿Channel・誕生日Role・お祝いメッセージ・うるう日ポリシー・カードのON/OFF・プリセット・表示項目）はAPIの値が正本になり、この画面の同名設定より優先されます。カードのレイアウト細部（X/Y/サイズ）と背景アセットライブラリは引き続きStudioが正本です。Adminアップロードの背景URL（`card.backgroundUrl`）が指定されている場合はそれを取得して背景に使い、Studio保存済み背景（custom/asset）より優先されます（背景の優先順位: API背景URL ＞ Studio保存済み背景 ＞ プリセット）。取得・検証に失敗した場合は警告ログを出して従来の背景解決へフォールバックします（S5c、#986）。
+- 配信系設定（お祝い投稿Channel・誕生日Role・お祝いメッセージ・うるう日ポリシー・カードのON/OFF・プリセット・表示項目）はAPIの値が正本になり、この画面の同名設定より優先されます。カードのレイアウト細部（X/Y/サイズ）と背景アセットライブラリは引き続きStudioが正本です。Adminアップロードの背景URL（`card.backgroundUrl`）が指定されている場合はそれを取得して背景に使い、Studio保存済み背景（custom/asset）より優先されます。Web Admin のDBプリセットが選択されている場合は、APIが定義ごと（`card.presetDefinition`: 背景URL・文字色・文字フチ色）を同梱し、その定義で描画します（R3-E、#1028）。背景の優先順位は API背景URL ＞ プリセット定義の背景 ＞ Studio保存済み背景 ＞ 組み込みプリセット で、文字色は定義の値が背景の出所によらず適用されます。定義が不正な形式の場合は定義だけを無視して従来解決へフォールバックし、取得・検証に失敗した場合は警告ログを出して従来の背景解決へフォールバックします（プリセット解決の失敗で配信は止めません。S5c、#986）。
 - APIが `enabled=false` を返した場合は配信しません（前日以前のRole解除だけは通常どおり行います）。
 - API取得に失敗した（通信失敗・503・応答不正）場合は、従来の `birthday_registrations` とこの画面の設定へ自動で切り替えて配信を継続し、警告ログを出します（fail-soft）。
 - OFFの間は従来どおり動作し、`birthday_registrations` への登録・削除（`/birthday set` / `remove`、Studio管理）も従来どおり使えます。registrationsの読み取り専用化とコマンドの案内文差し替えは、切替ゲート（ivrm-web S6-2）と同時に別途行います。
@@ -214,7 +214,7 @@ Plugin設定 `useIvrmApiSource`（既定OFF）をONにすると、workerは当�
 Adminの設定プレビューで「実際に配信されるカードそのもの」を確認できるよう、Studioに署名付きのプレビュー描画API `POST /api/ivrm/birthday-card/preview` を追加しました（方式は ivrm-web #1775 で Kanata が案A＝Hertaへ中継描画で確定、2026-11-25）。描画は bot と同一の `@herta/birthday-card` パッケージ（D1、#989）で行います。
 
 - 認証は S5b と同じ方式です（`IVRM_INTEGRATION_TOKEN` から purpose `herta-birthday-card-preview-v1` で導出した鍵のHMAC、5分以内のタイムスタンプ、対象Guildは `IVRM_INTEGRATION_GUILD_ID` に固定）。契約は `contracts/ivrm/herta-birthday-card-preview.v1.json`。新しい環境変数は不要で、未設定時は 503 で fail-closed になります。
-- リクエストは `{guildId, card: {preset, backgroundUrl, showName, showAvatar, showBirthday, showAge?}}`（Adminの下書き設定、`showAge` は任意で無し＝OFF）。実効設定の組み立ては bot の API 経路と同一で、土台は Guild の Studio カード設定（レイアウト・保存済み背景）、上書きは preset と表示フラグ、年齢表示はリクエストの `showAge` に従います（#1023 S-F）。背景の優先順位も配信と同じ（背景URL ＞ Studio保存済み背景 ＞ プリセット）です。
+- リクエストは `{guildId, card: {preset, backgroundUrl, showName, showAvatar, showBirthday, showAge?, presetDefinition?}}`（Adminの下書き設定、`showAge` は任意で無し＝OFF、`presetDefinition` は任意で無し/null＝組み込みプリセットのみで描画）。実効設定の組み立ては bot の API 経路と同一で、土台は Guild の Studio カード設定（レイアウト・保存済み背景）、上書きは preset と表示フラグ、年齢表示はリクエストの `showAge` に従います（#1023 S-F）。DBプリセット選択時は `presetDefinition` に定義ごと載せます（不正な定義は 422）。背景の優先順位も配信と同じ（背景URL ＞ プリセット定義の背景 ＞ Studio保存済み背景 ＞ プリセット）で、文字色は定義の値が適用されます（R3-E、#1028）。
 - 描画対象は固定サンプル（名前 `Herta Member`、11月22日、アバターはパッケージ内で生成するサンプル画像）で、実在メンバーの情報は使いません。`showAge` がONのときは固定のサンプル年齢（25歳）を描きます。プレビューは副作用なしで、`birthday_deliveries` への記録もしません。
 - レスポンスは PNG バイナリ（1672×941）です。Studio と bot は同一の本番イメージ（`font-noto-cjk` 入り）で動くため、フォント条件は一致します。
 

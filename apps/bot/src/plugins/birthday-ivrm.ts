@@ -1,3 +1,7 @@
+import {
+  parseBirthdayCardPresetDefinition,
+  type BirthdayCardPresetDefinition,
+} from '@herta/shared';
 import { createHmac, randomUUID } from 'node:crypto';
 import { resolveQuestBoardConfig, type QuestBoardConfig } from './quest-board-ivrm.js';
 
@@ -52,6 +56,16 @@ export interface IvrmBirthdayCardSettings {
    * existed carry no showAge, which means false.
    */
   showAge: boolean;
+  /**
+   * The database preset definition the API carries whole when
+   * an Admin-registered DB preset is selected (#1028 R3-E);
+   * `preset` still names the bundled fallback. Optional on the
+   * wire and fail-soft per definition: a malformed definition
+   * is dropped to null (the rest of the settings still apply)
+   * instead of failing the whole settings parse, so a broken
+   * definition can never stop birthday delivery.
+   */
+  presetDefinition: BirthdayCardPresetDefinition | null;
 }
 
 /**
@@ -200,6 +214,10 @@ function parseCardSettings(value: unknown): IvrmBirthdayCardSettings | undefined
     showAvatar: value.showAvatar,
     showBirthday: value.showBirthday,
     showAge: value.showAge === true,
+    presetDefinition:
+      value.presetDefinition === undefined
+        ? null
+        : parseBirthdayCardPresetDefinition(value.presetDefinition),
   };
 }
 
