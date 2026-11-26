@@ -4,6 +4,10 @@ import { createHmac, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   authorizeCommunityGameStatsRead,
+  buildCommunityMatrix,
+  buildCommunityMomentum,
+  buildCommunityWeekdaySeconds,
+  COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT,
   COMMUNITY_GAME_STATS_PATH,
   COMMUNITY_GAME_STATS_PURPOSE,
   formatCommunityGameEarliestDate,
@@ -11,9 +15,19 @@ import {
   projectCommunityActivityTotals,
   projectCommunityActivityUserTotals,
   projectCommunityActivityVoiceRankingRow,
+  projectCommunityGameDailyPointRow,
+  projectCommunityGameDetailRow,
+  projectCommunityGamePlayerRow,
   projectCommunityGameRankingRow,
   projectCommunityGameStatRow,
+  projectCommunityInsightsTotalsRow,
+  projectCommunityMatrixCellRow,
+  projectCommunityMomentumNewPlayersRow,
+  projectCommunityMomentumRecentRow,
+  projectCommunityTopGameRow,
   projectCommunityUserGameRow,
+  projectCommunityWeekdaySecondsRow,
+  summarizeCommunityPlayDates,
   toCommunityGameSeconds,
 } from './community-game-stats.ts';
 const environment = {
@@ -52,6 +66,7 @@ test('authenticates exact service body, binds Guild and defaults to overview', a
     ...input,
     mode: 'overview',
     discordUserId: null,
+    gameName: null,
     version: 1,
   });
   assert.deepEqual(
@@ -59,7 +74,7 @@ test('authenticates exact service body, binds Guild and defaults to overview', a
       signed({ ...input, mode: 'user', discordUserId: '100000000000000002' }),
       environment,
     ),
-    { ...input, mode: 'user', discordUserId: '100000000000000002', version: 1 },
+    { ...input, mode: 'user', discordUserId: '100000000000000002', gameName: null, version: 1 },
   );
   for (const value of [
     { ...input, guildId: '100000000000000099' },
@@ -73,7 +88,8 @@ test('authenticates exact service body, binds Guild and defaults to overview', a
     { ...input, mode: 'user' },
     { ...input, mode: 'user', discordUserId: 'not-a-snowflake' },
     { ...input, discordUserId: '100000000000000002' },
-    { ...input, version: 3 },
+    { ...input, gameName: 'VALORANT' },
+    { ...input, version: 4 },
     { ...input, version: 0 },
     { ...input, version: '2' },
     { ...input, version: 1.5 },
@@ -195,7 +211,7 @@ test('read route casts every range bound to date (PG 42883 regression)', () => {
   );
   const placeholders = route.match(/\$\{input\.(?:from|to)\}/g) ?? [];
   const casted = route.match(/\$\{input\.(?:from|to)\}::date/g) ?? [];
-  assert.equal(placeholders.length, 24);
+  assert.equal(placeholders.length, 61);
   assert.equal(casted.length, placeholders.length);
 });
 test('read route casts every SUM(value) aggregate to bigint (PG numeric regression)', () => {
@@ -213,10 +229,19 @@ test('read route casts every SUM(value) aggregate to bigint (PG numeric regressi
     new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
     'utf8',
   );
-  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 4);
+  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 11);
   assert.equal((route.match(/SUM\(value\)::bigint AS total/g) ?? []).length, 3);
   assert.equal((route.match(/SUM\(value\)::bigint AS "totalCount"/g) ?? []).length, 1);
   assert.equal((route.match(/SUM\((?:inner_rows\.)?value\) AS/g) ?? []).length, 0);
+  // v3 additions follow the same rule: the matrix cells read
+  // through the daily alias, and the momentum window coalesces
+  // an empty LEFT JOIN before the cast.
+  assert.equal((route.match(/SUM\(daily\.value\)::bigint AS "totalSeconds"/g) ?? []).length, 1);
+  assert.equal(
+    (route.match(/COALESCE\(SUM\(daily\.value\), 0\)::bigint AS "recentSeconds"/g) ?? []).length,
+    1,
+  );
+  assert.equal((route.match(/SUM\(daily\.value\) AS/g) ?? []).length, 0);
 });
 test('version 2 is negotiated by the signed body and defaults to 1', async () => {
   assert.deepEqual(
@@ -225,6 +250,7 @@ test('version 2 is negotiated by the signed body and defaults to 1', async () =>
       ...input,
       mode: 'overview',
       discordUserId: null,
+      gameName: null,
       version: 2,
     },
   );
@@ -233,11 +259,11 @@ test('version 2 is negotiated by the signed body and defaults to 1', async () =>
       signed({ ...input, mode: 'user', discordUserId: '100000000000000002', version: 2 }),
       environment,
     ),
-    { ...input, mode: 'user', discordUserId: '100000000000000002', version: 2 },
+    { ...input, mode: 'user', discordUserId: '100000000000000002', gameName: null, version: 2 },
   );
   assert.deepEqual(
     await authorizeCommunityGameStatsRead(signed({ ...input, version: 1 }), environment),
-    { ...input, mode: 'overview', discordUserId: null, version: 1 },
+    { ...input, mode: 'overview', discordUserId: null, gameName: null, version: 1 },
   );
 });
 test('activity row projections emit exactly the contract fields', () => {
@@ -374,4 +400,290 @@ test('read route scopes activity queries to the three contract metrics', () => {
   assert.equal((route.match(/metric = 'voice_seconds'/g) ?? []).length, 2);
   assert.equal((route.match(/metric = 'messages'/g) ?? []).length, 2);
   assert.ok(!route.includes('reactions'));
+});
+test('version 3 negotiates like v2 and unlocks the game mode', async () => {
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(signed({ ...input, version: 3 }), environment),
+    { ...input, mode: 'overview', discordUserId: null, gameName: null, version: 3 },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({ ...input, mode: 'game', gameName: 'VALORANT', version: 3 }),
+      environment,
+    ),
+    { ...input, mode: 'game', discordUserId: null, gameName: 'VALORANT', version: 3 },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({
+        ...input,
+        mode: 'game',
+        gameName: '原神',
+        discordUserId: '100000000000000002',
+        version: 3,
+      }),
+      environment,
+    ),
+    {
+      ...input,
+      mode: 'game',
+      discordUserId: '100000000000000002',
+      gameName: '原神',
+      version: 3,
+    },
+  );
+  for (const value of [
+    // The game mode is v3-only and always names its game.
+    { ...input, mode: 'game', gameName: 'VALORANT' },
+    { ...input, mode: 'game', gameName: 'VALORANT', version: 2 },
+    { ...input, mode: 'game', version: 3 },
+    { ...input, mode: 'game', gameName: '', version: 3 },
+    { ...input, mode: 'game', gameName: '   ', version: 3 },
+    { ...input, mode: 'game', gameName: 'x'.repeat(129), version: 3 },
+    { ...input, mode: 'game', gameName: 'VALORANT', discordUserId: 'nope', version: 3 },
+    // gameName is meaningless (and rejected) outside the game mode.
+    {
+      ...input,
+      mode: 'user',
+      discordUserId: '100000000000000002',
+      gameName: 'VALORANT',
+      version: 3,
+    },
+  ]) {
+    const response = await authorizeCommunityGameStatsRead(signed(value), environment);
+    assert.ok(response instanceof Response);
+    assert.equal(response.status, 422);
+  }
+});
+test('insights projections emit exactly the contract fields', () => {
+  assert.deepEqual(projectCommunityInsightsTotalsRow({ totalSeconds: 7200n, playerCount: 3 }), {
+    totalSeconds: 7200,
+    playerCount: 3,
+  });
+  assert.throws(() => projectCommunityInsightsTotalsRow({ totalSeconds: 1n, playerCount: 1.5 }));
+  assert.equal(projectCommunityTopGameRow({ name: 'VALORANT' }), 'VALORANT');
+  assert.throws(() => projectCommunityTopGameRow({ name: '' }));
+  assert.deepEqual(
+    projectCommunityGameDailyPointRow({
+      date: new Date('2026-11-24T00:00:00.000Z'),
+      totalSeconds: 60n,
+    }),
+    { date: '2026-11-24', totalSeconds: 60 },
+  );
+  assert.throws(() => projectCommunityGameDailyPointRow({ date: null, totalSeconds: 60n }));
+  const detail = projectCommunityGameDetailRow({
+    name: 'VALORANT',
+    totalSeconds: '1997400',
+    playerCount: 16,
+    firstPlayDate: new Date('2026-09-30T00:00:00.000Z'),
+    lastPlayDate: '2026-11-25',
+  });
+  assert.deepEqual(detail, {
+    name: 'VALORANT',
+    totalSeconds: 1997400,
+    playerCount: 16,
+    firstPlayDate: '2026-09-30',
+    lastPlayDate: '2026-11-25',
+  });
+  assert.deepEqual(Object.keys(detail).sort(), [
+    'firstPlayDate',
+    'lastPlayDate',
+    'name',
+    'playerCount',
+    'totalSeconds',
+  ]);
+  assert.deepEqual(
+    projectCommunityGamePlayerRow({ discordUserId: '100000000000000002', totalSeconds: 30 }),
+    { discordUserId: '100000000000000002', totalSeconds: 30 },
+  );
+  assert.throws(() => projectCommunityGamePlayerRow({ discordUserId: '123', totalSeconds: 30 }));
+  // A Decimal-shaped aggregate must throw, not pass through (#1004).
+  assert.throws(() =>
+    projectCommunityGameDetailRow({
+      name: 'VALORANT',
+      totalSeconds: { toString: () => '1' },
+      playerCount: 1,
+      firstPlayDate: null,
+      lastPlayDate: null,
+    }),
+  );
+});
+test('matrix assembly aligns cells to the top games and zero-fills', () => {
+  const games = ['VALORANT', '原神'];
+  const members = [
+    { discordUserId: '100000000000000002' },
+    { discordUserId: '100000000000000003' },
+  ];
+  const cells = [
+    projectCommunityMatrixCellRow({
+      discordUserId: '100000000000000002',
+      name: '原神',
+      totalSeconds: 120n,
+    }),
+    projectCommunityMatrixCellRow({
+      discordUserId: '100000000000000003',
+      name: 'VALORANT',
+      totalSeconds: 60,
+    }),
+    // A cell outside the member list is dropped, never widens the shape.
+    projectCommunityMatrixCellRow({
+      discordUserId: '100000000000000099',
+      name: 'VALORANT',
+      totalSeconds: 1,
+    }),
+  ];
+  assert.deepEqual(buildCommunityMatrix(games, members, cells), [
+    { discordUserId: '100000000000000002', secondsByGame: [0, 120] },
+    { discordUserId: '100000000000000003', secondsByGame: [60, 0] },
+  ]);
+  assert.throws(() =>
+    projectCommunityMatrixCellRow({ discordUserId: '123', name: 'VALORANT', totalSeconds: 1 }),
+  );
+});
+test('weekday assembly is Monday-first and zero-fills missing days', () => {
+  const rows = [
+    projectCommunityWeekdaySecondsRow({ isoDow: 1, totalSeconds: 3600n }),
+    projectCommunityWeekdaySecondsRow({ isoDow: 7, totalSeconds: '60' }),
+  ];
+  assert.deepEqual(buildCommunityWeekdaySeconds(rows), [3600, 0, 0, 0, 0, 0, 60]);
+  assert.deepEqual(buildCommunityWeekdaySeconds([]), [0, 0, 0, 0, 0, 0, 0]);
+  assert.throws(() => projectCommunityWeekdaySecondsRow({ isoDow: 0, totalSeconds: 1 }));
+  assert.throws(() => projectCommunityWeekdaySecondsRow({ isoDow: 8, totalSeconds: 1 }));
+  assert.throws(() =>
+    buildCommunityWeekdaySeconds([
+      { isoDow: 3, totalSeconds: 1 },
+      { isoDow: 3, totalSeconds: 2 },
+    ]),
+  );
+});
+test('momentum merge keeps the top-games order and zero-fills gaps', () => {
+  const games = ['VALORANT', '原神', 'Minecraft'];
+  const recent = [projectCommunityMomentumRecentRow({ name: '原神', recentSeconds: 300n })];
+  const fresh = [
+    projectCommunityMomentumNewPlayersRow({ name: 'VALORANT', newPlayerCount: 2 }),
+    projectCommunityMomentumNewPlayersRow({ name: '原神', newPlayerCount: 1 }),
+  ];
+  assert.deepEqual(buildCommunityMomentum(games, recent, fresh), [
+    { name: 'VALORANT', recentSeconds: 0, newPlayerCount: 2 },
+    { name: '原神', recentSeconds: 300, newPlayerCount: 1 },
+    { name: 'Minecraft', recentSeconds: 0, newPlayerCount: 0 },
+  ]);
+  assert.throws(() =>
+    projectCommunityMomentumNewPlayersRow({ name: 'VALORANT', newPlayerCount: -1 }),
+  );
+});
+test('streak summary counts consecutive observed days only', () => {
+  assert.deepEqual(summarizeCommunityPlayDates([]), {
+    longestStreakDays: 0,
+    currentStreakDays: 0,
+    lastPlayDate: null,
+  });
+  assert.deepEqual(summarizeCommunityPlayDates(['2026-11-25']), {
+    longestStreakDays: 1,
+    currentStreakDays: 1,
+    lastPlayDate: '2026-11-25',
+  });
+  // Unsorted input with duplicates is normalized; the gap on
+  // 11-23 breaks the run, so the current streak is the tail.
+  assert.deepEqual(
+    summarizeCommunityPlayDates([
+      '2026-11-25',
+      '2026-11-24',
+      '2026-11-21',
+      '2026-11-22',
+      '2026-11-21',
+      '2026-11-20',
+    ]),
+    { longestStreakDays: 3, currentStreakDays: 2, lastPlayDate: '2026-11-25' },
+  );
+  // A month boundary still counts as consecutive days.
+  assert.deepEqual(summarizeCommunityPlayDates(['2026-10-31', '2026-11-01']), {
+    longestStreakDays: 2,
+    currentStreakDays: 2,
+    lastPlayDate: '2026-11-01',
+  });
+  assert.throws(() => summarizeCommunityPlayDates(['2026-02-30']));
+});
+test('v3 contract JSON extends v2 without changing the v1/v2 shapes', () => {
+  const read = (name: string) =>
+    JSON.parse(
+      readFileSync(new URL(`../../../../contracts/ivrm/${name}`, import.meta.url), 'utf8'),
+    ) as {
+      $id: string;
+      description: string;
+      $defs: Record<string, { required?: string[]; properties?: Record<string, unknown> }>;
+    };
+  const v2 = read('herta-community-game-stats-read.v2.json');
+  const v3 = read('herta-community-game-stats-read.v3.json');
+  assert.equal(v3.$id, 'https://ivrm.jp/contracts/herta-community-game-stats-read/v3');
+  assert.ok(v3.description.includes(COMMUNITY_GAME_STATS_PATH));
+  assert.ok(v3.description.includes(COMMUNITY_GAME_STATS_PURPOSE));
+  // Every v2 definition except the request (which gains
+  // gameName below) is carried over unchanged in structure.
+  for (const name of Object.keys(v2.$defs).filter((key) => key !== 'request'))
+    assert.deepEqual(v3.$defs[name], v2.$defs[name]);
+  // The request only gains gameName and the widened enums.
+  assert.deepEqual(
+    Object.keys(v3.$defs.request.properties ?? {}).sort(),
+    [...Object.keys(v2.$defs.request.properties ?? {}), 'gameName'].sort(),
+  );
+  assert.deepEqual(v3.$defs.request.required, v2.$defs.request.required);
+  // V3 responses require insights on top of the v2 shape.
+  for (const [v3Def, v2Def] of [
+    ['overviewResponseV3', 'overviewResponseV2'],
+    ['userResponseV3', 'userResponseV2'],
+  ] as const) {
+    assert.deepEqual(
+      [...(v3.$defs[v3Def].required ?? [])].sort(),
+      [...(v2.$defs[v2Def].required ?? []), 'insights'].sort(),
+    );
+    assert.deepEqual(
+      Object.keys(v3.$defs[v3Def].properties ?? {})
+        .filter((key) => key !== 'insights')
+        .sort(),
+      Object.keys(v2.$defs[v2Def].properties ?? {}).sort(),
+    );
+  }
+  assert.deepEqual(Object.keys(v3.$defs.gameResponse.properties ?? {}).sort(), [
+    'game',
+    'guildId',
+    'meta',
+    'mode',
+    'players',
+    'range',
+    'status',
+    'viewer',
+  ]);
+  assert.deepEqual(Object.keys(v3.$defs.insightsOverview.properties ?? {}).sort(), [
+    'matrix',
+    'momentum',
+    'totals',
+    'weekdaySeconds',
+  ]);
+  assert.deepEqual(Object.keys(v3.$defs.insightsUser.properties ?? {}).sort(), [
+    'currentStreakDays',
+    'dailySeries',
+    'lastPlayDate',
+    'longestStreakDays',
+    'playDays',
+    'weekdaySeconds',
+  ]);
+});
+test('read route pins the v3 query shapes (top-15 CTEs, ISODOW casts)', () => {
+  const route = readFileSync(
+    new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
+    'utf8',
+  );
+  // The top-15 selection is spelled identically in the plain
+  // query and in the three CTEs (cells / momentum / new players).
+  assert.equal((route.match(/WITH top_games AS/g) ?? []).length, 3);
+  assert.equal((route.match(/\$\{COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT\}/g) ?? []).length, 4);
+  assert.equal(COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT, 15);
+  // EXTRACT returns PG numeric, so the ISODOW casts to ::int
+  // keep Prisma from handing back a Decimal the projection
+  // would reject (#1004 class).
+  assert.equal((route.match(/EXTRACT\(ISODOW FROM activity_date\)::int/g) ?? []).length, 2);
+  // The viewer rank compares inside SQL (HAVING), never by
+  // selecting an uncast aggregate.
+  assert.ok(route.includes('HAVING SUM(value) >'));
 });
