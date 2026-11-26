@@ -201,6 +201,72 @@ function barColor(percent: number): string {
   return PURPLE;
 }
 
+type AreaIconKind = 'anemo' | 'geo' | 'electro' | 'dendro' | 'hydro' | 'pyro' | 'cryo' | 'moon';
+
+interface AreaIcon {
+  kind: AreaIconKind;
+  color: string;
+}
+
+const AREA_ICONS: Readonly<Record<string, AreaIcon>> = {
+  モンド: { kind: 'anemo', color: '#74E2C3' },
+  風止みの山: { kind: 'anemo', color: '#74E2C3' },
+  ドラゴンスパイン: { kind: 'anemo', color: '#74E2C3' },
+  璃月: { kind: 'geo', color: '#FAB632' },
+  層岩巨淵: { kind: 'geo', color: '#FAB632' },
+  '層岩巨淵・地下鉱区': { kind: 'geo', color: '#FAB632' },
+  沈玉の谷: { kind: 'geo', color: '#FAB632' },
+  '沈玉の谷・上谷': { kind: 'geo', color: '#FAB632' },
+  '沈玉の谷・南峰': { kind: 'geo', color: '#FAB632' },
+  来歆山: { kind: 'geo', color: '#FAB632' },
+  稲妻: { kind: 'electro', color: '#B18CFF' },
+  淵下宮: { kind: 'electro', color: '#B18CFF' },
+  スメール: { kind: 'dendro', color: '#A5C83B' },
+  フォンテーヌ: { kind: 'hydro', color: '#4CC2F1' },
+  往日の海: { kind: 'hydro', color: '#4CC2F1' },
+  ナタ: { kind: 'pyro', color: '#FF7B4B' },
+  古の聖山: { kind: 'pyro', color: '#FF7B4B' },
+  スネージナヤ: { kind: 'cryo', color: '#9FD6E3' },
+  'ナド・クライ': { kind: 'moon', color: '#8FE3FF' },
+};
+
+function areaIcon(name: string): AreaIcon | null {
+  return AREA_ICONS[name] ?? null;
+}
+
+function glyphSvg(icon: AreaIcon): string {
+  const c = icon.color;
+  const stroke = `fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"`;
+  switch (icon.kind) {
+    case 'anemo':
+      return `<path d="M4.5 9.2C8 5.6 13.2 4.4 18.8 6.1c-.8 3.6-3.8 6-8.2 6H6.2" ${stroke}/><path d="M5.2 15.2c3 2.8 7.4 3.6 11.6 1.7M15.8 12.4c1.8.5 2.7 1.7 2.5 3.5" ${stroke}/>`;
+    case 'geo':
+      return `<polygon points="12,3.5 19,12 12,20.5 5,12" fill="${c}"/><polygon points="12,7.2 15.8,12 12,16.8 8.2,12" fill="none" stroke="#101620" stroke-width="1.3" opacity="0.55"/>`;
+    case 'electro':
+      return `<polygon points="13.2,3 6.4,13.1 10.8,13.1 9.9,21 17.8,10.4 13.3,10.4" fill="${c}"/>`;
+    case 'dendro':
+      return `<path d="M19.2 4.8C11.5 4.7 6.4 8.8 5 16.9c-.1.8-.1 1.5 0 2.3 7.9.7 13.7-4.9 14.2-14.4Z" fill="${c}"/><path d="M7.2 16.8C9.8 12.9 13 9.7 16.9 7.1" fill="none" stroke="#101620" stroke-width="1.4" stroke-linecap="round" opacity="0.55"/>`;
+    case 'hydro':
+      return `<path d="M12 3.2C12 3.2 5.9 10 5.9 14.2a6.1 6.1 0 0 0 12.2 0C18.1 10 12 3.2 12 3.2Z" fill="${c}"/><path d="M9.2 14.6a3 3 0 0 0 2 3.3" fill="none" stroke="${c}" stroke-width="1.3" stroke-linecap="round"/>`;
+    case 'pyro':
+      return `<path d="M12.1 2.9c.8 3.1-.6 4.8-1.8 6.5-1.1 1.5-2.1 2.9-2.1 5a4.9 4.9 0 0 0 9.8 0c0-2-1-3.6-2-5.1-.4 1-1 1.8-1.9 2.3.3-2.8-.6-5.7-2-7.7Z" fill="${c}"/><path d="M12 20.2a3 3 0 0 1-3-3c0-1.3.8-2.3 1.5-3.3.5-.7 1-1.4 1.5-2.4.5 1 .9 1.8 1.4 2.5.7 1 1.6 2 1.6 3.2a3 3 0 0 1-3 3Z" fill="#FFD166" opacity="0.9"/>`;
+    case 'cryo':
+      return `<path d="M12 3.8v16.4M5.1 8l13.8 8M18.9 8L5.1 16M12 3.8l-2 2.2M12 3.8l2 2.2M12 20.2l-2-2.2M12 20.2l2-2.2" fill="none" stroke="${c}" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>`;
+    case 'moon':
+      return `<path d="M17.3 3.7a8.9 8.9 0 1 0 3 12.5A7.1 7.1 0 0 1 17.3 3.7Z" fill="${c}"/>`;
+  }
+}
+
+function areaBadgeSvg(name: string, cx: number, cy: number, radius = 11): string {
+  const icon = areaIcon(name);
+  if (!icon) return '';
+  const scale = radius / 11;
+  return (
+    `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="#0d1422" fill-opacity="0.94" stroke="${icon.color}" stroke-opacity="0.78" stroke-width="1.2"/>` +
+    `<g transform="translate(${cx - 12 * scale} ${cy - 12 * scale}) scale(${scale})">${glyphSvg(icon)}</g>`
+  );
+}
+
 function text(
   x: number,
   y: number,
@@ -224,9 +290,10 @@ function bar(x: number, y: number, width: number, percent: number): string {
   );
 }
 
-/** Estimated chip width at 14px: padding plus ~21px per character (matches the mock). */
+/** Estimated chip width at 14px; icon chips carry a compact 18px badge. */
 function chipWidth(name: string): number {
-  return 28 + Array.from(name).length * 21;
+  const base = 20 + Array.from(name).length * 19;
+  return areaIcon(name) ? base + 22 : base;
 }
 
 export function buildGenshinProgressCardSvg(
@@ -302,7 +369,16 @@ export function buildGenshinProgressCardSvg(
     const idx = col === 0 ? i : i - 8;
     const x = 56 + col * (colW + 32);
     const y = 434 + idx * rowH;
-    s += text(x, y + 16, truncateChars(area.name, 20), 16, MUTED, area.percent >= 99 ? 800 : 400);
+    const icon = areaIcon(area.name);
+    if (icon) s += areaBadgeSvg(area.name, x + 11, y + 8, 11);
+    s += text(
+      icon ? x + 30 : x,
+      y + 16,
+      truncateChars(area.name, icon ? 18 : 20),
+      16,
+      MUTED,
+      area.percent >= 99 ? 800 : 400,
+    );
     s += text(
       x + colW,
       y + 16,
@@ -345,8 +421,14 @@ export function buildGenshinProgressCardSvg(
       const reserve = remaining > 1 ? chipWidth(`+${remaining - 1}`) + 12 : 0;
       if (chipX + w > chipLimit - reserve) break;
       s += `<rect x="${chipX}" y="766" width="${w}" height="34" rx="17" fill="rgba(13,18,30,0.80)" stroke="${LINE}"/>`;
-      s += text(chipX + w / 2, 789, name, 14, MUTED, 400, 'middle');
-      chipX += w + 12;
+      const icon = areaIcon(name);
+      if (icon) {
+        s += areaBadgeSvg(name, chipX + 16, 783, 9);
+        s += text(chipX + 27 + (w - 27) / 2, 789, name, 14, MUTED, 400, 'middle');
+      } else {
+        s += text(chipX + w / 2, 789, name, 14, MUTED, 400, 'middle');
+      }
+      chipX += w + 8;
       shown += 1;
     }
     const hidden = model.untouched.length - shown;
