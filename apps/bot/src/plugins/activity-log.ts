@@ -6,6 +6,7 @@ import {
   type ChatInputCommandInteraction,
   type DMChannel,
   type Guild,
+  type GuildAuditLogsEntry,
   type GuildBan,
   type GuildEmoji,
   type GuildMember,
@@ -24,9 +25,11 @@ import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@h
 import { incrementCommunityActivity } from '../activity/community-activity.js';
 import {
   countRecentUserEvents,
+  hasRecordedAuditLogEntry,
   listMemberActivityEvents,
   recordMemberActivityEvent,
   type MemberActivityEventType,
+  type RecordMemberActivityEventInput,
 } from './activity-log-repository.js';
 
 export interface ActivityLogConfig {
@@ -499,6 +502,354 @@ async function handleChannelUpdate(
   });
 }
 
+// ============================================================
+// チャンネル権限上書き (permission overwrite) の収集 (#1040)
+//
+// GatewayのchannelUpdateでは、権限上書きの変更内容 (誰の・どの権限が・
+// 許可/中間/不許可のどこへ動いたか) も実行者も取れないため、Audit Logの
+// ChannelOverwriteCreate/Update/Deleteを正として取り込む。
+// それ以外のAudit Log種別 (ChannelCreate/Update/Delete・Role*・Member*等) は
+// 既存のGateway経路が正であり、Audit Log経由では取り込まない (二重記録防止)。
+// 対象フラグは新規キーを増やさず、チャンネル管理の既存フラグ
+// trackChannelManagement に従う (名前変更のchannel_updateと同じ対象範囲)。
+// ============================================================
+
+export const CHANNEL_OVERWRITE_AUDIT_LOG_EVENTS = [
+  AuditLogEvent.ChannelOverwriteCreate,
+  AuditLogEvent.ChannelOverwriteUpdate,
+  AuditLogEvent.ChannelOverwriteDelete,
+] as const;
+
+const CHANNEL_OVERWRITE_EVENT_TYPES: ReadonlyMap<AuditLogEvent, MemberActivityEventType> = new Map([
+  [AuditLogEvent.ChannelOverwriteCreate, 'channel_overwrite_create'],
+  [AuditLogEvent.ChannelOverwriteUpdate, 'channel_overwrite_update'],
+  [AuditLogEvent.ChannelOverwriteDelete, 'channel_overwrite_delete'],
+]);
+
+/** 権限の3値。allowビットが立てば許可、denyビットが立てば不許可、どちらも無ければ中間 (継承)。 */
+export type PermissionOverwriteState = 'allow' | 'deny' | 'neutral';
+
+export interface PermissionOverwriteChange {
+  key: string;
+  before: PermissionOverwriteState;
+  after: PermissionOverwriteState;
+}
+
+export interface AuditLogChangeLike {
+  key: string;
+  old?: unknown;
+  new?: unknown;
+}
+
+/** Audit Logエントリを、変換ロジックが扱う最小形へ寄せたもの (テストはこの形で与える)。 */
+export interface ChannelOverwriteAuditEntryLike {
+  id: string;
+  action: AuditLogEvent;
+  /** 対象チャンネルID */
+  targetId: string | null;
+  executorId: string | null;
+  createdTimestamp: number;
+  changes: readonly AuditLogChangeLike[];
+  overwriteId: string | null;
+  overwriteType: 'role' | 'member' | null;
+  overwriteName: string | null;
+  channelName: string | null;
+}
+
+function toPermissionBitfield(value: unknown): bigint {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value));
+  if (typeof value === 'string' && /^-?\d+$/.test(value)) {
+    try {
+      return BigInt(value);
+    } catch {
+      return 0n;
+    }
+  }
+  return 0n;
+}
+
+export function permissionOverwriteState(
+  allow: bigint,
+  deny: bigint,
+  bit: bigint,
+): PermissionOverwriteState {
+  if ((allow & bit) !== 0n) return 'allow';
+  if ((deny & bit) !== 0n) return 'deny';
+  return 'neutral';
+}
+
+export function diffPermissionOverwrites(input: {
+  beforeAllow: bigint;
+  beforeDeny: bigint;
+  afterAllow: bigint;
+  afterDeny: bigint;
+}): PermissionOverwriteChange[] {
+  const changes: PermissionOverwriteChange[] = [];
+  for (const [key, bit] of Object.entries(PermissionFlagsBits)) {
+    const before = permissionOverwriteState(input.beforeAllow, input.beforeDeny, bit);
+    const after = permissionOverwriteState(input.afterAllow, input.afterDeny, bit);
+    if (before !== after) changes.push({ key, before, after });
+  }
+  return changes;
+}
+
+/**
+ * Audit LogのoverwriteエントリをMemberActivityEventの記録入力へ変換する。
+ * overwrite以外のaction・対象チャンネル不明のエントリはnullを返す。
+ * 実行者が取れない場合はuserId=null (不明) のまま記録し、推測で埋めない。
+ */
+export function buildChannelOverwriteRecordInput(
+  guildId: string,
+  entry: ChannelOverwriteAuditEntryLike,
+): RecordMemberActivityEventInput | null {
+  const event = CHANNEL_OVERWRITE_EVENT_TYPES.get(entry.action);
+  if (!event || !entry.targetId) return null;
+
+  const allowChange = entry.changes.find((change) => change.key === 'allow');
+  const denyChange = entry.changes.find((change) => change.key === 'deny');
+  const isCreate = entry.action === AuditLogEvent.ChannelOverwriteCreate;
+  const isDelete = entry.action === AuditLogEvent.ChannelOverwriteDelete;
+  // createはbeforeが全て中間、deleteはafterが全て中間。updateで片方のキーしか
+  // 変化していない場合は、欠けたキーは不変として扱う (old ?? new で前後同値にする)。
+  const beforeAllow = isCreate ? 0n : toPermissionBitfield(allowChange?.old ?? allowChange?.new);
+  const afterAllow = isDelete ? 0n : toPermissionBitfield(allowChange?.new ?? allowChange?.old);
+  const beforeDeny = isCreate ? 0n : toPermissionBitfield(denyChange?.old ?? denyChange?.new);
+  const afterDeny = isDelete ? 0n : toPermissionBitfield(denyChange?.new ?? denyChange?.old);
+
+  return {
+    guildId,
+    userId: entry.executorId,
+    event,
+    channelId: entry.targetId,
+    occurredAt: new Date(entry.createdTimestamp),
+    metadata: {
+      channelName: entry.channelName,
+      auditLogEntryId: entry.id,
+      source: 'audit_log',
+      actorResolved: entry.executorId !== null,
+      overwrite: {
+        id: entry.overwriteId,
+        type: entry.overwriteType,
+        // @everyoneロールのIDはギルドIDと同一で、名前が取れない場合もそれと分かるようにする
+        name: entry.overwriteName ?? (entry.overwriteId === guildId ? '@everyone' : null),
+      },
+      permissions: diffPermissionOverwrites({ beforeAllow, beforeDeny, afterAllow, afterDeny }),
+      allowBefore: beforeAllow.toString(),
+      allowAfter: afterAllow.toString(),
+      denyBefore: beforeDeny.toString(),
+      denyAfter: afterDeny.toString(),
+    },
+  };
+}
+
+function auditLogChangeValue(entry: GuildAuditLogsEntry, key: string): unknown {
+  const change = entry.changes.find((candidate) => candidate.key === key);
+  return change?.new ?? change?.old;
+}
+
+/**
+ * discord.jsのGuildAuditLogsEntryを変換用の最小形へ寄せる。
+ * overwrite対象はentry.extra (Role | GuildMember | {id, name?, type}) に入るのが
+ * discord.jsの仕様だが、取得できない環境向けにchanges内のid/typeでも補完する。
+ */
+export function normalizeChannelOverwriteAuditEntry(
+  entry: GuildAuditLogsEntry,
+): ChannelOverwriteAuditEntryLike {
+  let overwriteId: string | null = null;
+  let overwriteType: 'role' | 'member' | null = null;
+  let overwriteName: string | null = null;
+
+  const extra = entry.extra as unknown;
+  if (isRecord(extra)) {
+    if (typeof extra.id === 'string') overwriteId = extra.id;
+    const user = isRecord(extra.user) ? extra.user : null;
+    if (user) {
+      overwriteType = 'member';
+      overwriteName = typeof user.username === 'string' ? user.username : null;
+    } else if (typeof extra.type === 'string' || typeof extra.type === 'number') {
+      // AuditLogOptionsType: '0' = role, '1' = member
+      overwriteType = String(extra.type) === '0' ? 'role' : 'member';
+      overwriteName = typeof extra.name === 'string' ? extra.name : null;
+    } else if (typeof extra.name === 'string') {
+      overwriteType = 'role';
+      overwriteName = extra.name;
+    }
+  }
+  if (!overwriteId) {
+    const idValue = auditLogChangeValue(entry, 'id');
+    if (typeof idValue === 'string') overwriteId = idValue;
+    const typeValue = auditLogChangeValue(entry, 'type');
+    if (
+      overwriteType === null &&
+      (typeof typeValue === 'string' || typeof typeValue === 'number')
+    ) {
+      overwriteType = String(typeValue) === '0' ? 'role' : 'member';
+    }
+  }
+
+  const target = entry.target as unknown;
+  return {
+    id: entry.id,
+    action: entry.action,
+    targetId: entry.targetId,
+    executorId: entry.executorId,
+    createdTimestamp: entry.createdTimestamp,
+    changes: entry.changes.map((change) => ({
+      key: change.key,
+      old: change.old,
+      new: change.new,
+    })),
+    overwriteId,
+    overwriteType,
+    overwriteName,
+    channelName: isRecord(target) && typeof target.name === 'string' ? target.name : null,
+  };
+}
+
+/** 冪等チェック付きでoverwriteエントリを1件記録する。記録した場合はtrue。 */
+async function recordChannelOverwriteEntry(
+  context: ActivityLogRuntimeContext,
+  guildId: string,
+  entry: ChannelOverwriteAuditEntryLike,
+): Promise<boolean> {
+  const input = buildChannelOverwriteRecordInput(guildId, entry);
+  if (!input) return false;
+  try {
+    if (await hasRecordedAuditLogEntry(context.prisma, guildId, entry.id)) return false;
+  } catch (error) {
+    context.logger.warn(
+      { err: error, guildId, auditLogEntryId: entry.id },
+      'Activity Logの冪等チェックに失敗しました',
+    );
+    return false;
+  }
+  await record(context, input);
+  return true;
+}
+
+async function handleGuildAuditLogEntryCreate(
+  context: ActivityLogRuntimeContext,
+  entry: GuildAuditLogsEntry,
+  guild: Guild,
+): Promise<void> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackChannelManagement) return;
+  // Audit Log経由で取り込むのは権限上書きのみ (それ以外はGatewayが正、二重記録防止)
+  if (!CHANNEL_OVERWRITE_EVENT_TYPES.has(entry.action)) return;
+  if (entry.targetId && isExcludedChannel(config, entry.targetId)) return;
+
+  await recordChannelOverwriteEntry(context, guild.id, normalizeChannelOverwriteAuditEntry(entry));
+  // Bot停止・切断中に発生した分の回収。guildAuditLogEntryCreateが再び届いた
+  // タイミングで、スロットル付きの補完も走らせる。
+  await maybeBackfillChannelOverwrites(context, guild);
+}
+
+/** 補完で1種別あたりに取得する最大件数 (fetchAuditLogsの上限100より抑えた値)。 */
+export const AUDIT_LOG_BACKFILL_LIMIT_PER_TYPE = 50;
+/** 補完の最小実行間隔。これより短い間隔では再実行しない (APIコール数の抑制)。 */
+export const AUDIT_LOG_BACKFILL_THROTTLE_MS = 10 * 60 * 1000;
+
+const lastBackfillAt = new Map<string, number>();
+
+/** fetchAuditLogsを持つGuildの最小形 (補完ロジックのテスト用)。 */
+export interface AuditLogFetchGuildLike {
+  id: string;
+  fetchAuditLogs(options: { type: AuditLogEvent; limit: number }): Promise<{ entries: unknown }>;
+}
+
+function auditLogEntriesOf(logs: { entries: unknown }): GuildAuditLogsEntry[] {
+  const entries = logs.entries;
+  if (entries instanceof Map) {
+    return [...entries.values()] as GuildAuditLogsEntry[];
+  }
+  if (Array.isArray(entries)) return entries as GuildAuditLogsEntry[];
+  if (isRecord(entries) && typeof entries.values === 'function') {
+    return [...(entries.values as () => Iterable<GuildAuditLogsEntry>)()];
+  }
+  return [];
+}
+
+/**
+ * Bot起動 (onEnable)・再接続後の復帰時に、未取り込みの権限上書きエントリを
+ * fetchAuditLogsで補完する。対象はoverwrite 3種別×最大50件に限定し、
+ * 冪等キー (Audit LogエントリID) で既記録分はスキップする。
+ * Discord側のAudit Log保持期間 (45日) を超えた分は取得自体ができない。
+ */
+export async function backfillChannelOverwriteEvents(
+  context: ActivityLogRuntimeContext,
+  guild: AuditLogFetchGuildLike,
+): Promise<number> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackChannelManagement) return 0;
+
+  let recorded = 0;
+  for (const type of CHANNEL_OVERWRITE_AUDIT_LOG_EVENTS) {
+    let entries: GuildAuditLogsEntry[];
+    try {
+      entries = auditLogEntriesOf(
+        await guild.fetchAuditLogs({ type, limit: AUDIT_LOG_BACKFILL_LIMIT_PER_TYPE }),
+      );
+    } catch (error) {
+      // View Audit Log権限不足・一時的なAPIエラーでは補完だけを諦め、通常の記録は継続する
+      context.logger.warn(
+        { err: error, guildId: context.guildId, type },
+        'Audit Log補完の取得に失敗しました',
+      );
+      continue;
+    }
+    // fetchAuditLogsは新しい順で返すため、古い順に直してから記録する
+    for (const entry of [...entries].reverse()) {
+      if (entry.targetId && isExcludedChannel(config, entry.targetId)) continue;
+      if (
+        await recordChannelOverwriteEntry(
+          context,
+          guild.id,
+          normalizeChannelOverwriteAuditEntry(entry),
+        )
+      ) {
+        recorded += 1;
+      }
+    }
+  }
+  return recorded;
+}
+
+async function maybeBackfillChannelOverwrites(
+  context: ActivityLogRuntimeContext,
+  guild: AuditLogFetchGuildLike,
+): Promise<void> {
+  const now = Date.now();
+  const last = lastBackfillAt.get(context.guildId) ?? 0;
+  if (now - last < AUDIT_LOG_BACKFILL_THROTTLE_MS) return;
+  lastBackfillAt.set(context.guildId, now);
+  await backfillChannelOverwriteEvents(context, guild);
+}
+
+interface ActivityLogClientLike {
+  guilds?: {
+    fetch?: (guildId: string) => Promise<AuditLogFetchGuildLike>;
+  };
+}
+
+/** プラグイン有効化時 (Bot起動時を含む) に未取り込み分を補完する。 */
+async function handleActivityLogEnable(context: ActivityLogRuntimeContext): Promise<void> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackChannelManagement) return;
+  const client = context.client as ActivityLogClientLike | null;
+  if (typeof client?.guilds?.fetch !== 'function') return;
+  try {
+    const guild = await client.guilds.fetch(context.guildId);
+    lastBackfillAt.set(context.guildId, Date.now());
+    await backfillChannelOverwriteEvents(context, guild);
+  } catch (error) {
+    context.logger.warn(
+      { err: error, guildId: context.guildId },
+      'Audit Log補完のためのGuild取得に失敗しました',
+    );
+  }
+}
+
 async function handleRoleEvent(
   context: ActivityLogRuntimeContext,
   event: 'guild_role_create' | 'guild_role_update' | 'guild_role_delete',
@@ -787,6 +1138,9 @@ export const MEMBER_ACTIVITY_EVENT_LABELS: Record<MemberActivityEventType, strin
   channel_create: 'チャンネル作成',
   channel_delete: 'チャンネル削除',
   channel_update: 'チャンネル変更',
+  channel_overwrite_create: 'チャンネル権限上書き追加',
+  channel_overwrite_update: 'チャンネル権限上書き変更',
+  channel_overwrite_delete: 'チャンネル権限上書き削除',
   guild_role_create: 'ロール作成',
   guild_role_update: 'ロール変更',
   guild_role_delete: 'ロール削除',
@@ -830,6 +1184,30 @@ function describeEventMetadata(row: {
     row.event === 'channel_update'
   ) {
     return typeof metadata.channelName === 'string' ? ` — \`#${metadata.channelName}\`` : '';
+  }
+  if (
+    row.event === 'channel_overwrite_create' ||
+    row.event === 'channel_overwrite_update' ||
+    row.event === 'channel_overwrite_delete'
+  ) {
+    const channelPart =
+      typeof metadata.channelName === 'string' ? ` — \`#${metadata.channelName}\`` : '';
+    const overwrite = isRecord(metadata.overwrite) ? metadata.overwrite : null;
+    const targetPart =
+      overwrite && typeof overwrite.id === 'string'
+        ? overwrite.type === 'member'
+          ? ` <@${overwrite.id}>`
+          : ` <@&${overwrite.id}>`
+        : '';
+    const permissionPart = Array.isArray(metadata.permissions)
+      ? metadata.permissions
+          .filter(isRecord)
+          .map(
+            (change) => `${String(change.key)}: ${String(change.before)}→${String(change.after)}`,
+          )
+          .join(', ')
+      : '';
+    return `${channelPart}${targetPart}${permissionPart ? ` — ${permissionPart}` : ''}`;
   }
   if (
     row.event === 'guild_role_create' ||
@@ -936,6 +1314,9 @@ async function executeActivityLogCommand(
 
 export const activityLogPlugin = definePlugin<ActivityLogConfig, unknown, PrismaClient>({
   manifest: activityLogManifest,
+  async onEnable(context) {
+    await handleActivityLogEnable(context);
+  },
   provideCommands(context) {
     return [
       {
@@ -1060,6 +1441,16 @@ export const activityLogPlugin = definePlugin<ActivityLogConfig, unknown, Prisma
             context,
             args[0] as DMChannel | NonThreadGuildBasedChannel,
             args[1] as NonThreadGuildBasedChannel,
+          );
+        },
+      },
+      {
+        event: 'guildAuditLogEntryCreate',
+        async handler(_ctx, ...args) {
+          await handleGuildAuditLogEntryCreate(
+            context,
+            args[0] as GuildAuditLogsEntry,
+            args[1] as Guild,
           );
         },
       },
