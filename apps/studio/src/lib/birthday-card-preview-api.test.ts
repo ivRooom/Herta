@@ -70,6 +70,36 @@ test('accepts the optional showAge flag on the card (#1914 S-F)', async () => {
   }
 });
 
+test('accepts a valid presetDefinition and rejects malformed ones (#1028 R3-E)', async () => {
+  const presetDefinition = {
+    id: 'my-custom-preset',
+    label: 'カスタムプリセット',
+    backgroundUrl: 'https://media.example.com/birthday/bg.webp',
+    textColor: '#ff0000',
+    textStroke: '#0000ff',
+  };
+  for (const value of [
+    { ...input, card: { ...input.card, presetDefinition } },
+    { ...input, card: { ...input.card, presetDefinition: null } },
+  ]) {
+    assert.deepEqual(await authorizeBirthdayCardPreview(signed(value), environment), value);
+  }
+  for (const bad of [
+    { ...presetDefinition, backgroundUrl: 'http://media.example.com/birthday/bg.webp' },
+    { ...presetDefinition, textColor: 'red' },
+    { ...presetDefinition, id: 'Bad Slug' },
+    { ...presetDefinition, extra: true },
+    'not-a-definition',
+  ]) {
+    const response = await authorizeBirthdayCardPreview(
+      signed({ ...input, card: { ...input.card, presetDefinition: bad } }),
+      environment,
+    );
+    assert.ok(response instanceof Response);
+    assert.equal(response.status, 422);
+  }
+});
+
 test('rejects expired signature and wrong key, fails closed while unconfigured', async () => {
   const stale = await authorizeBirthdayCardPreview(
     signed(input, new Date(Date.now() - 400000).toISOString()),
