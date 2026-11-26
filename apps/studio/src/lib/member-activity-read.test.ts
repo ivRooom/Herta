@@ -133,6 +133,46 @@ test('rejects malformed bodies with 422', async () => {
   }
 });
 
+test('rejects calendar-invalid timestamps instead of rolling them over', async () => {
+  const invalid = [
+    '2026-02-30T00:00:00.000Z', // February never has a 30th
+    '2025-02-29T00:00:00.000Z', // 2025 is not a leap year
+    '2026-04-31T00:00:00.000Z', // April has only 30 days
+    '2026-13-01T00:00:00.000Z', // there is no month 13
+    '2026-02-30T12:00:00+09:00', // invalid in any offset, not just UTC
+  ];
+  for (const from of invalid) {
+    const response = await authorizeMemberActivityRead(request({ guildId, from }), environment);
+    assert.ok(response instanceof Response, from);
+    assert.equal(response.status, 422, from);
+  }
+  // The same rejection applies to the `to` bound.
+  const toInvalid = await authorizeMemberActivityRead(
+    request({ guildId, to: '2026-02-30T00:00:00.000Z' }),
+    environment,
+  );
+  assert.ok(toInvalid instanceof Response);
+  assert.equal(toInvalid.status, 422);
+});
+
+test('accepts the leap-day boundary and offset timestamps', async () => {
+  const leap = await authorizeMemberActivityRead(
+    request({ guildId, from: '2024-02-29T00:00:00.000Z', to: '2024-03-01T00:00:00.000Z' }),
+    environment,
+  );
+  assert.ok(!(leap instanceof Response));
+  assert.equal(leap.from?.toISOString(), '2024-02-29T00:00:00.000Z');
+  assert.equal(leap.toExclusive?.toISOString(), '2024-03-01T00:00:00.000Z');
+
+  // Offset input keeps its meaning: 09:00 at +09:00 is 00:00 UTC.
+  const offset = await authorizeMemberActivityRead(
+    request({ guildId, from: '2026-11-20T09:00:00+09:00' }),
+    environment,
+  );
+  assert.ok(!(offset instanceof Response));
+  assert.equal(offset.from?.toISOString(), '2026-11-20T00:00:00.000Z');
+});
+
 test('projection never forwards the message body or unknown fields', () => {
   const stored = {
     id: 'cuid-example-1',

@@ -46,7 +46,8 @@ export interface MemberActivityReadItem {
 
 const SNOWFLAKE_PATTERN = /^\d{17,20}$/;
 const EVENT_TYPE_PATTERN = /^[a-z0-9_]{1,32}$/;
-const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d)?(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+const ISO_TIMESTAMP_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})$/;
 const ALLOWED_KEYS = ['guildId', 'from', 'to', 'userId', 'channelId', 'event', 'page', 'pageSize'];
 const MAX_BODY_BYTES = 8192;
 const MAX_PAGE = 100000;
@@ -60,9 +61,37 @@ function fail(status: number, error: string, headers?: Record<string, string>): 
 
 function parseTimestamp(value: unknown): Date | null | undefined {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'string' || !ISO_TIMESTAMP_PATTERN.test(value)) return undefined;
+  if (typeof value !== 'string') return undefined;
+  const parts = ISO_TIMESTAMP_PATTERN.exec(value);
+  if (!parts) return undefined;
   const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? parsed : undefined;
+  if (!Number.isFinite(parsed.getTime())) return undefined;
+  // `new Date` silently rolls calendar-invalid input over to a real date
+  // (2026-02-30 becomes 2026-03-02), and the shape/finiteness checks above
+  // cannot detect the rollover. Verify the round trip instead: shifting
+  // the parsed instant back into the input's own offset must reproduce
+  // every wall-clock component exactly, otherwise the input named a date
+  // or time that does not exist. (A missing capture group would surface
+  // as NaN here and fail the comparison, so this also fails closed.)
+  const zone = parts[8];
+  let offsetMinutes = 0;
+  if (zone !== undefined && zone !== 'Z') {
+    const digits = zone.slice(1).replace(':', '');
+    const magnitude = Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2, 4));
+    offsetMinutes = zone.startsWith('-') ? -magnitude : magnitude;
+  }
+  const wall = new Date(parsed.getTime() + offsetMinutes * 60_000);
+  const fraction = parts[7];
+  const milliseconds = fraction === undefined ? 0 : Number((fraction + '000').slice(0, 3));
+  const intact =
+    wall.getUTCFullYear() === Number(parts[1]) &&
+    wall.getUTCMonth() + 1 === Number(parts[2]) &&
+    wall.getUTCDate() === Number(parts[3]) &&
+    wall.getUTCHours() === Number(parts[4]) &&
+    wall.getUTCMinutes() === Number(parts[5]) &&
+    wall.getUTCSeconds() === (parts[6] === undefined ? 0 : Number(parts[6])) &&
+    wall.getUTCMilliseconds() === milliseconds;
+  return intact ? parsed : undefined;
 }
 
 function parseSnowflake(value: unknown): string | null | undefined {
