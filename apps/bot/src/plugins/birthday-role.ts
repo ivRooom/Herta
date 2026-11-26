@@ -316,14 +316,14 @@ export interface MemberBirthdayCardPreset {
  */
 export function resolveMemberBirthdayCardPreset(
   registration: Pick<BirthdayCycleRegistration, 'cardPresetId'>,
-  presetDefinitions: Record<string, BirthdayCardPresetDefinition>,
+  presetDefinitions: ReadonlyMap<string, BirthdayCardPresetDefinition>,
 ): MemberBirthdayCardPreset | null {
   const cardPresetId = registration.cardPresetId;
   if (!cardPresetId) return null;
   if (BIRTHDAY_CARD_PRESETS.some((preset) => preset.id === cardPresetId)) {
     return { preset: cardPresetId as BirthdayCardConfig['birthdayCardPreset'], definition: null };
   }
-  const definition = presetDefinitions[cardPresetId];
+  const definition = presetDefinitions.get(cardPresetId);
   if (definition) return { preset: null, definition };
   return null;
 }
@@ -499,7 +499,7 @@ export async function runBirthdayRoleCycle(
     let today = getLocalDateParts(now, timeZone);
     let todaysRegistrations: BirthdayCycleRegistration[] | null = null;
     let ivrmBackgroundUrl: string | null = null;
-    let ivrmPresetDefinitions: Record<string, BirthdayCardPresetDefinition> = {};
+    let ivrmPresetDefinitions: ReadonlyMap<string, BirthdayCardPresetDefinition> = new Map();
 
     if (config.useIvrmApiSource) {
       const jstToday = getLocalDateParts(now, 'Asia/Tokyo');

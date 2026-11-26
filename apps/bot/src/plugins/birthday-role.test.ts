@@ -249,7 +249,7 @@ describe('メンバー個別プリセットの解決 (#1921 R3-H)', () => {
     textColor: '#ffffff',
     textStroke: '#34255e',
   };
-  const definitions = { 'member-red': definition };
+  const definitions = new Map([['member-red', definition]]);
 
   it('API対象者の cardPresetId を登録形式へ引き継ぐ', () => {
     const converted = toBirthdayRegistrationLike({
@@ -286,13 +286,11 @@ describe('メンバー個別プリセットの解決 (#1921 R3-H)', () => {
     expect(
       resolveMemberBirthdayCardPreset({ cardPresetId: 'deleted-preset' }, definitions),
     ).toBeNull();
-    expect(resolveMemberBirthdayCardPreset({ cardPresetId: 'member-red' }, {})).toBeNull();
+    expect(resolveMemberBirthdayCardPreset({ cardPresetId: 'member-red' }, new Map())).toBeNull();
   });
 
   it('組み込み id と同名の定義があっても組み込みが優先される', () => {
-    const shadowed = {
-      'herta-night-board': { ...definition, id: 'herta-night-board' },
-    };
+    const shadowed = new Map([['herta-night-board', { ...definition, id: 'herta-night-board' }]]);
     expect(
       resolveMemberBirthdayCardPreset({ cardPresetId: 'herta-night-board' }, shadowed),
     ).toEqual({ preset: 'herta-night-board', definition: null });

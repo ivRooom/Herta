@@ -129,7 +129,7 @@ describe('callIvrmBirthday', () => {
         age: null,
         cardPresetId: null,
       })),
-      presetDefinitions: {},
+      presetDefinitions: new Map(),
     });
   });
 
@@ -158,7 +158,7 @@ describe('callIvrmBirthday', () => {
         { ...recipientsFixture[0], age: 25, cardPresetId: null },
         { ...recipientsFixture[1], age: null, cardPresetId: null },
       ],
-      presetDefinitions: {},
+      presetDefinitions: new Map(),
     });
   });
 
@@ -336,7 +336,7 @@ describe('callIvrmBirthday', () => {
         { ...recipientsFixture[0], age: null, cardPresetId: 'herta-lavender-tea' },
         { ...recipientsFixture[1], age: null, cardPresetId: 'member-red' },
       ],
-      presetDefinitions: { 'member-red': definition },
+      presetDefinitions: new Map([['member-red', definition]]),
     });
   });
 
@@ -402,8 +402,49 @@ describe('callIvrmBirthday', () => {
     const result = await callIvrmBirthday(guild, localDate, config);
     expect(result.status).toBe('ok');
     if (result.status === 'ok' && result.enabled) {
-      expect(result.presetDefinitions).toEqual({ 'member-red': valid });
+      expect(result.presetDefinitions).toEqual(new Map([['member-red', valid]]));
     }
+  });
+
+  it('定義表のキーは Map で保持し、__proto__ を混ぜても汚染しない', async () => {
+    const valid = {
+      id: 'member-red',
+      label: 'メンバーの赤',
+      backgroundUrl: 'https://cdn.example.invalid/member-red.png',
+      textColor: '#ffffff',
+      textStroke: '#34255e',
+    };
+    // JSON 経由なら __proto__ も own property として届く。slug として
+    // 不正なので定義ごと落ち、Object.prototype へは何も書かれない。
+    const presetDefinitions = JSON.parse(
+      JSON.stringify({
+        'member-red': valid,
+        constructor: { ...valid, id: 'constructor' },
+        ['__proto__']: { ...valid, id: '__proto__' },
+      }),
+    ) as Record<string, unknown>;
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: settingsFixture,
+        recipients: recipientsFixture,
+        presetDefinitions,
+      }),
+    );
+    const result = await callIvrmBirthday(guild, localDate, config);
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok' && result.enabled) {
+      expect(result.presetDefinitions).toBeInstanceOf(Map);
+      expect(result.presetDefinitions.get('member-red')).toEqual(valid);
+      // 'constructor' は正規の slug なので Map のキーとして保持される
+      expect(result.presetDefinitions.get('constructor')).toEqual({
+        ...valid,
+        id: 'constructor',
+      });
+      expect(result.presetDefinitions.has('__proto__')).toBe(false);
+    }
+    expect((Object.prototype as Record<string, unknown>)['member-red']).toBeUndefined();
   });
 
   it('定義表がオブジェクトでない応答は unavailable にする', async () => {

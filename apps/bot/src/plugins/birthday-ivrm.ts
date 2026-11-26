@@ -131,9 +131,11 @@ export type IvrmBirthdayResult =
        * preset id. Definitions that fail validation are dropped
        * individually (their pickers fall back to the global
        * settings); the table is empty when no recipient picked
-       * a database preset.
+       * a database preset. Held as a Map, not a plain object:
+       * the keys arrive from the network, and a Map keeps them
+       * away from object prototypes entirely.
        */
-      presetDefinitions: Record<string, BirthdayCardPresetDefinition>;
+      presetDefinitions: ReadonlyMap<string, BirthdayCardPresetDefinition>;
     }
   | { status: 'ok'; enabled: false; settings: null; recipients: [] }
   | { status: 'ineligible-guild' | 'unavailable' | 'unconfigured' };
@@ -305,18 +307,20 @@ function parseRecipientCardPresetId(value: Record<string, unknown>): string | nu
  * members who picked that preset fall back to the global
  * settings, never the whole delivery. A table that is not an
  * object at all is an envelope shape violation and fails the
- * response, like the other envelope fields.
+ * response, like the other envelope fields. The parsed table
+ * is a Map so the network-supplied keys are never written
+ * into a plain object.
  */
 function parsePresetDefinitions(
   value: unknown,
-): Record<string, BirthdayCardPresetDefinition> | undefined {
-  if (value === undefined) return {};
+): Map<string, BirthdayCardPresetDefinition> | undefined {
+  if (value === undefined) return new Map();
   if (!isRecord(value)) return undefined;
-  const definitions: Record<string, BirthdayCardPresetDefinition> = {};
+  const definitions = new Map<string, BirthdayCardPresetDefinition>();
   for (const [id, entry] of Object.entries(value)) {
     const definition = parseBirthdayCardPresetDefinition(entry);
     if (!definition || definition.id !== id) continue;
-    definitions[id] = definition;
+    definitions.set(id, definition);
   }
   return definitions;
 }
