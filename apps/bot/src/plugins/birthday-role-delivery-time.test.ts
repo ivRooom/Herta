@@ -240,7 +240,7 @@ function stubIvrmApi(settings: Record<string, unknown>) {
     vi.fn(async (_url: unknown, init: RequestInit) => {
       const request = JSON.parse(init.body as string) as Record<string, unknown>;
       return Response.json({
-        schemaVersion: 1,
+        schemaVersion: 2,
         requestId: request.requestId,
         action: 'today',
         status: 'ok',
