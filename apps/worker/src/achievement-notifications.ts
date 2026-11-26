@@ -21,6 +21,13 @@ import { Pool } from 'pg';
  * (振り分け導入前の旧行) は claim 時に定義の rank と設定で判定する。
  * 判定に必要な列・テーブルが無い環境 (migration 0057 未適用) では
  * claim クエリ自体が失敗し、cycle は何も送らずに終わる (fail-closed)。
+ *
+ * 通知の画像 (ivrm-web #1854): 定義に登録済みバッジ画像 (定義の
+ * image_url > 系列×ランク画像) があれば、それを Embed の画像として
+ * 使い、生成カード (Herta #965) は取得しない。バッジが無い・解決に
+ * 失敗した場合は従来どおり生成カード → テキストのみ へ
+ * フォールバックする。バッジ解決は送信の成否に影響させない
+ * (fail-soft)。
  */
 
 const DEFAULT_SCAN_INTERVAL_SECONDS = 60;
@@ -62,6 +69,12 @@ export interface AchievementRecipient {
 export interface AchievementNotificationStore {
   listPending(limit: number): Promise<AchievementOutboxRow[]>;
   resolveRecipient(userId: string): Promise<AchievementRecipient | null>;
+  /**
+   * 登録バッジ画像の URL 解決 (ivrm-web #1854)。任意メソッドで、
+   * 未実装のストアではバッジ無しとして扱う。解決できない場合も
+   * null を返してよい (呼び出し側が fail-soft にフォールバックする)。
+   */
+  resolveBadgeImageUrl?(achievementId: string): Promise<string | null>;
   markSent(id: string, sentAt: string): Promise<void>;
   /** attempts を加算し、上限到達時は status='failed' にする。 */
   markAttemptFailed(id: string, maxAttempts: number): Promise<void>;
@@ -202,14 +215,16 @@ export const ACHIEVEMENT_CARD_FILENAME = 'achievement-card.png';
 /**
  * 通知本文。載せるのは公開可能な範囲のみ (名前・段階・報酬・解除日)。
  * 段階の表示は rank を優先し (ivrm-web #1865 / Herta #1005)、rank の
- * 無い旧 payload は tier で表示する。cardFileName があれば、
- * コンパニオン Embed に添付カードへの image を付ける。
+ * 無い旧 payload は tier で表示する。Embed の画像は登録バッジ画像
+ * (badgeImageUrl、ivrm-web #1854) を最優先し、無ければ添付カード
+ * (cardFileName) を指す。
  */
 export function buildAchievementNotificationMessage(input: {
   displayName: string;
   discordUserId: string;
   payload: AchievementPayload;
   cardFileName?: string;
+  badgeImageUrl?: string;
 }): DiscordMessageBody {
   const tier = tierPresentation(input.payload.rank ?? input.payload.tier);
   const unlockedDate = input.payload.unlockedAt.slice(0, 10);
@@ -223,7 +238,9 @@ export function buildAchievementNotificationMessage(input: {
       { name: '解除日', value: unlockedDate, inline: true },
     ],
   };
-  if (input.cardFileName) {
+  if (input.badgeImageUrl) {
+    embed['image'] = { url: input.badgeImageUrl };
+  } else if (input.cardFileName) {
     embed['image'] = { url: `attachment://${input.cardFileName}` };
   }
   return {
@@ -378,9 +395,22 @@ export async function startAchievementNotificationRuntime(
           discordUserId: recipient.discordUserId,
         });
         const displayName = memberName ?? recipient.username;
+        // 登録バッジ画像があればそれを Embed の画像にする (ivrm-web
+        // #1854)。解決は fail-soft: 未登録・失敗・https でない URL は
+        // バッジ無しとして扱い、従来の生成カードへフォールバックする。
+        let badgeImageUrl: string | null = null;
+        if (options.store.resolveBadgeImageUrl) {
+          badgeImageUrl = await options.store
+            .resolveBadgeImageUrl(row.achievementId)
+            .catch(() => null);
+        }
+        if (badgeImageUrl !== null && !badgeImageUrl.startsWith('https://')) {
+          badgeImageUrl = null;
+        }
         // 画像カードは fail-soft: 取得できなければテキストのみで送る。
+        // バッジ画像がある場合は生成カードを取得しない。
         let cardPng: Buffer | null = null;
-        if (options.fetchCardPng) {
+        if (!badgeImageUrl && options.fetchCardPng) {
           cardPng = await options
             .fetchCardPng({
               guildId: options.guildId,
@@ -394,6 +424,7 @@ export async function startAchievementNotificationRuntime(
           displayName,
           discordUserId: recipient.discordUserId,
           payload,
+          ...(badgeImageUrl ? { badgeImageUrl } : {}),
           ...(cardPng ? { cardFileName: ACHIEVEMENT_CARD_FILENAME } : {}),
         });
         if (cardPng) {
@@ -457,7 +488,8 @@ export async function startAchievementNotificationRuntime(
 
 /**
  * ivrm_api への接続 (専用ロール想定)。対象は outbox と宛先解決に必要な
- * users の最小列のみ。スキーマは本番の ivrm_api を明示する。
+ * users の最小列、およびバッジ画像解決のための定義参照。スキーマは
+ * 本番の ivrm_api を明示する。
  */
 export function createAchievementNotificationStore(
   connectionString: string,
@@ -522,6 +554,44 @@ export function createAchievementNotificationStore(
       const row = result.rows[0];
       if (!row || !row.discord_user_id) return null;
       return { discordUserId: row.discord_user_id, username: row.username };
+    },
+    async resolveBadgeImageUrl(achievementId: string): Promise<string | null> {
+      // 登録バッジ画像の解決 (ivrm-web #1854)。優先順位は Web 通知
+      // ボックス側 (ivrm-web API の enqueueBoxNotification) と同じ
+      // 定義 image_url > 系列×ランク画像。段階ごとに fail-soft にし、
+      // 片方の参照が失敗しても (画像列が無い環境・権限不足) もう片方と
+      // 呼び出し側のフォールバック (生成カード) を妨げない。
+      let definition: { image_url: string | null; series_id: string | null; rank: string | null };
+      try {
+        const result = await pool.query<{
+          image_url: string | null;
+          series_id: string | null;
+          rank: string | null;
+        }>(
+          `SELECT image_url, series_id, "rank"
+             FROM ivrm_api.achievement_definitions
+            WHERE id = $1`,
+          [achievementId],
+        );
+        const row = result.rows[0];
+        if (!row) return null;
+        definition = row;
+      } catch {
+        return null;
+      }
+      if (definition.image_url) return definition.image_url;
+      if (!definition.series_id || !definition.rank) return null;
+      try {
+        const result = await pool.query<{ image_url: string | null }>(
+          `SELECT image_url
+             FROM ivrm_api.achievement_series_images
+            WHERE series_id = $1 AND "rank" = $2`,
+          [definition.series_id, definition.rank],
+        );
+        return result.rows[0]?.image_url ?? null;
+      } catch {
+        return null;
+      }
     },
     async markSent(id: string, sentAt: string): Promise<void> {
       await pool.query(

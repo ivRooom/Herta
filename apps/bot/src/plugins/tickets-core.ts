@@ -52,6 +52,167 @@ export function ticketCategoryLabel(category: TicketCategory): string {
   return TICKET_CATEGORIES.find((entry) => entry.value === category)?.label ?? 'その他';
 }
 
+/**
+ * Discord Embed のプレーンオブジェクト表現 (discord.js の APIEmbed 互換)。
+ * bot プラグインの送信型 (TicketMessageOptions) と worker poller
+ * (ticket-discord-outbox) の embeds はどちらもこの形に揃える。
+ */
+export interface TicketEmbed {
+  title?: string;
+  description?: string;
+  color?: number;
+  fields?: Array<{ name: string; value: string; inline?: boolean }>;
+  footer?: { text: string };
+}
+
+/**
+ * カテゴリ別の Embed カラー (第2段 E1/E2)。poller 側 Embed はカテゴリを
+ * 持たないため色なしだが、タイトル形式 (🎫 + チケット番号) とこの色系統を
+ * bot 側の正本として統一する。
+ */
+export const TICKET_CATEGORY_COLORS: Record<TicketCategory, number> = {
+  discord: 0x5865f2,
+  game_server: 0x57f287,
+  privacy: 0xed4245,
+  general: 0xfee75c,
+};
+
+/** パネルなどカテゴリに紐付かない Embed の既定色 (Discord blurple)。 */
+export const TICKET_EMBED_DEFAULT_COLOR = 0x5865f2;
+
+export function ticketCategoryColor(category: TicketCategory): number {
+  return TICKET_CATEGORY_COLORS[category];
+}
+
+/** パネルに併記するカテゴリ説明 (どんな時に使うか)。 */
+export const TICKET_CATEGORY_DESCRIPTIONS: Record<TicketCategory, string> = {
+  discord: 'Bot・コマンドの不具合、Discord サーバーの使い方など',
+  game_server: 'ゲームサーバーへの接続・障害、参加申請など',
+  privacy: '個人情報の開示・削除の請求など',
+  general: 'どのカテゴリにも当てはまらない相談',
+};
+
+export function ticketCategoryDescription(category: TicketCategory): string {
+  return TICKET_CATEGORY_DESCRIPTIONS[category];
+}
+
+/** 起票直後の状態ラベル (Web 側の初期状態 received に対応)。 */
+export const TICKET_INITIAL_STATUS_LABEL = '受理';
+
+/** パネル Embed。カテゴリごとの説明をフィールドに併記する (E1)。 */
+export function buildTicketPanelEmbed(enabledCategories: readonly TicketCategory[]): TicketEmbed {
+  return {
+    title: '🎫 問い合わせチケット',
+    description:
+      '運営への問い合わせは、下のボタンからカテゴリを選んで作成できます。\n作成すると、あなたと運営だけが見られる非公開スレッドでやり取りが始まります。',
+    color: TICKET_EMBED_DEFAULT_COLOR,
+    fields: enabledCategories.map((category) => ({
+      name: ticketCategoryLabel(category),
+      value: ticketCategoryDescription(category),
+    })),
+  };
+}
+
+/** スレッド冒頭サマリ Embed (E1)。タイトルは poller と同じく 🎫 + 番号 + 件名。 */
+export function buildTicketIntroEmbed(input: {
+  ticketId: string;
+  category: TicketCategory;
+  subject: string;
+  requesterId: string;
+  url: string | null;
+}): TicketEmbed {
+  return {
+    title: `🎫 ${input.ticketId} ${input.subject}`,
+    description: 'このスレッド内のメッセージは Web のチケットにも反映されます。',
+    color: ticketCategoryColor(input.category),
+    fields: [
+      { name: 'カテゴリ', value: ticketCategoryLabel(input.category), inline: true },
+      { name: '状態', value: TICKET_INITIAL_STATUS_LABEL, inline: true },
+      { name: '起票者', value: `<@${input.requesterId}>`, inline: true },
+      ...(input.url ? [{ name: 'Web', value: `[閲覧・返信はこちら](${input.url})` }] : []),
+    ],
+  };
+}
+
+/** 起票の運用通知 Embed (E1)。ロールメンションは content 側に残す。 */
+export function buildTicketCreatedEmbed(input: {
+  ticketId: string;
+  category: TicketCategory;
+  subject: string;
+  threadId: string;
+}): TicketEmbed {
+  return {
+    title: `🎫 新しいチケット ${input.ticketId}`,
+    color: ticketCategoryColor(input.category),
+    fields: [
+      { name: 'カテゴリ', value: ticketCategoryLabel(input.category), inline: true },
+      { name: '件名', value: input.subject },
+      { name: 'スレッド', value: `<#${input.threadId}>`, inline: true },
+    ],
+  };
+}
+
+/** 起票成功の Ephemeral 応答 Embed (E3)。他の Ephemeral は平文のまま。 */
+export function buildTicketCreatedSuccessEmbed(input: {
+  ticketId: string;
+  category: TicketCategory;
+  threadId: string;
+}): TicketEmbed {
+  return {
+    title: `🎫 チケット ${input.ticketId} を作成しました`,
+    description: `スレッド <#${input.threadId}> で運営とやり取りできます。`,
+    color: ticketCategoryColor(input.category),
+    fields: [
+      { name: 'カテゴリ', value: ticketCategoryLabel(input.category), inline: true },
+      { name: '状態', value: TICKET_INITIAL_STATUS_LABEL, inline: true },
+    ],
+  };
+}
+
+export type TicketActionKind = 'claim' | 'close' | 'reopen';
+
+const TICKET_ACTION_EMBED_META: Record<
+  TicketActionKind,
+  { emoji: string; title: string; color: number; note: string }
+> = {
+  claim: {
+    emoji: '🙋',
+    title: '担当希望',
+    color: 0x57f287,
+    note: 'Web側の担当者設定は Admin で行ってください。',
+  },
+  close: {
+    emoji: '🔒',
+    title: 'クローズ依頼',
+    color: 0xed4245,
+    note: 'Web側の状態変更は Admin で行ってください。このスレッドはアーカイブされます（再オープンボタンで戻せます）。',
+  },
+  reopen: {
+    emoji: '🔓',
+    title: '再オープン依頼',
+    color: 0x5865f2,
+    note: 'Web側の状態変更は Admin で行ってください。',
+  },
+};
+
+/** スレッド内ボタンの結果通知 Embed (E1)。 */
+export function buildTicketActionEmbed(input: {
+  action: TicketActionKind;
+  actorId: string;
+  ticketId: string;
+}): TicketEmbed {
+  const meta = TICKET_ACTION_EMBED_META[input.action];
+  return {
+    title: `${meta.emoji} ${meta.title}（${input.ticketId}）`,
+    description: meta.note,
+    color: meta.color,
+    fields: [
+      { name: 'チケット', value: input.ticketId, inline: true },
+      { name: '実行者', value: `<@${input.actorId}>`, inline: true },
+    ],
+  };
+}
+
 export interface TicketsPluginConfig {
   enabled: boolean;
   panelChannelId: string | null;

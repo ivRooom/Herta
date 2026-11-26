@@ -14,9 +14,14 @@ import {
   type PluginRuntimeContext,
 } from '@herta/plugin-sdk';
 import {
+  buildTicketActionEmbed,
   buildTicketCreatePayload,
+  buildTicketCreatedEmbed,
+  buildTicketCreatedSuccessEmbed,
+  buildTicketIntroEmbed,
   buildTicketMessageBody,
   buildTicketMessagePayload,
+  buildTicketPanelEmbed,
   buildTicketThreadPayload,
   isTicketCategory,
   normalizeTicketsConfig,
@@ -27,6 +32,7 @@ import {
   TICKET_BODY_MAX_LENGTH,
   TICKET_SUBJECT_MAX_LENGTH,
   type TicketCategory,
+  type TicketEmbed,
   type TicketOutboxKind,
   type TicketsPluginConfig,
 } from './tickets-core.js';
@@ -50,7 +56,8 @@ const workerTimers = new Map<string, ReturnType<typeof setInterval>>();
 const workerRunning = new Set<string>();
 
 interface TicketMessageOptions {
-  content: string;
+  content?: string;
+  embeds?: TicketEmbed[];
   components?: Array<Record<string, unknown>>;
   allowedMentions: { parse: []; roles?: string[]; users?: string[] };
 }
@@ -108,7 +115,11 @@ interface ComponentInteraction {
   fields?: { getTextInputValue(id: string): string };
   reply(options: TicketMessageOptions & { flags?: number }): Promise<unknown>;
   deferReply(options: { flags?: number }): Promise<unknown>;
-  editReply(options: { content: string }): Promise<unknown>;
+  editReply(options: {
+    content?: string;
+    embeds?: TicketEmbed[];
+    allowedMentions?: TicketMessageOptions['allowedMentions'];
+  }): Promise<unknown>;
   showModal(modal: ModalBuilder): Promise<unknown>;
 }
 
@@ -170,19 +181,15 @@ export type TicketAction = 'claim' | 'close' | 'reopen';
  * エンドポイントが無い (proposed-only) ため、第1段では Web 側の状態は
  * 変えず、Discord 内の記録と Admin での更新依頼に倒す。
  */
-export function buildTicketActionNotice(
+export function buildTicketActionMessage(
   action: TicketAction,
   actorId: string,
   ticketId: string,
-): string {
-  const actor = `<@${actorId}>`;
-  if (action === 'claim') {
-    return `🙋 ${actor} がこのチケット（${ticketId}）の担当を希望しました。Web側の担当者設定は Admin で行ってください。`;
-  }
-  if (action === 'close') {
-    return `🔒 ${actor} がこのチケット（${ticketId}）のクローズを依頼しました。Web側の状態変更は Admin で行ってください。このスレッドはアーカイブされます（再オープンボタンで戻せます）。`;
-  }
-  return `🔓 ${actor} がこのチケット（${ticketId}）の再オープンを依頼しました。Web側の状態変更は Admin で行ってください。`;
+): TicketMessageOptions {
+  return {
+    embeds: [buildTicketActionEmbed({ action, actorId, ticketId })],
+    allowedMentions: { parse: [], users: [actorId] },
+  };
 }
 
 export function buildTicketPanelMessage(config: TicketsPluginConfig): TicketMessageOptions {
@@ -193,11 +200,7 @@ export function buildTicketPanelMessage(config: TicketsPluginConfig): TicketMess
     label: ticketCategoryLabel(category),
   }));
   return {
-    content: [
-      '🎫 **問い合わせチケット**',
-      '運営への問い合わせは、下のボタンからカテゴリを選んで作成できます。',
-      '作成すると、あなたと運営だけが見られる非公開スレッドでやり取りが始まります。',
-    ].join('\n'),
+    embeds: [buildTicketPanelEmbed(config.enabledCategories)],
     components: buttons.length > 0 ? [{ type: 1, components: buttons }] : [],
     allowedMentions: { parse: [] },
   };
@@ -210,16 +213,8 @@ export function buildTicketIntroMessage(input: {
   requesterId: string;
   url: string | null;
 }): TicketMessageOptions {
-  const lines = [
-    `🎫 **チケット ${input.ticketId}** · ${ticketCategoryLabel(input.category)}`,
-    `件名: ${input.subject}`,
-    `起票者: <@${input.requesterId}>`,
-    input.url ? `Webでの閲覧・返信: ${input.url}` : null,
-    '',
-    'このスレッド内のメッセージは Web のチケットにも反映されます。',
-  ].filter((line): line is string => line !== null);
   return {
-    content: lines.join('\n'),
+    embeds: [buildTicketIntroEmbed(input)],
     components: [
       {
         type: 1,
@@ -466,7 +461,8 @@ async function handleTicketModalSubmit(
     threadId: thread.id,
   });
   await interaction.editReply({
-    content: `🎫 チケット ${ticketId} を作成しました。スレッド <#${thread.id}> で運営とやり取りできます。`,
+    embeds: [buildTicketCreatedSuccessEmbed({ ticketId, category, threadId: thread.id })],
+    allowedMentions: { parse: [] },
   });
 }
 
@@ -478,13 +474,15 @@ async function notifyTicketCreated(
   if (!config.notifyChannelId) return;
   const channel = await context.client.channels.fetch(config.notifyChannelId).catch(() => null);
   if (!channel?.isTextBased()) return;
+  // ロールメンションは Embed 内では発火しないため、content 側に残して飛ばす。
   const mention =
     config.notifyStaffOnCreate && config.staffRoleIds.length > 0
-      ? `${config.staffRoleIds.map((roleId) => `<@&${roleId}>`).join(' ')}\n`
+      ? config.staffRoleIds.map((roleId) => `<@&${roleId}>`).join(' ')
       : '';
   await channel
     .send({
-      content: `${mention}🎫 新しいチケット ${input.ticketId}（${ticketCategoryLabel(input.category)}）\n件名: ${input.subject}\nスレッド: <#${input.threadId}>`,
+      ...(mention ? { content: mention } : {}),
+      embeds: [buildTicketCreatedEmbed(input)],
       allowedMentions:
         config.notifyStaffOnCreate && config.staffRoleIds.length > 0
           ? { parse: [], roles: config.staffRoleIds }
@@ -529,10 +527,7 @@ async function handleTicketAction(
       interaction.user.id,
     );
   }
-  await interaction.reply({
-    content: buildTicketActionNotice(action, interaction.user.id, link.ticketId),
-    allowedMentions: { parse: [], users: [interaction.user.id] },
-  });
+  await interaction.reply(buildTicketActionMessage(action, interaction.user.id, link.ticketId));
   const thread = interaction.channel;
   if (action === 'close') await thread?.setArchived?.(true).catch(() => undefined);
   if (action === 'reopen') await thread?.setArchived?.(false).catch(() => undefined);
