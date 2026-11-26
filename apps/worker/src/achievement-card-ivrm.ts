@@ -87,10 +87,9 @@ export function buildAchievementCardRequest(
     payload: {
       code: input.payload.code,
       name: input.payload.name,
-      tier: input.payload.tier,
-      // 段階の正本 rank (ivrm-web #1865 / Herta #1005)。payload に
-      // あるときだけ載せる (旧 payload では従来どおり tier のみ)。
-      ...(input.payload.rank !== undefined ? { rank: input.payload.rank } : {}),
+      // 段階の正本 rank (ivrm-web #1865 / Herta #1005)。tier は
+      // 列ごと廃止されたため送らない (ivrm-web #1918)。
+      rank: input.payload.rank,
       xpReward: input.payload.xpReward,
       unlockedAt: input.payload.unlockedAt,
     },

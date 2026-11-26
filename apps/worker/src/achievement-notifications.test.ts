@@ -10,7 +10,7 @@ import {
   normalizeAchievementScanIntervalSeconds,
   parseAchievementPayload,
   startAchievementNotificationRuntime,
-  tierPresentation,
+  rankPresentation,
   verifyAchievementPayloadHash,
   type AchievementNotificationStore,
   type AchievementOutboxRow,
@@ -30,7 +30,7 @@ function createLogger() {
 const PAYLOAD_JSON = JSON.stringify({
   code: 'total-xp-100',
   name: '最初の一歩',
-  tier: 'bronze',
+  rank: 'bronze',
   xpReward: 100,
   unlockedAt: '2026-11-18T03:00:00.000Z',
 });
@@ -88,39 +88,50 @@ test('payload を解釈し、hash を検証する', () => {
   const payload = parseAchievementPayload(PAYLOAD_JSON);
   assert.equal(payload?.name, '最初の一歩');
   assert.equal(payload?.xpReward, 100);
-  assert.equal(payload?.rank, undefined);
+  assert.equal(payload?.rank, 'bronze');
   assert.equal(parseAchievementPayload('{"code":1}'), null);
   assert.equal(parseAchievementPayload('not-json'), null);
   assert.equal(verifyAchievementPayloadHash(PAYLOAD_JSON, PAYLOAD_HASH), true);
   assert.equal(verifyAchievementPayloadHash(PAYLOAD_JSON, '0'.repeat(64)), false);
 });
 
-test('payload の rank は文字列のときだけ受理し、それ以外は無視する (#1005)', () => {
+test('payload の rank は必須で、文字列でなければ解釈できない (#1918)', () => {
   const withRank = parseAchievementPayload(
     JSON.stringify({
       code: 'settings-completion-10',
       name: '設定マスター',
-      tier: 'platinum',
       rank: 'legend',
       xpReward: 5000,
       unlockedAt: '2026-11-25T11:40:06.289Z',
     }),
   );
   assert.equal(withRank?.rank, 'legend');
-  // rank が文字列でなくても payload 自体は有効 (tier 表示に落ちる)。
-  const badRank = parseAchievementPayload(
-    JSON.stringify({
-      code: 'settings-completion-10',
-      name: '設定マスター',
-      tier: 'platinum',
-      rank: 5,
-      xpReward: 5000,
-      unlockedAt: '2026-11-25T11:40:06.289Z',
-    }),
+  // rank が文字列でない payload は解釈できない (poisoned 行になる)。
+  assert.equal(
+    parseAchievementPayload(
+      JSON.stringify({
+        code: 'settings-completion-10',
+        name: '設定マスター',
+        rank: 5,
+        xpReward: 5000,
+        unlockedAt: '2026-11-25T11:40:06.289Z',
+      }),
+    ),
+    null,
   );
-  assert.ok(badRank);
-  assert.equal(badRank?.rank, undefined);
-  assert.equal(badRank?.tier, 'platinum');
+  // tier しか無い旧形式の payload も解釈できない。
+  assert.equal(
+    parseAchievementPayload(
+      JSON.stringify({
+        code: 'settings-completion-10',
+        name: '設定マスター',
+        tier: 'platinum',
+        xpReward: 5000,
+        unlockedAt: '2026-11-25T11:40:06.289Z',
+      }),
+    ),
+    null,
+  );
 });
 
 test('通知本文は公開可能な範囲のみで本人メンションを含む', () => {
@@ -130,7 +141,7 @@ test('通知本文は公開可能な範囲のみで本人メンションを含�
     payload: {
       code: 'total-xp-100',
       name: '最初の一歩',
-      tier: 'bronze',
+      rank: 'bronze',
       xpReward: 100,
       unlockedAt: '2026-11-18T03:00:00.000Z',
     },
@@ -245,11 +256,11 @@ test('未連携ユーザーは再試行扱いにし、Discord 送信失敗も at
   assert.deepEqual(fake.sent, []);
 });
 
-test('通知本文の段階表示は rank を優先し、rank 無しでは tier と変わらない (#1005)', () => {
+test('通知本文の段階表示は rank で行う (#1918)', () => {
   const base = {
     code: 'settings-completion-10',
     name: '設定マスター',
-    tier: 'platinum',
+    rank: 'diamond',
     xpReward: 5000,
     unlockedAt: '2026-11-25T11:40:06.289Z',
   };
@@ -265,6 +276,7 @@ test('通知本文の段階表示は rank を優先し、rank 無しでは tier 
   };
   assert.equal(legendEmbed.title, '👑 アチーブメント解除！');
   assert.equal(legendEmbed.color, 0xfb7185);
+  assert.equal(legendEmbed.fields[0]?.name, 'ランク');
   assert.deepEqual(
     legendEmbed.fields.map((field) => field.value),
     ['レジェンド', '+5000 XP', '2026-11-25'],
@@ -273,7 +285,7 @@ test('通知本文の段階表示は rank を優先し、rank 無しでは tier 
   const beginner = buildAchievementNotificationMessage({
     displayName: 'いゔる',
     discordUserId: 'discord-1',
-    payload: { ...base, tier: 'bronze', rank: 'beginner', xpReward: 50 },
+    payload: { ...base, rank: 'beginner', xpReward: 50 },
   });
   const beginnerEmbed = beginner.embeds[0] as {
     title: string;
@@ -283,50 +295,38 @@ test('通知本文の段階表示は rank を優先し、rank 無しでは tier 
   assert.equal(beginnerEmbed.title, '🌱 アチーブメント解除！');
   assert.equal(beginnerEmbed.color, 0x4ade80);
   assert.equal(beginnerEmbed.fields[0]?.value, 'ビギナー');
-
-  // rank 無しの旧 payload は従来どおり platinum 表示のまま。
-  const legacy = buildAchievementNotificationMessage({
-    displayName: 'いゔる',
-    discordUserId: 'discord-1',
-    payload: base,
-  });
-  const legacyEmbed = legacy.embeds[0] as {
-    fields: Array<{ name: string; value: string }>;
-  };
-  assert.equal(legacyEmbed.fields[0]?.value, 'プラチナ');
 });
-
-test('ティア表は master / diamond / legend を持ち、platinum は legacy のまま', () => {
-  assert.deepEqual(tierPresentation('master'), { label: 'マスター', emoji: '💠', color: 0xa78bfa });
-  assert.deepEqual(tierPresentation('diamond'), {
+test('ランク表は rank 7 段階を持ち、未知の値は汎用表示に落ちる (#1918)', () => {
+  assert.deepEqual(rankPresentation('master'), { label: 'マスター', emoji: '💠', color: 0xa78bfa });
+  assert.deepEqual(rankPresentation('diamond'), {
     label: 'ダイヤモンド',
     emoji: '💎',
     color: 0x7dd3fc,
   });
-  assert.deepEqual(tierPresentation('legend'), {
+  assert.deepEqual(rankPresentation('legend'), {
     label: 'レジェンド',
     emoji: '👑',
     color: 0xfb7185,
   });
-  assert.deepEqual(tierPresentation('platinum'), {
-    label: 'プラチナ',
-    emoji: '💎',
-    color: 0x7dd3fc,
-  });
-  assert.deepEqual(tierPresentation('bronze'), { label: 'ブロンズ', emoji: '🥉', color: 0xcd7f32 });
+  assert.deepEqual(rankPresentation('bronze'), { label: 'ブロンズ', emoji: '🥉', color: 0xcd7f32 });
   // beginner は rank 一本化での提案値 (API 側カードと同値)。
-  assert.deepEqual(tierPresentation('beginner'), {
+  assert.deepEqual(rankPresentation('beginner'), {
     label: 'ビギナー',
     emoji: '🌱',
     color: 0x4ade80,
   });
+  // 旧ティア名 platinum は表に無く、汎用表示に落ちる。
+  assert.deepEqual(rankPresentation('platinum'), {
+    label: 'platinum',
+    emoji: '🏆',
+    color: 0x5865f2,
+  });
 });
-
 test('カード添付時はコンパニオン Embed に attachment 画像が付く', () => {
   const payload = {
     code: 'total-xp-100',
     name: '最初の一歩',
-    tier: 'master',
+    rank: 'master',
     xpReward: 100,
     unlockedAt: '2026-11-18T03:00:00.000Z',
   };
@@ -480,7 +480,7 @@ test('バッジ画像は生成カードより優先して Embed 画像になる 
   const payload = {
     code: 'total-xp-100',
     name: '最初の一歩',
-    tier: 'master',
+    rank: 'master',
     xpReward: 100,
     unlockedAt: '2026-11-18T03:00:00.000Z',
   };
