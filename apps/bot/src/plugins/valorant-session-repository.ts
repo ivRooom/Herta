@@ -6,6 +6,7 @@ export type ValorantComponentAction =
   | ValorantSessionAction
   | 'vc'
   | 'manage'
+  | 'troll-off'
   | 'add-select'
   | 'remove-select'
   | 'select-vc'
@@ -56,6 +57,7 @@ export function parseValorantSessionAction(
       'reroll',
       'vc',
       'manage',
+      'troll-off',
       'add-select',
       'remove-select',
       'select-vc',
@@ -261,6 +263,81 @@ export async function mutateValorantSession(
       return { status: 'ok', session, changed: true };
     },
     // The session row is locked with FOR UPDATE. ReadCommitted sees prior joins after waiting.
+    { isolationLevel: 'ReadCommitted' },
+  );
+}
+
+/**
+ * Toggle the pressing participant's own troll-gacha opt-out (#1047).
+ * Only participants can opt out, and only while the recruitment is OPEN;
+ * the draw reads trollOffUserIds and passes them to the troll engine as
+ * exclusions. Shares the session row lock with every other mutation.
+ */
+export async function toggleValorantSessionTrollOff(
+  prisma: PrismaClient,
+  input: { guildId: string; id: string; userId: string },
+): Promise<ValorantMutation> {
+  return prisma.$transaction(
+    async (tx) => {
+      const locked = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        'SELECT "id" FROM "valorant_pick_sessions" WHERE "id" = $1 AND "guild_id" = $2 FOR UPDATE',
+        input.id,
+        input.guildId,
+      );
+      if (!locked.length) return { status: 'missing' };
+      const row = await tx.valorantPickSession.findFirst({
+        where: { id: input.id, guildId: input.guildId },
+        include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
+      });
+      if (!row) return { status: 'missing' };
+      if (row.status !== 'OPEN' || row.expiresAt <= new Date()) return { status: 'closed' };
+      const isOff = row.trollOffUserIds.includes(input.userId);
+      if (!isOff && !row.participants.some((entry) => entry.userId === input.userId))
+        return { status: 'not_joined' };
+      const trollOffUserIds = isOff
+        ? row.trollOffUserIds.filter((id) => id !== input.userId)
+        : [...row.trollOffUserIds, input.userId];
+      const session = await tx.valorantPickSession.update({
+        where: { id: row.id },
+        data: { trollOffUserIds },
+        include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
+      });
+      return { status: 'ok', session, changed: true };
+    },
+    { isolationLevel: 'ReadCommitted' },
+  );
+}
+
+/**
+ * Persist the troll assignments merged into a completed session's result
+ * JSON (#1047). The external troll API call itself happens outside any
+ * transaction; this only stores its outcome so later message rebuilds
+ * (stale-button refresh, expiry sync) keep showing the same trolls.
+ * Refuses to touch a session that is not COMPLETED.
+ */
+export async function attachValorantSessionTrollResult(
+  prisma: PrismaClient,
+  input: { guildId: string; id: string; result: unknown[] },
+): Promise<boolean> {
+  return prisma.$transaction(
+    async (tx) => {
+      const locked = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        'SELECT "id" FROM "valorant_pick_sessions" WHERE "id" = $1 AND "guild_id" = $2 FOR UPDATE',
+        input.id,
+        input.guildId,
+      );
+      if (!locked.length) return false;
+      const row = await tx.valorantPickSession.findFirst({
+        where: { id: input.id, guildId: input.guildId },
+        select: { status: true },
+      });
+      if (!row || row.status !== 'COMPLETED') return false;
+      await tx.valorantPickSession.update({
+        where: { id: input.id },
+        data: { result: JSON.parse(JSON.stringify(input.result)) as object[] },
+      });
+      return true;
+    },
     { isolationLevel: 'ReadCommitted' },
   );
 }
