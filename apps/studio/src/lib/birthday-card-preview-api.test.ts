@@ -54,11 +54,19 @@ test('authenticates exact service body and binds Guild', async () => {
     { ...input, card: { ...input.card, backgroundUrl: 'http://example.com/bg.png' } },
     { ...input, card: { ...input.card, backgroundUrl: 'not-a-url' } },
     { ...input, card: { ...input.card, showName: 'yes' } },
-    { ...input, card: { ...input.card, showAge: true } },
+    { ...input, card: { ...input.card, showAge: 'yes' } },
+    { ...input, card: { ...input.card, showAges: true } },
   ]) {
     const response = await authorizeBirthdayCardPreview(signed(value), environment);
     assert.ok(response instanceof Response);
     assert.equal(response.status, 422);
+  }
+});
+
+test('accepts the optional showAge flag on the card (#1914 S-F)', async () => {
+  for (const showAge of [true, false]) {
+    const value = { ...input, card: { ...input.card, showAge } };
+    assert.deepEqual(await authorizeBirthdayCardPreview(signed(value), environment), value);
   }
 });
 
@@ -80,7 +88,7 @@ test('rejects expired signature and wrong key, fails closed while unconfigured',
   assert.equal(unconfigured.status, 503);
 });
 
-test('preview config overrides preset and show flags, forces age off, keeps Studio layout', () => {
+test('preview config overrides preset and show flags, keeps Studio layout', () => {
   const config = buildBirthdayCardPreviewConfig(
     {
       birthdayCardEnabled: false,
@@ -101,7 +109,24 @@ test('preview config overrides preset and show flags, forces age off, keeps Stud
   assert.equal(config.birthdayCardShowName, false);
   assert.equal(config.birthdayCardShowAvatar, true);
   assert.equal(config.birthdayCardShowBirthday, false);
+  // showAge absent from the request means off, even when the
+  // Studio config has age display on.
   assert.equal(config.birthdayCardShowAge, false);
   assert.equal(config.birthdayCardEnabled, true);
   assert.equal(config.birthdayCardNameX, 12);
+});
+
+test('preview config follows an explicit showAge from the request (#1914 S-F)', () => {
+  const config = buildBirthdayCardPreviewConfig(
+    { birthdayCardShowAge: false, birthdayCardBackgroundSource: 'preset' },
+    {
+      preset: 'herta-night-board',
+      backgroundUrl: null,
+      showName: true,
+      showAvatar: true,
+      showBirthday: true,
+      showAge: true,
+    },
+  );
+  assert.equal(config.birthdayCardShowAge, true);
 });

@@ -46,6 +46,12 @@ export interface IvrmBirthdayCardSettings {
   showName: boolean;
   showAvatar: boolean;
   showBirthday: boolean;
+  /**
+   * Whether the card may show the member's age (#1914 S-F).
+   * Optional on the wire: settings activated before the key
+   * existed carry no showAge, which means false.
+   */
+  showAge: boolean;
 }
 
 /**
@@ -68,8 +74,13 @@ export interface IvrmBirthdaySettings {
 /**
  * One member whose birthday falls on the requested JST date. The
  * API resolves the date (including the leap-day policy) on its
- * side, so recipients need no further date filtering here. Only
- * month/day ever cross the wire: no birth year, no age.
+ * side, so recipients need no further date filtering here. A
+ * birth year never crosses the wire. Since schemaVersion 2 the
+ * API may add `age` — the age the member turns this year, as a
+ * bare integer — but only while the settings' card.showAge is
+ * on; when it is off the key is absent entirely. `age: null`
+ * means showAge is on but the member has no usable birth year
+ * on the Web side, so no age is shown.
  */
 export interface IvrmBirthdayRecipient {
   memberId: string;
@@ -77,6 +88,7 @@ export interface IvrmBirthdayRecipient {
   displayName: string;
   month: number;
   day: number;
+  age: number | null;
 }
 
 /**
@@ -119,7 +131,7 @@ export function buildBirthdayRequest(
   timestamp: string,
 ) {
   const payload: Record<string, unknown> = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     requestId,
     guildId,
     action: 'today',
@@ -174,7 +186,10 @@ function parseCardSettings(value: unknown): IvrmBirthdayCardSettings | undefined
     !(value.backgroundUrl === null || typeof value.backgroundUrl === 'string') ||
     typeof value.showName !== 'boolean' ||
     typeof value.showAvatar !== 'boolean' ||
-    typeof value.showBirthday !== 'boolean'
+    typeof value.showBirthday !== 'boolean' ||
+    // showAge is optional for backward compatibility with
+    // settings activated before the key existed; absent = false.
+    !(value.showAge === undefined || typeof value.showAge === 'boolean')
   )
     return undefined;
   return {
@@ -184,6 +199,7 @@ function parseCardSettings(value: unknown): IvrmBirthdayCardSettings | undefined
     showName: value.showName,
     showAvatar: value.showAvatar,
     showBirthday: value.showBirthday,
+    showAge: value.showAge === true,
   };
 }
 
@@ -215,13 +231,35 @@ function parseSettings(value: unknown): IvrmBirthdaySettings | undefined {
   };
 }
 
+/**
+ * Keys that would carry a birth year (or a full birth date) if
+ * an upstream ever sent one. The v2 contract never includes
+ * them; their presence means the payload is not the contract
+ * the API serves, so the whole response fails closed instead
+ * of dropping the fields silently.
+ */
+const BIRTH_YEAR_KEYS = ['birthYear', 'birth_year', 'birthDate', 'dateOfBirth'] as const;
+
+function parseRecipientAge(value: Record<string, unknown>): number | null | undefined {
+  // Absent key (showAge off) and explicit null (showAge on, no
+  // usable birth year) both mean "no age to show". Anything
+  // else must be a plausible integer age.
+  if (!('age' in value) || value.age === null) return null;
+  if (
+    typeof value.age !== 'number' ||
+    !Number.isInteger(value.age) ||
+    value.age < 0 ||
+    value.age > 150
+  )
+    return undefined;
+  return value.age;
+}
+
 function parseRecipient(value: unknown): IvrmBirthdayRecipient | undefined {
   if (!isRecord(value)) return undefined;
-  // Birth year / age must never cross this wire. If a payload
-  // carries them anyway it is not the contract the API serves,
-  // so the whole response fails closed instead of dropping the
-  // fields silently.
-  if ('birthYear' in value || 'age' in value) return undefined;
+  if (BIRTH_YEAR_KEYS.some((key) => key in value)) return undefined;
+  const age = parseRecipientAge(value);
+  if (age === undefined) return undefined;
   if (
     typeof value.memberId !== 'string' ||
     value.memberId.length === 0 ||
@@ -243,13 +281,18 @@ function parseRecipient(value: unknown): IvrmBirthdayRecipient | undefined {
     displayName: value.displayName,
     month: value.month,
     day: value.day,
+    age,
   };
 }
 
 function parseSuccessBody(value: unknown, requestId: string): IvrmBirthdayResult {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== 1 ||
+    // Only schemaVersion 2 is accepted. A v1 answer means the
+    // API has not landed the v2 contract yet: report
+    // 'unavailable' so the caller falls back to the legacy
+    // registrations path (fail-soft) until both sides land.
+    value.schemaVersion !== 2 ||
     value.requestId !== requestId ||
     value.action !== 'today' ||
     value.status !== 'ok'
