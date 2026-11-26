@@ -41,13 +41,11 @@ const REQUEST_TIMEOUT_MS = 15_000;
 export interface AchievementPayload {
   code: string;
   name: string;
-  tier: string;
   /**
-   * 段階の正本 (ivrm-web #1865 / Herta #1005)。U1 以降の payload が
-   * 運ぶ任意フィールドで、表示はこれを tier より優先する。旧 payload
-   * (rank 無し) は tier のまま表示する (後方互換)。
+   * 段階の正本 (ivrm-web #1865 / Herta #1005)。tier 列の廃止
+   * (ivrm-web #1918) で必須フィールドになった。
    */
-  rank?: string;
+  rank: string;
   xpReward: number;
   unlockedAt: string;
 }
@@ -124,7 +122,7 @@ export function parseAchievementPayload(payloadJson: string): AchievementPayload
   if (
     typeof record['code'] !== 'string' ||
     typeof record['name'] !== 'string' ||
-    typeof record['tier'] !== 'string' ||
+    typeof record['rank'] !== 'string' ||
     typeof record['xpReward'] !== 'number' ||
     typeof record['unlockedAt'] !== 'string'
   ) {
@@ -133,10 +131,7 @@ export function parseAchievementPayload(payloadJson: string): AchievementPayload
   return {
     code: record['code'],
     name: record['name'],
-    tier: record['tier'],
-    // rank は任意: 文字列のときだけ受理し、それ以外は無視して
-    // tier 表示にフォールバックする (行を poisoned にしない)。
-    ...(typeof record['rank'] === 'string' ? { rank: record['rank'] } : {}),
+    rank: record['rank'],
     xpReward: record['xpReward'],
     unlockedAt: record['unlockedAt'],
   };
@@ -185,7 +180,7 @@ export function isDiscordRoutedRank(
   return rankOrder >= (minOrder as number);
 }
 
-const TIER_PRESENTATION: Record<string, { label: string; emoji: string; color: number }> = {
+const RANK_PRESENTATION: Record<string, { label: string; emoji: string; color: number }> = {
   // beginner の絵文字・色は rank 一本化 (ivrm-web #1865) での提案値。
   // API 側のカード描画 (ACHIEVEMENT_CARD_RANKS) と同じ値を使う。
   beginner: { label: 'ビギナー', emoji: '🌱', color: 0x4ade80 },
@@ -195,12 +190,10 @@ const TIER_PRESENTATION: Record<string, { label: string; emoji: string; color: n
   master: { label: 'マスター', emoji: '💠', color: 0xa78bfa },
   diamond: { label: 'ダイヤモンド', emoji: '💎', color: 0x7dd3fc },
   legend: { label: 'レジェンド', emoji: '👑', color: 0xfb7185 },
-  // 旧ティア名の後方互換 (diamond と同色)。
-  platinum: { label: 'プラチナ', emoji: '💎', color: 0x7dd3fc },
 };
 
-export function tierPresentation(tier: string): { label: string; emoji: string; color: number } {
-  return TIER_PRESENTATION[tier] ?? { label: tier, emoji: '🏆', color: 0x5865f2 };
+export function rankPresentation(rank: string): { label: string; emoji: string; color: number } {
+  return RANK_PRESENTATION[rank] ?? { label: rank, emoji: '🏆', color: 0x5865f2 };
 }
 
 export interface DiscordMessageBody {
@@ -214,10 +207,9 @@ export const ACHIEVEMENT_CARD_FILENAME = 'achievement-card.png';
 
 /**
  * 通知本文。載せるのは公開可能な範囲のみ (名前・段階・報酬・解除日)。
- * 段階の表示は rank を優先し (ivrm-web #1865 / Herta #1005)、rank の
- * 無い旧 payload は tier で表示する。Embed の画像は登録バッジ画像
- * (badgeImageUrl、ivrm-web #1854) を最優先し、無ければ添付カード
- * (cardFileName) を指す。
+ * 段階の表示は rank が正本 (ivrm-web #1865 / Herta #1005、tier 廃止は
+ * #1918)。Embed の画像は登録バッジ画像 (badgeImageUrl、ivrm-web
+ * #1854) を最優先し、無ければ添付カード (cardFileName) を指す。
  */
 export function buildAchievementNotificationMessage(input: {
   displayName: string;
@@ -226,14 +218,14 @@ export function buildAchievementNotificationMessage(input: {
   cardFileName?: string;
   badgeImageUrl?: string;
 }): DiscordMessageBody {
-  const tier = tierPresentation(input.payload.rank ?? input.payload.tier);
+  const stage = rankPresentation(input.payload.rank);
   const unlockedDate = input.payload.unlockedAt.slice(0, 10);
   const embed: Record<string, unknown> = {
-    title: `${tier.emoji} アチーブメント解除！`,
+    title: `${stage.emoji} アチーブメント解除！`,
     description: `${input.displayName} さんがアチーブメント「${input.payload.name}」を解除しました！`,
-    color: tier.color,
+    color: stage.color,
     fields: [
-      { name: 'ティア', value: tier.label, inline: true },
+      { name: 'ランク', value: stage.label, inline: true },
       { name: '報酬', value: `+${input.payload.xpReward} XP`, inline: true },
       { name: '解除日', value: unlockedDate, inline: true },
     ],
