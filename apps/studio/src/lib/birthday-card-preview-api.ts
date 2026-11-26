@@ -1,7 +1,9 @@
 import {
   BIRTHDAY_CARD_PRESETS,
   normalizeBirthdayCardConfig,
+  parseBirthdayCardPresetDefinition,
   type BirthdayCardConfig,
+  type BirthdayCardPresetDefinition,
   type BirthdayCardPresetId,
 } from '@herta/shared';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -22,6 +24,17 @@ export interface BirthdayCardPreviewCardInput {
    * sample card is drawn without an age (#1914 S-F).
    */
   showAge?: boolean;
+  /**
+   * Optional: the database preset definition to draw with
+   * when the Admin settings select a DB preset (#1028 R3-E).
+   * Absent or null means the bundled `preset` alone decides
+   * the background and text colors, exactly as before. When
+   * present it must validate whole — unlike the delivery
+   * path, which drops a malformed definition and continues,
+   * a signed preview request is a server-to-server contract,
+   * so a malformed definition is a 422 here.
+   */
+  presetDefinition?: BirthdayCardPresetDefinition | null;
 }
 
 export interface BirthdayCardPreviewInput {
@@ -117,12 +130,19 @@ export async function authorizeBirthdayCardPreview(
     !card ||
     typeof card !== 'object' ||
     Array.isArray(card) ||
-    // The required keys must all be present; `showAge` is the
-    // only optional key, anything else is rejected.
+    // The required keys must all be present; `showAge` and
+    // `presetDefinition` are the only optional keys, anything
+    // else is rejected.
     !Object.keys(card).every((key) =>
-      ['backgroundUrl', 'preset', 'showAvatar', 'showBirthday', 'showName', 'showAge'].includes(
-        key,
-      ),
+      [
+        'backgroundUrl',
+        'preset',
+        'presetDefinition',
+        'showAvatar',
+        'showBirthday',
+        'showName',
+        'showAge',
+      ].includes(key),
     ) ||
     !['backgroundUrl', 'preset', 'showAvatar', 'showBirthday', 'showName'].every((key) =>
       Object.hasOwn(card, key),
@@ -137,7 +157,12 @@ export async function authorizeBirthdayCardPreview(
     typeof candidate.showName !== 'boolean' ||
     typeof candidate.showAvatar !== 'boolean' ||
     typeof candidate.showBirthday !== 'boolean' ||
-    !(candidate.showAge === undefined || typeof candidate.showAge === 'boolean')
+    !(candidate.showAge === undefined || typeof candidate.showAge === 'boolean') ||
+    !(
+      candidate.presetDefinition === undefined ||
+      candidate.presetDefinition === null ||
+      parseBirthdayCardPresetDefinition(candidate.presetDefinition) !== null
+    )
   )
     return fail(422, 'invalid_request');
   return value as unknown as BirthdayCardPreviewInput;

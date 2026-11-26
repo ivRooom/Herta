@@ -76,6 +76,78 @@ describe('renderBirthdayCard remote background (#986 S5c)', () => {
   });
 });
 
+describe('renderBirthdayCard preset definition (#1028 R3-E)', () => {
+  const definition = {
+    id: 'my-custom-preset',
+    label: 'カスタムプリセット',
+    backgroundUrl: 'https://media.example.com/birthday/bg.webp',
+    textColor: '#ff0000',
+    textStroke: '#0000ff',
+  };
+
+  it('定義の背景bytesを背景として使用する', async () => {
+    const definitionBackground = await createSolidPng(10, 220, 30);
+
+    const card = await renderWithBackgrounds({
+      presetDefinition: definition,
+      definitionBackground,
+    });
+    const { data } = await sharp(card).raw().toBuffer({ resolveWithObject: true });
+    expect([...data.subarray(0, 3)]).toEqual([10, 220, 30]);
+  });
+
+  it('背景はcard.backgroundUrlの画像が定義の背景より優先される', async () => {
+    const remoteBackground = await createSolidPng(200, 30, 40);
+    const definitionBackground = await createSolidPng(10, 220, 30);
+
+    const card = await renderWithBackgrounds({
+      presetDefinition: definition,
+      remoteBackground,
+      definitionBackground,
+    });
+    const { data } = await sharp(card).raw().toBuffer({ resolveWithObject: true });
+    expect([...data.subarray(0, 3)]).toEqual([200, 30, 40]);
+  });
+
+  it('定義の背景bytesが不正なら保存済みcustom背景へfallbackする', async () => {
+    const customBackground = await createSolidPng(12, 34, 56);
+
+    const card = await renderWithBackgrounds({
+      backgroundSource: 'custom',
+      presetDefinition: definition,
+      definitionBackground: new TextEncoder().encode('<svg></svg>'),
+      customBackground,
+    });
+    const { data } = await sharp(card).raw().toBuffer({ resolveWithObject: true });
+    expect([...data.subarray(0, 3)]).toEqual([12, 34, 56]);
+  });
+
+  it('定義の文字色でテキストを描く（背景が定義外でも色は定義に従う）', async () => {
+    const withDefinition = await renderWithBackgrounds({
+      showName: true,
+      presetDefinition: definition,
+    });
+    const withoutDefinition = await renderWithBackgrounds({ showName: true });
+
+    const { data, info } = await sharp(withDefinition).raw().toBuffer({ resolveWithObject: true });
+    let redPixels = 0;
+    for (let index = 0; index + 2 < data.length; index += info.channels) {
+      if (data[index] === 255 && data[index + 1] === 0 && data[index + 2] === 0) redPixels += 1;
+    }
+    expect(redPixels).toBeGreaterThan(0);
+    expect(Buffer.from(withDefinition).equals(Buffer.from(withoutDefinition))).toBe(false);
+  });
+
+  it('定義がnullなら従来と同一に描画される', async () => {
+    const plain = await renderWithBackgrounds({});
+    const withNulls = await renderWithBackgrounds({
+      presetDefinition: null,
+      definitionBackground: null,
+    });
+    expect(Buffer.from(withNulls).equals(Buffer.from(plain))).toBe(true);
+  });
+});
+
 function renderWithCustomBackground(customBackground: Uint8Array) {
   return renderBirthdayCard({
     config: {
@@ -99,13 +171,22 @@ function renderWithBackgrounds(input: {
   backgroundSource?: 'preset' | 'custom' | 'asset';
   remoteBackground?: Uint8Array | null;
   customBackground?: Uint8Array | null;
+  presetDefinition?: {
+    id: string;
+    label: string;
+    backgroundUrl: string;
+    textColor: string;
+    textStroke: string;
+  } | null;
+  definitionBackground?: Uint8Array | null;
+  showName?: boolean;
 }) {
   return renderBirthdayCard({
     config: {
       ...DEFAULT_BIRTHDAY_CARD_CONFIG,
       birthdayCardBackgroundSource: input.backgroundSource ?? 'preset',
       birthdayCardShowAvatar: false,
-      birthdayCardShowName: false,
+      birthdayCardShowName: input.showName ?? false,
       birthdayCardShowBirthday: false,
       birthdayCardShowAge: false,
     },
@@ -116,6 +197,8 @@ function renderWithBackgrounds(input: {
     age: 25,
     customBackground: input.customBackground ?? null,
     remoteBackground: input.remoteBackground ?? null,
+    presetDefinition: input.presetDefinition ?? null,
+    definitionBackground: input.definitionBackground ?? null,
   });
 }
 

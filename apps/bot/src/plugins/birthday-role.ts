@@ -2,7 +2,11 @@ import { fetchBirthdayCardBackgroundImage, renderBirthdayCard } from '@herta/bir
 import { getBirthdayCardRuntimeBackground, type PrismaClient } from '@herta/db';
 import { birthdayRoleManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
-import { normalizeBirthdayCardConfig, type BirthdayCardConfig } from '@herta/shared';
+import {
+  normalizeBirthdayCardConfig,
+  type BirthdayCardConfig,
+  type BirthdayCardPresetDefinition,
+} from '@herta/shared';
 import {
   callIvrmBirthday,
   type IvrmBirthdayRecipient,
@@ -241,7 +245,11 @@ export function normalizeBirthdayRoleConfig(value: unknown): BirthdayRoleConfig 
  * An Admin-uploaded backgroundUrl (settings.card.backgroundUrl)
  * is not part of this config: the caller fetches it once per
  * cycle and it wins over the Studio-stored background when the
- * download validates (#986 S5c).
+ * download validates (#986 S5c). A carried DB preset definition
+ * (settings.card.presetDefinition, #1028 R3-E) is likewise not
+ * part of this config: the caller fetches its background once
+ * per cycle and hands the definition itself to the renderer
+ * for its text colors.
  */
 export function applyIvrmBirthdaySettings(
   config: BirthdayRoleConfig,
@@ -454,6 +462,7 @@ export async function runBirthdayRoleCycle(
     let today = getLocalDateParts(now, timeZone);
     let todaysRegistrations: BirthdayCycleRegistration[] | null = null;
     let ivrmBackgroundUrl: string | null = null;
+    let ivrmPresetDefinition: BirthdayCardPresetDefinition | null = null;
 
     if (config.useIvrmApiSource) {
       const jstToday = getLocalDateParts(now, 'Asia/Tokyo');
@@ -473,6 +482,7 @@ export async function runBirthdayRoleCycle(
         today = jstToday;
         todaysRegistrations = result.recipients.map(toBirthdayRegistrationLike);
         ivrmBackgroundUrl = result.settings.card.backgroundUrl;
+        ivrmPresetDefinition = result.settings.card.presetDefinition;
       } else {
         context.logger.warn(
           { guildId: context.guildId, status: result.status },
@@ -597,8 +607,36 @@ export async function runBirthdayRoleCycle(
             );
           }
         }
+        // Preset definition background (#1028 R3-E): fetched
+        // through the same validated path as the backgroundUrl
+        // above, once per cycle, and only when the explicit
+        // backgroundUrl did not already produce a background —
+        // the definition's text colors apply either way (the
+        // renderer receives the definition itself), because the
+        // backgroundUrl override and the DB preset selection
+        // are independent on the Web side. Priority: API
+        // backgroundUrl > preset definition background >
+        // Studio-stored background > bundled preset.
+        let definitionBackground: Buffer | null = null;
+        if (
+          config.birthdayCardEnabled &&
+          !remoteBackground &&
+          ivrmPresetDefinition &&
+          todaysRegistrations.length > 0
+        ) {
+          definitionBackground = await fetchBirthdayCardBackgroundImage(
+            ivrmPresetDefinition.backgroundUrl,
+          );
+          if (!definitionBackground) {
+            context.logger.warn(
+              { guildId: context.guildId },
+              'ivrm-webのプリセット定義の背景URLを取得できないため従来の背景解決へfallbackします',
+            );
+          }
+        }
         const customBackground =
           !remoteBackground &&
+          !definitionBackground &&
           config.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0
@@ -617,6 +655,7 @@ export async function runBirthdayRoleCycle(
             : null;
         if (
           !remoteBackground &&
+          !definitionBackground &&
           effectiveConfig.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0 &&
@@ -665,6 +704,8 @@ export async function runBirthdayRoleCycle(
                     age: celebration.age,
                     customBackground: customBackground?.content ?? null,
                     remoteBackground,
+                    presetDefinition: ivrmPresetDefinition,
+                    definitionBackground,
                   });
                   files = [
                     {

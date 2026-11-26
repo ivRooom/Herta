@@ -552,6 +552,9 @@ const DISCORD_ACTIVITY_EVENT_LABELS: Record<string, string> = {
   channel_create: 'チャンネル作成',
   channel_delete: 'チャンネル削除',
   channel_update: 'チャンネル変更',
+  channel_overwrite_create: 'チャンネル権限上書き追加',
+  channel_overwrite_update: 'チャンネル権限上書き変更',
+  channel_overwrite_delete: 'チャンネル権限上書き削除',
   guild_role_create: 'ロール作成',
   guild_role_update: 'ロール変更',
   guild_role_delete: 'ロール削除',
@@ -581,6 +584,39 @@ function discordActivitySummary(event: string, metadata: Record<string, unknown>
       if (event === 'channel_delete') return `#${channelName} を削除`;
       return `#${channelName} を変更`;
     }
+  }
+  if (
+    (event === 'channel_overwrite_create' ||
+      event === 'channel_overwrite_update' ||
+      event === 'channel_overwrite_delete') &&
+    metadata
+  ) {
+    const channelName = typeof metadata.channelName === 'string' ? metadata.channelName : null;
+    const overwrite =
+      typeof metadata.overwrite === 'object' && metadata.overwrite !== null
+        ? (metadata.overwrite as Record<string, unknown>)
+        : null;
+    const overwriteName = overwrite && typeof overwrite.name === 'string' ? overwrite.name : null;
+    const permissions = Array.isArray(metadata.permissions)
+      ? metadata.permissions
+          .filter(
+            (change): change is Record<string, unknown> =>
+              typeof change === 'object' && change !== null,
+          )
+          .map(
+            (change) => `${String(change.key)}: ${String(change.before)}→${String(change.after)}`,
+          )
+          .join(', ')
+      : '';
+    const subject = channelName ? `#${channelName}` : 'チャンネル';
+    const target = overwriteName ? ` (${overwriteName})` : '';
+    const verb =
+      event === 'channel_overwrite_create'
+        ? '権限上書きを追加'
+        : event === 'channel_overwrite_delete'
+          ? '権限上書きを削除'
+          : '権限上書きを変更';
+    return `${subject} の${verb}${target}${permissions ? `: ${permissions}` : ''}`;
   }
   if (
     (event === 'guild_role_create' ||
