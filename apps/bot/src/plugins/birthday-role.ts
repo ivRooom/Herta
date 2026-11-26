@@ -343,6 +343,36 @@ export function getLocalDateParts(now: Date, timeZone: string): LocalDateParts {
   return { year, month, day };
 }
 
+export function getLocalMinutesOfDay(now: Date, timeZone: string): number {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = formatter.formatToParts(now);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? '0');
+  return read('hour') * 60 + read('minute');
+}
+
+/**
+ * Whether the local time-of-day has reached the configured
+ * delivery time (#1921 R3-B). `deliveryTime` is the validated
+ * "HH:mm" the API settings carry; the birthday-ivrm parser has
+ * already resolved a missing or malformed value to the default
+ * 09:00, so this only ever compares well-formed values. The
+ * ivrm path judges the day in JST, hence the default timezone.
+ */
+export function isBirthdayDeliveryTimeReached(
+  now: Date,
+  deliveryTime: string,
+  timeZone = 'Asia/Tokyo',
+): boolean {
+  const [hour = 0, minute = 0] = deliveryTime.split(':').map(Number);
+  return getLocalMinutesOfDay(now, timeZone) >= hour * 60 + minute;
+}
+
 export function formatLocalDate(parts: LocalDateParts): string {
   return `${parts.year.toString().padStart(4, '0')}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}`;
 }
@@ -462,6 +492,7 @@ export async function runBirthdayRoleCycle(
     let today = getLocalDateParts(now, timeZone);
     let todaysRegistrations: BirthdayCycleRegistration[] | null = null;
     let ivrmBackgroundUrl: string | null = null;
+    let ivrmDeliveryTime: string | null = null;
     let ivrmPresetDefinition: BirthdayCardPresetDefinition | null = null;
 
     if (config.useIvrmApiSource) {
@@ -482,6 +513,7 @@ export async function runBirthdayRoleCycle(
         today = jstToday;
         todaysRegistrations = result.recipients.map(toBirthdayRegistrationLike);
         ivrmBackgroundUrl = result.settings.card.backgroundUrl;
+        ivrmDeliveryTime = result.settings.deliveryTime;
         ivrmPresetDefinition = result.settings.card.presetDefinition;
       } else {
         context.logger.warn(
@@ -505,6 +537,26 @@ export async function runBirthdayRoleCycle(
       });
     }
     const todaysUsers = new Set(todaysRegistrations.map((registration) => registration.userId));
+
+    // Delivery-time gate (#1921 R3-B, ivrm path only). Before
+    // the configured JST delivery time, the celebrations wait
+    // for a later cycle: today's recipients stay in todaysUsers
+    // so the cleanup below keeps protecting them, but no
+    // celebration row, role grant or announcement happens yet.
+    // The cleanup itself is never gated, and the legacy path
+    // (including the fail-soft fallback above, which leaves
+    // ivrmDeliveryTime null) has no delivery time and stays
+    // immediate. Delivery idempotency keys are per-date, so
+    // carrying the delivery over to the next cycle cannot
+    // double-deliver.
+    if (ivrmDeliveryTime !== null && !isBirthdayDeliveryTimeReached(now, ivrmDeliveryTime)) {
+      context.logger.info(
+        { guildId: context.guildId, deliveryTime: ivrmDeliveryTime },
+        '配信時刻前のため誕生日お祝いを次サイクルへ持ち越します',
+      );
+      todaysRegistrations = [];
+    }
+
     const guild = await context.client.guilds.fetch(context.guildId);
 
     const storedMembers =
