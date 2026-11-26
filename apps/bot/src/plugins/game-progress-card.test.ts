@@ -187,9 +187,9 @@ describe('Genshin progress card layout guards (#1011 review fixes)', () => {
   }
 
   it('applies the width budget to the first untouched chip too', () => {
-    // A 30-char name estimates to 28 + 30*21 = 658px wide; starting after
-    // the label at x=174 it would end at 832, past the 792 column limit
-    // and into the chest column. It must fold into the "+N" indicator.
+    // A 30-char name estimates to 20 + 30*19 = 590px wide; starting after
+    // the label at x=174 it would end at 764, and with the "+N" reserve
+    // kept it exceeds the 792 column limit. It must fold into "+N".
     const longName = 'あ'.repeat(30);
     const model = buildGenshinProgressCardModel(
       inputWith({}, [area('モンド', 100, 1), area(longName, 0, 2), area('空の神殿', 0, 3)]),
@@ -324,4 +324,94 @@ describe('Genshin progress card background painting (#1036)', () => {
     }
     expect(colors.size).toBeGreaterThan(10);
   }, 30_000);
+});
+
+describe('Genshin progress card area icons (#1043)', () => {
+  /** Nation badges are circles filled #0d1422; bar badges use r=11, chip badges r=9. */
+  function badgeCircles(svg: string, radius: number): string[] {
+    return [...svg.matchAll(new RegExp(`<circle[^>]*r="${radius}" fill="#0d1422"[^>]*>`, 'g'))].map(
+      (match) => match[0],
+    );
+  }
+
+  function inputWithAreas(
+    explorations: HoyolabProgressSnapshot['explorations'],
+  ): GenshinProgressCardInput {
+    return {
+      snapshot: {
+        gameCode: 'genshin',
+        uid: '800000001',
+        player: { nickname: 'テスト', level: 50 },
+        stats: {},
+        explorations,
+        endgame: [],
+      },
+      uid: '800000001',
+      fetchedAtLabel: '2026/11/27 06:00 (JST)',
+    };
+  }
+
+  it('paints a nation badge next to every screenshot bar and most chips', () => {
+    const svg = buildGenshinProgressCardSvg(buildGenshinProgressCardModel(screenshotInput), null);
+    // All 15 screenshot bars are mapped areas, so each gets a badge.
+    expect(badgeCircles(svg, 11)).toHaveLength(15);
+    // Every element color shows up among the bar badges.
+    const barBadges = badgeCircles(svg, 11).join('');
+    for (const color of [
+      '#74E2C3',
+      '#FAB632',
+      '#B18CFF',
+      '#A5C83B',
+      '#4CC2F1',
+      '#FF7B4B',
+      '#9FD6E3',
+      '#8FE3FF',
+    ]) {
+      expect(barBadges).toContain(`stroke="${color}"`);
+    }
+    // Four of the five untouched chips are mapped (空の神殿 is not).
+    expect(badgeCircles(svg, 9)).toHaveLength(4);
+  });
+
+  it('maps sub-areas to their parent nation icon', () => {
+    const cases: [string, string][] = [
+      ['淵下宮', '#B18CFF'],
+      ['層岩巨淵・地下鉱区', '#FAB632'],
+      ['沈玉の谷・南峰', '#FAB632'],
+      ['ドラゴンスパイン', '#74E2C3'],
+      ['往日の海', '#4CC2F1'],
+      ['古の聖山', '#FF7B4B'],
+      ['ナド・クライ', '#8FE3FF'],
+    ];
+    for (const [name, color] of cases) {
+      const svg = buildGenshinProgressCardSvg(
+        buildGenshinProgressCardModel(inputWithAreas([area(name, 50, 1)])),
+        null,
+      );
+      expect(badgeCircles(svg, 11)).toHaveLength(1);
+      expect(svg).toContain(`stroke="${color}"`);
+    }
+  });
+
+  it('draws no badge for unmapped areas and keeps rendering (fail-soft)', () => {
+    const svg = buildGenshinProgressCardSvg(
+      buildGenshinProgressCardModel(
+        inputWithAreas([area('未知のエリア', 50, 1), area('空の神殿', 0, 2)]),
+      ),
+      null,
+    );
+    expect(badgeCircles(svg, 11)).toEqual([]);
+    expect(badgeCircles(svg, 9)).toEqual([]);
+    expect(svg).toContain('未知のエリア');
+    expect(svg).toContain('50%');
+    expect(svg).toContain('空の神殿');
+  });
+
+  it('keeps percent labels anchored at the column ends with icons present', () => {
+    const svg = buildGenshinProgressCardSvg(buildGenshinProgressCardModel(screenshotInput), null);
+    // Icons shift the area names, never the end-anchored percent labels:
+    // the left column ends at x=776, the right column at x=1528.
+    expect(svg).toContain('x="776"');
+    expect(svg).toContain('x="1528"');
+  });
 });
