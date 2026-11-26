@@ -9,15 +9,17 @@ export const COMMUNITY_GAME_STATS_PURPOSE = 'herta-community-game-stats-read-v1'
  * ranking paginates, via limit/offset.
  */
 export const COMMUNITY_GAME_STATS_GAMES_LIMIT = 25;
-export type CommunityGameStatsMode = 'overview' | 'user';
+export type CommunityGameStatsMode = 'overview' | 'user' | 'game';
 /**
  * Contract version negotiated by the signed request body:
  * 1 (or absent) returns exactly the v1 response; 2 adds the
- * `activity` section built from community_activity_daily.
- * Signing is unchanged across versions (the v1 purpose string
- * stays the key-derivation domain separator).
+ * `activity` section built from community_activity_daily;
+ * 3 adds the `insights` sections and the `game` mode, all
+ * built from community_game_activity_daily. Signing is
+ * unchanged across versions (the v1 purpose string stays
+ * the key-derivation domain separator).
  */
-export type CommunityGameStatsVersion = 1 | 2;
+export type CommunityGameStatsVersion = 1 | 2 | 3;
 export interface CommunityGameStatsInput {
   guildId: string;
   from: string;
@@ -26,8 +28,17 @@ export interface CommunityGameStatsInput {
   offset: number;
   mode: CommunityGameStatsMode;
   discordUserId: string | null;
+  gameName: string | null;
   version: CommunityGameStatsVersion;
 }
+/**
+ * The v3 overview matrix covers the period's top 15 games
+ * (V2: the long tail of one-player games is served by the
+ * game mode instead), and momentum looks at the trailing
+ * 7 days of the requested range.
+ */
+export const COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT = 15;
+export const COMMUNITY_GAME_STATS_MOMENTUM_WINDOW_DAYS = 7;
 export interface CommunityGameStatItem {
   name: string;
   totalSeconds: number;
@@ -238,6 +249,276 @@ export function projectCommunityActivityUserTotals(
   };
 }
 /**
+ * v3 insights shapes (S5, #1041), all aggregated from
+ * community_game_activity_daily. Weekday arrays are Monday
+ * first (ISO day of week 1..7 mapped to indexes 0..6).
+ */
+export interface CommunityInsightsOverviewTotals {
+  totalSeconds: number;
+  playerCount: number;
+}
+export interface CommunityMatrixMember {
+  discordUserId: string;
+  secondsByGame: number[];
+}
+export interface CommunityGameMomentumItem {
+  name: string;
+  recentSeconds: number;
+  newPlayerCount: number;
+}
+export interface CommunityInsightsOverview {
+  totals: CommunityInsightsOverviewTotals;
+  matrix: { games: string[]; members: CommunityMatrixMember[] };
+  weekdaySeconds: number[];
+  momentum: CommunityGameMomentumItem[];
+}
+export interface CommunityGameDailyPoint {
+  date: string;
+  totalSeconds: number;
+}
+export interface CommunityInsightsUser {
+  playDays: number;
+  longestStreakDays: number;
+  currentStreakDays: number;
+  lastPlayDate: string | null;
+  dailySeries: CommunityGameDailyPoint[];
+  weekdaySeconds: number[];
+}
+export interface CommunityGameDetail {
+  name: string;
+  totalSeconds: number;
+  playerCount: number;
+  firstPlayDate: string | null;
+  lastPlayDate: string | null;
+}
+export interface CommunityGamePlayerItem {
+  discordUserId: string;
+  totalSeconds: number;
+}
+export interface CommunityGameViewer {
+  discordUserId: string;
+  rank: number | null;
+  totalSeconds: number;
+}
+/**
+ * A DATE column crosses the wire as a Date at UTC midnight
+ * (or an ISO date string); the earliest-date formatter
+ * already validates both, and a daily row may never carry a
+ * null date.
+ */
+export function toCommunityGameDateString(value: unknown): string {
+  const formatted = formatCommunityGameEarliestDate(value);
+  if (formatted === null) throw new Error('InvalidCommunityGameDate');
+  return formatted;
+}
+export function projectCommunityInsightsTotalsRow(row: {
+  totalSeconds: unknown;
+  playerCount: unknown;
+}): CommunityInsightsOverviewTotals {
+  if (
+    typeof row.playerCount !== 'number' ||
+    !Number.isSafeInteger(row.playerCount) ||
+    row.playerCount < 0
+  )
+    throw new Error('InvalidCommunityGamePlayerCount');
+  return {
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+    playerCount: row.playerCount,
+  };
+}
+export function projectCommunityTopGameRow(row: { name: unknown }): string {
+  return gameName(row.name);
+}
+export function projectCommunityMatrixMemberRow(row: { discordUserId: unknown }): {
+  discordUserId: string;
+} {
+  if (typeof row.discordUserId !== 'string' || !/^\d{17,20}$/.test(row.discordUserId))
+    throw new Error('InvalidCommunityGameUser');
+  return { discordUserId: row.discordUserId };
+}
+export function projectCommunityMatrixCellRow(row: {
+  discordUserId: unknown;
+  name: unknown;
+  totalSeconds: unknown;
+}): CommunityMatrixCell {
+  if (typeof row.discordUserId !== 'string' || !/^\d{17,20}$/.test(row.discordUserId))
+    throw new Error('InvalidCommunityGameUser');
+  return {
+    discordUserId: row.discordUserId,
+    name: gameName(row.name),
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+  };
+}
+export interface CommunityMatrixCell {
+  discordUserId: string;
+  name: string;
+  totalSeconds: number;
+}
+/**
+ * Assembles the matrix body: one row per member (in the
+ * order the member query returned, period total descending),
+ * with seconds aligned to the games array and zero where the
+ * member never played that game in the period. Cells for
+ * games outside the list or members outside the list are a
+ * query bug and are dropped rather than widening the shape.
+ */
+export function buildCommunityMatrix(
+  games: string[],
+  members: Array<{ discordUserId: string }>,
+  cells: CommunityMatrixCell[],
+): CommunityMatrixMember[] {
+  const gameIndex = new Map(games.map((name, index) => [name, index]));
+  const byMember = new Map<string, number[]>(
+    members.map((member) => [member.discordUserId, new Array<number>(games.length).fill(0)]),
+  );
+  for (const cell of cells) {
+    const row = byMember.get(cell.discordUserId);
+    const index = gameIndex.get(cell.name);
+    if (row && index !== undefined) row[index] = cell.totalSeconds;
+  }
+  return members.map((member) => ({
+    discordUserId: member.discordUserId,
+    secondsByGame: byMember.get(member.discordUserId) ?? new Array<number>(games.length).fill(0),
+  }));
+}
+export function projectCommunityWeekdaySecondsRow(row: {
+  isoDow: unknown;
+  totalSeconds: unknown;
+}): { isoDow: number; totalSeconds: number } {
+  if (
+    typeof row.isoDow !== 'number' ||
+    !Number.isSafeInteger(row.isoDow) ||
+    row.isoDow < 1 ||
+    row.isoDow > 7
+  )
+    throw new Error('InvalidCommunityWeekday');
+  return { isoDow: row.isoDow, totalSeconds: toCommunityGameSeconds(row.totalSeconds) };
+}
+/**
+ * Zero-fills the Monday-first weekday array from the grouped
+ * rows; a duplicated weekday is a query bug, not data.
+ */
+export function buildCommunityWeekdaySeconds(
+  rows: Array<{ isoDow: number; totalSeconds: number }>,
+): number[] {
+  const seconds = [0, 0, 0, 0, 0, 0, 0];
+  const seen = new Set<number>();
+  for (const row of rows) {
+    if (seen.has(row.isoDow)) throw new Error('InvalidCommunityWeekday');
+    seen.add(row.isoDow);
+    seconds[row.isoDow - 1] = row.totalSeconds;
+  }
+  return seconds;
+}
+export function projectCommunityMomentumRecentRow(row: { name: unknown; recentSeconds: unknown }): {
+  name: string;
+  recentSeconds: number;
+} {
+  return { name: gameName(row.name), recentSeconds: toCommunityGameSeconds(row.recentSeconds) };
+}
+export function projectCommunityMomentumNewPlayersRow(row: {
+  name: unknown;
+  newPlayerCount: unknown;
+}): { name: string; newPlayerCount: number } {
+  if (
+    typeof row.newPlayerCount !== 'number' ||
+    !Number.isSafeInteger(row.newPlayerCount) ||
+    row.newPlayerCount < 0
+  )
+    throw new Error('InvalidCommunityGamePlayerCount');
+  return { name: gameName(row.name), newPlayerCount: row.newPlayerCount };
+}
+/**
+ * Merges the two momentum queries in top-games order; a game
+ * missing from either result zero-fills instead of dropping
+ * out of the list.
+ */
+export function buildCommunityMomentum(
+  games: string[],
+  recent: Array<{ name: string; recentSeconds: number }>,
+  fresh: Array<{ name: string; newPlayerCount: number }>,
+): CommunityGameMomentumItem[] {
+  const recentByName = new Map(recent.map((row) => [row.name, row.recentSeconds]));
+  const freshByName = new Map(fresh.map((row) => [row.name, row.newPlayerCount]));
+  return games.map((name) => ({
+    name,
+    recentSeconds: recentByName.get(name) ?? 0,
+    newPlayerCount: freshByName.get(name) ?? 0,
+  }));
+}
+export function projectCommunityGameDailyPointRow(row: {
+  date: unknown;
+  totalSeconds: unknown;
+}): CommunityGameDailyPoint {
+  return {
+    date: toCommunityGameDateString(row.date),
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+  };
+}
+/**
+ * Streaks over the user's observed play dates (the full
+ * history up to the range end, per the S5 design): the
+ * longest run of consecutive days, and the run that ends on
+ * the most recent play date. Observation gaps break a streak
+ * exactly like a day without play does — the board only ever
+ * claims what Discord presence observed.
+ */
+export function summarizeCommunityPlayDates(dates: string[]): {
+  longestStreakDays: number;
+  currentStreakDays: number;
+  lastPlayDate: string | null;
+} {
+  const unique = [...new Set(dates)].sort();
+  for (const day of unique) if (!date(day)) throw new Error('InvalidCommunityGameDate');
+  if (unique.length === 0)
+    return { longestStreakDays: 0, currentStreakDays: 0, lastPlayDate: null };
+  let longest = 1;
+  let run = 1;
+  for (let index = 1; index < unique.length; index += 1) {
+    const previous = Date.parse(`${unique[index - 1]}T00:00:00Z`);
+    const current = Date.parse(`${unique[index]}T00:00:00Z`);
+    run = current - previous === 86_400_000 ? run + 1 : 1;
+    if (run > longest) longest = run;
+  }
+  return {
+    longestStreakDays: longest,
+    currentStreakDays: run,
+    lastPlayDate: unique[unique.length - 1] as string,
+  };
+}
+export function projectCommunityGameDetailRow(row: {
+  name: unknown;
+  totalSeconds: unknown;
+  playerCount: unknown;
+  firstPlayDate: unknown;
+  lastPlayDate: unknown;
+}): CommunityGameDetail {
+  if (
+    typeof row.playerCount !== 'number' ||
+    !Number.isSafeInteger(row.playerCount) ||
+    row.playerCount < 0
+  )
+    throw new Error('InvalidCommunityGamePlayerCount');
+  return {
+    name: gameName(row.name),
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+    playerCount: row.playerCount,
+    firstPlayDate: formatCommunityGameEarliestDate(row.firstPlayDate),
+    lastPlayDate: formatCommunityGameEarliestDate(row.lastPlayDate),
+  };
+}
+export function projectCommunityGamePlayerRow(row: {
+  discordUserId: unknown;
+  totalSeconds: unknown;
+}): CommunityGamePlayerItem {
+  if (typeof row.discordUserId !== 'string' || !/^\d{17,20}$/.test(row.discordUserId))
+    throw new Error('InvalidCommunityGameUser');
+  return {
+    discordUserId: row.discordUserId,
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+  };
+}
+/**
  * MIN(activity_date) of the guild: the day observation
  * started. The column is a DATE, so the driver hands back a
  * Date at UTC midnight (or an ISO date string); anything else
@@ -308,20 +589,46 @@ export async function authorizeCommunityGameStatsRead(
   if (!value || typeof value !== 'object' || Array.isArray(value))
     return fail(422, 'invalid_request');
   const keys = Object.keys(value).sort();
-  const allowed = ['discordUserId', 'from', 'guildId', 'limit', 'mode', 'offset', 'to', 'version'];
+  const allowed = [
+    'discordUserId',
+    'from',
+    'gameName',
+    'guildId',
+    'limit',
+    'mode',
+    'offset',
+    'to',
+    'version',
+  ];
   if (
     keys.some((key) => !allowed.includes(key)) ||
     !['from', 'guildId', 'limit', 'offset', 'to'].every((key) => keys.includes(key))
   )
     return fail(422, 'invalid_request');
   const version = value.version === undefined ? 1 : value.version;
-  if (version !== 1 && version !== 2) return fail(422, 'invalid_request');
+  if (version !== 1 && version !== 2 && version !== 3) return fail(422, 'invalid_request');
   const mode = value.mode === undefined ? 'overview' : value.mode;
-  if (mode !== 'overview' && mode !== 'user') return fail(422, 'invalid_request');
+  if (mode !== 'overview' && mode !== 'user' && mode !== 'game')
+    return fail(422, 'invalid_request');
   const discordUserId = value.discordUserId === undefined ? null : value.discordUserId;
   if (mode === 'overview' && discordUserId !== null) return fail(422, 'invalid_request');
   if (mode === 'user' && (typeof discordUserId !== 'string' || !/^\d{17,20}$/.test(discordUserId)))
     return fail(422, 'invalid_request');
+  const gameName = value.gameName === undefined ? null : value.gameName;
+  if (mode === 'game') {
+    // The game mode exists only in contract v3, names the one
+    // game to detail, and takes discordUserId as an optional
+    // viewer whose rank is reported alongside the players.
+    if (version !== 3) return fail(422, 'invalid_request');
+    if (
+      typeof gameName !== 'string' ||
+      gameName.trim() === '' ||
+      gameName.length > 128 ||
+      (discordUserId !== null &&
+        (typeof discordUserId !== 'string' || !/^\d{17,20}$/.test(discordUserId)))
+    )
+      return fail(422, 'invalid_request');
+  } else if (gameName !== null) return fail(422, 'invalid_request');
   if (
     value.guildId !== guild ||
     !date(value.from) ||
@@ -343,6 +650,7 @@ export async function authorizeCommunityGameStatsRead(
     offset: value.offset as number,
     mode,
     discordUserId: discordUserId as string | null,
+    gameName: gameName as string | null,
     version: version as CommunityGameStatsVersion,
   };
 }
