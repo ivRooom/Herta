@@ -10,6 +10,8 @@ import {
   formatLocalDate,
   getDaysUntilBirthday,
   getLocalDateParts,
+  getLocalMinutesOfDay,
+  isBirthdayDeliveryTimeReached,
   isLeapYear,
   isValidBirthday,
   isValidBirthYear,
@@ -130,6 +132,7 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
     announcementMessage: '🎂 {user} お誕生日おめでとう！',
     leapDayPolicy: 'march-1',
     pointsAmount: 300,
+    deliveryTime: '09:00',
     card: {
       enabled: true,
       preset: 'herta-night-board',
@@ -201,6 +204,33 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
         serverBirthdayNumber: 2,
       }),
     ).toBe('🎂 <@123456789012345678> お誕生日おめでとう！');
+  });
+});
+
+describe('配信時刻ゲート (#1921 R3-B)', () => {
+  it('JSTの現在時刻がdeliveryTime以降のときだけ到達とする', () => {
+    // 2026-11-22 08:59 JST = 2026-11-21T23:59:00Z
+    expect(isBirthdayDeliveryTimeReached(new Date('2026-11-21T23:59:00.000Z'), '09:00')).toBe(
+      false,
+    );
+    // 09:00 JST ちょうどで到達
+    expect(isBirthdayDeliveryTimeReached(new Date('2026-11-22T00:00:00.000Z'), '09:00')).toBe(true);
+    // 23:59 JST でも到達のまま
+    expect(isBirthdayDeliveryTimeReached(new Date('2026-11-22T14:59:00.000Z'), '09:00')).toBe(true);
+    // 00:00 設定は0時ちょうどから到達
+    expect(isBirthdayDeliveryTimeReached(new Date('2026-11-21T15:00:00.000Z'), '00:00')).toBe(true);
+    // 18:30 設定は 18:29 で未到達、18:30 で到達
+    expect(isBirthdayDeliveryTimeReached(new Date('2026-11-22T09:29:00.000Z'), '18:30')).toBe(
+      false,
+    );
+    expect(isBirthdayDeliveryTimeReached(new Date('2026-11-22T09:30:00.000Z'), '18:30')).toBe(true);
+  });
+
+  it('分単位の現在時刻をタイムゾーンで解決する', () => {
+    expect(getLocalMinutesOfDay(new Date('2026-11-21T23:30:00.000Z'), 'Asia/Tokyo')).toBe(
+      8 * 60 + 30,
+    );
+    expect(getLocalMinutesOfDay(new Date('2026-11-21T15:00:00.000Z'), 'Asia/Tokyo')).toBe(0);
   });
 });
 
