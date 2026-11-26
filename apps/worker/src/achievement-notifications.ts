@@ -14,7 +14,7 @@ import { Pool } from 'pg';
  * 検証してから送信する。
  *
  * 通知の振り分け (ivrm-web #1589 / Herta #964): Discord へ送るのは
- * achievement_notification_settings.discord_min_rank (既定 master)
+ * achievement_notification_settings.discord_min_rank (既定 platinum)
  * 以上のランクだけ。それ未満は Member ポータルの Web 通知ボックスが
  * 受け皿で、outbox には route='web' / status='delivered' で積まれる
  * ため、この Worker の claim 対象にはならない。route が NULL の行
@@ -143,10 +143,11 @@ export function verifyAchievementPayloadHash(payloadJson: string, payloadHash: s
 }
 
 /**
- * ランクの順序。既存値 (bronze 0 〜 legend 5) は claim SQL の CASE と
- * 共に従来どおりに保ち、beginner (ivrm-web #1850 で追加された最下段)
- * だけを -1 として足す (Herta #1005)。ivrm-web API 側の
- * ACHIEVEMENT_RANK_ORDER は beginner=0 起点の 0..6 で、絶対値ではなく
+ * ランクの順序。値は claim SQL の CASE と一致させること。beginner
+ * (ivrm-web #1850 で追加された最下段) は -1。8 段化 (ivrm-web
+ * #1943) で platinum が gold と diamond の間に入り、master が
+ * diamond の上へ移ったため、diamond 以上の値を繰り上げた。ivrm-web API 側の
+ * ACHIEVEMENT_RANK_ORDER は beginner=0 起点の 0..7 で、絶対値ではなく
  * 順序だけが一致する。
  */
 export const ACHIEVEMENT_RANK_ORDER: Record<string, number> = {
@@ -154,17 +155,21 @@ export const ACHIEVEMENT_RANK_ORDER: Record<string, number> = {
   bronze: 0,
   silver: 1,
   gold: 2,
-  master: 3,
+  platinum: 3,
   diamond: 4,
-  legend: 5,
+  master: 5,
+  legend: 6,
 };
 
-/** Discord へ送る最低ランクの既定値 (設定行が無い場合)。 */
-export const DEFAULT_DISCORD_MIN_RANK = 'master';
+/** Discord へ送る最低ランクの既定値 (設定行が無い場合)。
+ * #1589 以来の対象範囲 (旧マスター以上) を保つ値で、8 段化
+ * (#1943) 後は platinum がその下限になる (migration 0084 が
+ * 設定行も platinum へ付け替える)。 */
+export const DEFAULT_DISCORD_MIN_RANK = 'platinum';
 
 /**
  * そのランクの解除を Discord へ送るか。未知のランクは送らない
- * (fail-quiet)。minRank が未知・未設定なら既定の master とみなす。
+ * (fail-quiet)。minRank が未知・未設定なら既定の platinum とみなす。
  * claim クエリ内の CASE 式はこの関数と一致させること。
  */
 export function isDiscordRoutedRank(
@@ -187,8 +192,9 @@ const RANK_PRESENTATION: Record<string, { label: string; emoji: string; color: n
   bronze: { label: 'ブロンズ', emoji: '🥉', color: 0xcd7f32 },
   silver: { label: 'シルバー', emoji: '🥈', color: 0xc0c0c0 },
   gold: { label: 'ゴールド', emoji: '🥇', color: 0xffd700 },
-  master: { label: 'マスター', emoji: '💠', color: 0xa78bfa },
+  platinum: { label: 'プラチナ', emoji: '💍', color: 0x5eead4 },
   diamond: { label: 'ダイヤモンド', emoji: '💎', color: 0x7dd3fc },
+  master: { label: 'マスター', emoji: '💠', color: 0xa78bfa },
   legend: { label: 'レジェンド', emoji: '👑', color: 0xfb7185 },
 };
 
@@ -490,11 +496,11 @@ export function createAchievementNotificationStore(
   return {
     async listPending(limit: number): Promise<AchievementOutboxRow[]> {
       // Discord 行きだけを claim する (#964)。route が確定している行は
-      // それに従い、NULL の行は定義 rank と設定 (既定 master) で判定する。
+      // それに従い、NULL の行は定義 rank と設定 (既定 platinum) で判定する。
       // ランク順序の CASE は ACHIEVEMENT_RANK_ORDER と一致させること
       // (beginner は -1、未知ランクは beginner より下の -2 = 常に web 行き
       // で isDiscordRoutedRank の fail-quiet と一致、未知の最低ランクは
-      // master 扱い)。
+      // platinum 扱い)。
       const result = await pool.query<{
         id: string;
         user_id: string;
@@ -514,13 +520,13 @@ export function createAchievementNotificationStore(
                     CASE d."rank"
                       WHEN 'beginner' THEN -1
                       WHEN 'bronze' THEN 0 WHEN 'silver' THEN 1 WHEN 'gold' THEN 2
-                      WHEN 'master' THEN 3 WHEN 'diamond' THEN 4 WHEN 'legend' THEN 5
+                      WHEN 'platinum' THEN 3 WHEN 'diamond' THEN 4 WHEN 'master' THEN 5 WHEN 'legend' THEN 6
                       ELSE -2
                     END >=
-                    CASE COALESCE(s.discord_min_rank, 'master')
+                    CASE COALESCE(s.discord_min_rank, 'platinum')
                       WHEN 'beginner' THEN -1
                       WHEN 'bronze' THEN 0 WHEN 'silver' THEN 1 WHEN 'gold' THEN 2
-                      WHEN 'master' THEN 3 WHEN 'diamond' THEN 4 WHEN 'legend' THEN 5
+                      WHEN 'platinum' THEN 3 WHEN 'diamond' THEN 4 WHEN 'master' THEN 5 WHEN 'legend' THEN 6
                       ELSE 3
                     END
                   THEN 'discord' ELSE 'web' END
