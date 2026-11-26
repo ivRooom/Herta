@@ -569,6 +569,17 @@ export class HertaBot {
       await this.dispatchGuildPluginEvent(invite.guild.id, Events.InviteCreate, invite);
     });
 
+    // Audit Logエントリの作成通知。現時点で購読するPluginはactivity-log
+    // (チャンネル権限上書きの収集、#1040) のみ。
+    this.client.on(Events.GuildAuditLogEntryCreate, async (auditLog, guild) => {
+      await this.dispatchGuildPluginEvent(
+        guild.id,
+        Events.GuildAuditLogEntryCreate,
+        auditLog,
+        guild,
+      );
+    });
+
     this.client.on(Events.MessageCreate, async (message) => {
       if (!message.guildId) return;
       if (!message.author.bot && !message.webhookId) {
