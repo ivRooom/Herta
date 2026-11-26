@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@herta/db';
+import type { Prisma, PrismaClient } from '@herta/db';
 import {
   TICKET_MAX_ATTEMPTS,
   ticketRetryDelayMs,
@@ -10,7 +10,15 @@ const DUE_BATCH_LIMIT = 100;
 /**
  * payload を outbox へ冪等に積む。sourceEventId の一意制約で重複を弾くため、
  * 同じ Discord メッセージを再観測しても二重配送にはならない (初回分の
- * body が正として残る)。
+ * body が正として残る)。関連する payload 群 (メッセージ本文とその添付
+ * など) は1回の呼び出しで渡し、トランザクションで原子的に積む。片方だけ
+ * が残る部分状態を作らないため、呼び出し側で分割して積んではいけない。
+ *
+ * 再生ポリシーはバッチ単位で一貫させる: 本文 (kind=message) を含む
+ * バッチでは、本文の行が既に存在すればバッチ一式を no-op とする。
+ * 本文だけ skipDuplicates で残し添付だけを後から追加すると、初回に
+ * 「転送されませんでした」の注記付きで確定した本文と、再観測で成功
+ * した添付が矛盾する (注記があるのにファイルが届く) ため。
  */
 export async function enqueueTicketPayloads(
   prisma: PrismaClient,
@@ -18,18 +26,28 @@ export async function enqueueTicketPayloads(
   payloads: readonly TicketOutboxPayload[],
 ): Promise<number> {
   if (payloads.length === 0) return 0;
-  const result = await prisma.ticketEventOutbox.createMany({
-    data: payloads.map((payload) => ({
-      sourceEventId: payload.sourceEventId,
-      eventId: payload.eventId,
-      guildId,
-      kind: payload.kind,
-      ticketId: payload.ticketId,
-      body: payload.body,
-    })),
-    skipDuplicates: true,
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const messagePayload = payloads.find((payload) => payload.kind === 'message');
+    if (messagePayload) {
+      const existing = await tx.ticketEventOutbox.findUnique({
+        where: { sourceEventId: messagePayload.sourceEventId },
+        select: { id: true },
+      });
+      if (existing) return 0;
+    }
+    const result = await tx.ticketEventOutbox.createMany({
+      data: payloads.map((payload) => ({
+        sourceEventId: payload.sourceEventId,
+        eventId: payload.eventId,
+        guildId,
+        kind: payload.kind,
+        ticketId: payload.ticketId,
+        body: payload.body,
+      })),
+      skipDuplicates: true,
+    });
+    return result.count;
   });
-  return result.count;
 }
 
 export interface TicketOutboxRow {

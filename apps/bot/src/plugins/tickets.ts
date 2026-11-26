@@ -15,6 +15,8 @@ import {
 } from '@herta/plugin-sdk';
 import {
   buildTicketActionEmbed,
+  buildTicketAttachmentPayload,
+  buildTicketAttachmentSkipNote,
   buildTicketCreatePayload,
   buildTicketCreatedEmbed,
   buildTicketCreatedSuccessEmbed,
@@ -23,17 +25,25 @@ import {
   buildTicketMessagePayload,
   buildTicketPanelEmbed,
   buildTicketThreadPayload,
+  downloadTicketAttachment,
+  hasSupportedTicketAttachmentMagic,
   isTicketCategory,
   normalizeTicketsConfig,
+  planTicketAttachmentTransfers,
   resolveTicketBridgeConfig,
   sendTicketCreate,
   sendTicketOutboxPayload,
   ticketCategoryLabel,
+  TicketAttachmentByteBudget,
+  TicketAttachmentIntakeLimiter,
   TICKET_BODY_MAX_LENGTH,
   TICKET_SUBJECT_MAX_LENGTH,
+  type TicketAttachmentDownloadResult,
+  type TicketAttachmentRef,
   type TicketCategory,
   type TicketEmbed,
   type TicketOutboxKind,
+  type TicketOutboxPayload,
   type TicketsPluginConfig,
 } from './tickets-core.js';
 import {
@@ -52,6 +62,12 @@ import {
 const EPHEMERAL_FLAG = 64;
 const CUSTOM_ID_PREFIX = 'herta:tickets:v1:';
 const WORKER_INTERVAL_MS = 30_000;
+/**
+ * 添付取込の同時実行制限。取込中は実体と base64 をメモリに保持する
+ * ため、大きなメッセージが重なっても保持量を bound する (上限本数と
+ * 1メッセージ合計上限の根拠は tickets-core 側の定数を参照)。
+ */
+const ticketAttachmentIntakeLimiter = new TicketAttachmentIntakeLimiter();
 const workerTimers = new Map<string, ReturnType<typeof setInterval>>();
 const workerRunning = new Set<string>();
 
@@ -552,8 +568,68 @@ async function handleTicketMessage(
   if (!link) return;
 
   const attachments = attachmentRefs(message.attachments);
-  const body = buildTicketMessageBody(message.content ?? '', attachments);
+  // 第2段 (b): 添付は CDN URL を記録せず、取込時点で実体をダウンロード
+  // して upload エンドポイントへ outbox 配送する。転送できないものは
+  // 理由付きの注記だけを本文に残す (URL は残さない)。
+  const plan = planTicketAttachmentTransfers(attachments);
+  const notes: string[] = plan.skipped.map((entry) =>
+    buildTicketAttachmentSkipNote(entry.name, entry.reason),
+  );
+  const attachmentPayloads: TicketOutboxPayload[] = [];
+  if (plan.transfer.length > 0) {
+    // 取込中は実体と base64 を保持するため、同時実行数を制限し、
+    // 1メッセージ分の保持量も実バイト数の予算で bound する。予算を
+    // 超えた分は payload 化せずスキップ注記に回す (下の enqueue の
+    // 原子性は維持される)。
+    await ticketAttachmentIntakeLimiter.run(async () => {
+      const budget = new TicketAttachmentByteBudget();
+      for (const file of plan.transfer) {
+        const downloaded: TicketAttachmentDownloadResult = await downloadTicketAttachment(
+          file,
+        ).catch(() => ({ ok: false, reason: 'download_failed' }) as const);
+        if (!downloaded.ok) {
+          notes.push(buildTicketAttachmentSkipNote(file.name, downloaded.reason));
+          continue;
+        }
+        const bytes = downloaded.bytes;
+        if (!hasSupportedTicketAttachmentMagic(bytes)) {
+          notes.push(buildTicketAttachmentSkipNote(file.name, 'unsupported_format'));
+          continue;
+        }
+        if (!budget.tryReserve(bytes.byteLength)) {
+          notes.push(buildTicketAttachmentSkipNote(file.name, 'message_too_large'));
+          continue;
+        }
+        attachmentPayloads.push(
+          buildTicketAttachmentPayload({
+            ticketId: link.ticketId,
+            discordMessageId: message.id,
+            attachmentId: file.id ?? null,
+            fileName: file.name,
+            contentType: file.contentType ?? null,
+            bytes,
+          }),
+        );
+      }
+    });
+  }
+
+  const hasText = (message.content ?? '').trim().length > 0;
+  const body = buildTicketMessageBody(
+    hasText
+      ? (message.content ?? '')
+      : attachmentPayloads.length > 0 || notes.length > 0
+        ? '（添付ファイル）'
+        : '',
+    notes,
+  );
   if (!body.trim()) return;
+  // メッセージ本体を先頭に、添付をその後ろに続けて、1回の enqueue で
+  // 原子的に積む (Web 側で discordMessageId からメッセージへ紐付けられる
+  // 順序を保つ)。別々に積むと、片方の失敗で「添付のない本文」や
+  // 「本文のない添付」が残る部分状態が生じる。再観測された場合は
+  // enqueue 側のポリシーでバッチ一式が no-op になり、初回に確定した
+  // 本文 (スキップ注記を含む) と添付の組がそのまま正として残る。
   await enqueueTicketPayloads(context.prisma, message.guildId, [
     buildTicketMessagePayload({
       ticketId: link.ticketId,
@@ -561,6 +637,7 @@ async function handleTicketMessage(
       discordMessageId: message.id,
       body,
     }),
+    ...attachmentPayloads,
   ]).catch((error) =>
     context.logger.warn(
       { err: error, ticketId: link.ticketId },
@@ -569,12 +646,26 @@ async function handleTicketMessage(
   );
 }
 
-function attachmentRefs(attachments: unknown): Array<{ name: string; url: string }> {
-  const collect = (value: unknown): Array<{ name: string; url: string }> => {
+function attachmentRefs(attachments: unknown): TicketAttachmentRef[] {
+  const collect = (value: unknown): TicketAttachmentRef[] => {
     if (!value || typeof value !== 'object') return [];
-    const record = value as { name?: unknown; url?: unknown };
+    const record = value as {
+      id?: unknown;
+      name?: unknown;
+      url?: unknown;
+      size?: unknown;
+      contentType?: unknown;
+    };
     if (typeof record.name === 'string' && typeof record.url === 'string') {
-      return [{ name: record.name, url: record.url }];
+      return [
+        {
+          id: typeof record.id === 'string' ? record.id : null,
+          name: record.name,
+          url: record.url,
+          size: typeof record.size === 'number' ? record.size : null,
+          contentType: typeof record.contentType === 'string' ? record.contentType : null,
+        },
+      ];
     }
     return [];
   };
@@ -656,7 +747,7 @@ export async function runTicketOutboxCycle(context: TicketsContext): Promise<voi
 }
 
 function isTicketOutboxKind(value: string): value is TicketOutboxKind {
-  return value === 'create' || value === 'thread' || value === 'message';
+  return value === 'create' || value === 'thread' || value === 'message' || value === 'attachment';
 }
 
 function canManageTickets(
