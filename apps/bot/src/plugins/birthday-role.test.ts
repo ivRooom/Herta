@@ -140,10 +140,11 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
       showName: false,
       showAvatar: true,
       showBirthday: false,
+      showAge: false,
     },
   };
 
-  it('配信系設定はAPI値で上書きし、年齢表示は常時OFFにする', () => {
+  it('配信系設定はAPI値で上書きし、年齢表示もAPI設定に従う', () => {
     const local = normalizeBirthdayRoleConfig({
       announcementChannelId: '999999999999999999',
       birthdayRoleId: '888888888888888888',
@@ -165,6 +166,15 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
       birthdayCardShowBirthday: false,
       birthdayCardShowAge: false,
     });
+  });
+
+  it('API設定の showAge が ON なら年齢表示を有効化する (#1914 S-F)', () => {
+    const local = normalizeBirthdayRoleConfig({ birthdayCardShowAge: false });
+    const applied = applyIvrmBirthdaySettings(local, {
+      ...apiSettings,
+      card: { ...apiSettings.card, showAge: true },
+    });
+    expect(applied.birthdayCardShowAge).toBe(true);
   });
 
   it('プラグイン側トグルとStudio所有のレイアウトはローカル値を維持する', () => {
@@ -189,6 +199,7 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
       displayName: 'A',
       month: 11,
       day: 22,
+      age: null,
     });
     expect(converted).toEqual({
       userId: '123456789012345678',
@@ -196,6 +207,7 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
       day: 22,
       birthYear: null,
       displayName: 'A',
+      age: null,
     });
     // 年齢変数は空になる（カード・文面とも名前＋月日のみ）
     expect(
@@ -204,6 +216,27 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
         serverBirthdayNumber: 2,
       }),
     ).toBe('🎂 <@123456789012345678> お誕生日おめでとう！');
+  });
+
+  it('API対象者の年齢は生年なしでそのまま引き継ぐ (#1914 S-F)', () => {
+    const converted = toBirthdayRegistrationLike({
+      memberId: 'member-a',
+      discordUserId: '123456789012345678',
+      displayName: 'A',
+      month: 11,
+      day: 22,
+      age: 25,
+    });
+    expect(converted.birthYear).toBeNull();
+    expect(converted.age).toBe(25);
+    // サイクル側の年齢解決は API の年齢を優先する（birthYear からは導けない）
+    expect(converted.age ?? calculateBirthdayAge(converted.birthYear, 2026)).toBe(25);
+    expect(
+      renderBirthdayAnnouncement('🎂 {user} {ageText}お誕生日おめでとう！', converted, {
+        age: converted.age ?? null,
+        serverBirthdayNumber: 2,
+      }),
+    ).toBe('🎂 <@123456789012345678> 25歳のお誕生日おめでとう！');
   });
 });
 

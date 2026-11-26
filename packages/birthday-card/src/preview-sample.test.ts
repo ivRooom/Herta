@@ -13,6 +13,46 @@ describe('birthday card preview sample (#991 S3d-D2)', () => {
     expect(metadata.height).toBe(512);
   });
 
+  it('sample age is drawn only when showAge is on (#1914 S-F)', async () => {
+    const base = {
+      displayName: BIRTHDAY_CARD_PREVIEW_SAMPLE.displayName,
+      avatarUrl: null,
+      avatarBytes: await createBirthdayCardSampleAvatar(),
+      month: BIRTHDAY_CARD_PREVIEW_SAMPLE.month,
+      day: BIRTHDAY_CARD_PREVIEW_SAMPLE.day,
+    };
+    const withAge = await renderBirthdayCard({
+      ...base,
+      config: {
+        ...DEFAULT_BIRTHDAY_CARD_CONFIG,
+        birthdayCardBackgroundSource: 'preset',
+        birthdayCardShowAvatar: true,
+        birthdayCardShowName: true,
+        birthdayCardShowBirthday: true,
+        birthdayCardShowAge: true,
+      },
+      age: BIRTHDAY_CARD_PREVIEW_SAMPLE.age,
+    });
+    const withoutAge = await renderBirthdayCard({
+      ...base,
+      config: {
+        ...DEFAULT_BIRTHDAY_CARD_CONFIG,
+        birthdayCardBackgroundSource: 'preset',
+        birthdayCardShowAvatar: true,
+        birthdayCardShowName: true,
+        birthdayCardShowBirthday: true,
+        birthdayCardShowAge: false,
+      },
+      age: null,
+    });
+    const metadata = await sharp(withAge).metadata();
+    expect(metadata.format).toBe('png');
+    expect(metadata.width).toBe(1672);
+    expect(metadata.height).toBe(941);
+    // The age text is part of the overlay, so the two renders differ.
+    expect(withAge.equals(withoutAge)).toBe(false);
+  });
+
   it('avatarBytes are composed without an avatar URL', async () => {
     const card = await renderBirthdayCard({
       config: {

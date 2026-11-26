@@ -5,7 +5,7 @@ import type { Logger } from '@herta/logger';
 /**
  * クエストボード B7e (ivrm-web #1407) 向けの日次活動集計 push。
  *
- * Herta が既に収集している日次活動のうち、クエスト判定に必要な2 metric を
+ * Herta が既に収集している日次活動のうち、クエスト判定に必要な metric を
  * 1時間間隔で ivrm-web apps/api の `POST /v1/herta/activity-daily` へ署名付きで
  * 送る。対象は `IVRM_INTEGRATION_GUILD_ID` の単一 guild のみで、直近8日分を
  * (user, date, metric) 単位で送り、ivrm-web 側が置換 upsert する (再送・再集計に
@@ -16,6 +16,13 @@ import type { Logger } from '@herta/logger';
  * - `commands`: 日次 `commands` ではなく `command_execution_events` を正本に、
  *   status=success のみを JST カレンダー日へ畳む (Community Points の
  *   「コマンドを数えた」意味論と一致させる)。
+ * - `reactions_received`: アチーブメント T5b-4 (ivrm-web #1583 / #1956) 向けに
+ *   同じ日次集計から追加した metric。reactions_given と同じ日次 count で、
+ *   ivrm-web 側は given + received の合算 (reactions_total) で判定する。
+ * - `channels_total`: 同じく T5b-4 向けの **gauge** (日次 count ではない)。
+ *   `community_activity_channel_daily` の messages 内訳から、全期間の
+ *   発言チャンネル distinct 数を毎回再計算し、JST 当日の行として送る。
+ *   ivrm-web 側は最新行の値だけを採用する (measures の channels_total)。
  *
  * 署名は community-activity-ivrm-sync.ts (活動同期) と同じ HMAC-SHA256
  * パターン・同じ共有鍵 (`HERTA_ACTIVITY_SYNC_SECRET`) を使う。送信は
@@ -29,7 +36,12 @@ const REQUEST_TIMEOUT_MS = 5_000;
 /** 同期窓の日数。当日を含み、当該週と期間境界をカバーする。 */
 export const ACTIVITY_DAILY_WINDOW_DAYS = 8;
 
-export const ACTIVITY_DAILY_METRICS = ['reactions_given', 'commands'] as const;
+export const ACTIVITY_DAILY_METRICS = [
+  'reactions_given',
+  'commands',
+  'reactions_received',
+  'channels_total',
+] as const;
 export type ActivityDailyMetric = (typeof ACTIVITY_DAILY_METRICS)[number];
 
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -143,6 +155,32 @@ export function foldCommandExecutionsToDailyRows(
   return [...counts.values()];
 }
 
+/**
+ * (user, channel) の組から channels_total gauge 行を組み立てる純粋関数。
+ * 入力は community_activity_channel_daily の messages 内訳に現れた組で、
+ * ユーザーごとの distinct チャンネル数が gauge 値になる。組の重複は
+ * ここでも除く (クエリ側の distinct に依存しない)。
+ */
+export function foldChannelPairsToGaugeRows(
+  pairs: readonly { userId: string; channelId: string }[],
+  activityDate: string,
+): ActivityDailyRow[] {
+  const seen = new Set<string>();
+  const counts = new Map<string, number>();
+  for (const pair of pairs) {
+    const key = `${pair.userId}\n${pair.channelId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    counts.set(pair.userId, (counts.get(pair.userId) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([discordUserId, value]) => ({
+    discordUserId,
+    activityDate,
+    metric: 'channels_total' as const,
+    value,
+  }));
+}
+
 /** payload の行順を安定させる (date → user → metric の昇順)。 */
 export function sortActivityDailyRows(rows: readonly ActivityDailyRow[]): ActivityDailyRow[] {
   return [...rows].sort((a, b) => {
@@ -154,10 +192,14 @@ export function sortActivityDailyRows(rows: readonly ActivityDailyRow[]): Activi
 }
 
 /**
- * 同期窓 (直近8日) の行を正本2系統から集める。
- * - reactions_given は `community_activity_daily` の既存日次をそのまま読む。
+ * 同期窓 (直近8日) の行を正本から集める。
+ * - reactions_given / reactions_received は `community_activity_daily`
+ *   の既存日次をそのまま読む。
  * - commands は `command_execution_events` の success のみを JST 日次へ畳む
  *   (日次 `commands` 列は使わない。畳み込みの定義を1箇所に寄せるため)。
+ * - channels_total は gauge: チャンネル別内訳から全期間 distinct を
+ *   再計算し、JST 当日 (窓の末尾) の行として1行だけ出す。内訳の読み取り
+ *   失敗で count 系まで落とさないよう、gauge だけ fail-soft にする。
  */
 export async function collectActivityDailyRows(
   prisma: PrismaClient,
@@ -171,25 +213,40 @@ export async function collectActivityDailyRows(
   const reactionRows = await prisma.communityActivityDaily.findMany({
     where: {
       guildId,
-      metric: 'reactions_given',
+      metric: { in: ['reactions_given', 'reactions_received'] },
       activityDate: {
         gte: storedActivityDate(firstKey),
         lte: storedActivityDate(lastKey),
       },
     },
-    select: { userId: true, activityDate: true, value: true },
+    select: { userId: true, activityDate: true, metric: true, value: true },
   });
 
   const rows: ActivityDailyRow[] = [];
   for (const row of reactionRows) {
+    if (row.metric !== 'reactions_given' && row.metric !== 'reactions_received') {
+      continue;
+    }
     const value = Number(row.value);
     if (!Number.isSafeInteger(value) || value < 0) continue;
     rows.push({
       discordUserId: row.userId,
       activityDate: row.activityDate.toISOString().slice(0, 10),
-      metric: 'reactions_given',
+      metric: row.metric,
       value,
     });
+  }
+
+  try {
+    const channelPairs = await prisma.communityActivityChannelDaily.findMany({
+      where: { guildId, metric: 'messages' },
+      select: { userId: true, channelId: true },
+      distinct: ['userId', 'channelId'],
+    });
+    rows.push(...foldChannelPairsToGaugeRows(channelPairs, lastKey));
+  } catch {
+    // gauge は追加 metric: 内訳テーブルを読めなくても既存の
+    // count 系 (reactions / commands) の送信は継続する。
   }
 
   const commandEvents = await prisma.commandExecutionEvent.findMany({

@@ -35,6 +35,7 @@ const settingsFixture: IvrmBirthdaySettings = {
     showName: true,
     showAvatar: true,
     showBirthday: true,
+    showAge: false,
   },
 };
 
@@ -61,7 +62,7 @@ function mockApi(payload: Record<string, unknown>, status = 200) {
     return Response.json(
       status === 200
         ? {
-            schemaVersion: 1,
+            schemaVersion: 2,
             requestId: request.requestId,
             action: 'today',
             status: 'ok',
@@ -85,7 +86,7 @@ describe('buildBirthdayRequest', () => {
       ['action', 'guildId', 'localDate', 'requestId', 'schemaVersion'].sort(),
     );
     expect(body).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       guildId: guild,
       action: 'today',
       localDate,
@@ -126,7 +127,7 @@ describe('parseBirthdayDeliveryTime', () => {
 });
 
 describe('callIvrmBirthday', () => {
-  it('enabled=true の設定と当日対象者をそのまま返す', async () => {
+  it('enabled=true の設定と当日対象者をそのまま返す（ageキーが無い対象者は age: null）', async () => {
     vi.stubGlobal(
       'fetch',
       mockApi({
@@ -140,7 +141,74 @@ describe('callIvrmBirthday', () => {
       status: 'ok',
       enabled: true,
       settings: settingsFixture,
-      recipients: recipientsFixture,
+      recipients: recipientsFixture.map((recipient) => ({ ...recipient, age: null })),
+    });
+  });
+
+  it('showAge ON の設定と年齢（整数 / null）を受理する', async () => {
+    const settings = {
+      ...settingsFixture,
+      card: { ...settingsFixture.card, showAge: true },
+    };
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings,
+        recipients: [
+          { ...recipientsFixture[0], age: 25 },
+          { ...recipientsFixture[1], age: null },
+        ],
+      }),
+    );
+    const result = await callIvrmBirthday(guild, localDate, config);
+    expect(result).toEqual({
+      status: 'ok',
+      enabled: true,
+      settings,
+      recipients: [
+        { ...recipientsFixture[0], age: 25 },
+        { ...recipientsFixture[1], age: null },
+      ],
+    });
+  });
+
+  it('card.showAge キーが無い旧設定は showAge: false として受理する', async () => {
+    const legacyCard: Record<string, unknown> = { ...settingsFixture.card };
+    delete legacyCard.showAge;
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: { ...settingsFixture, card: legacyCard },
+        recipients: recipientsFixture,
+      }),
+    );
+    const result = await callIvrmBirthday(guild, localDate, config);
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok' && result.enabled) {
+      expect(result.settings.card.showAge).toBe(false);
+    }
+  });
+
+  it('v1形式の応答は unavailable にする（未着地の相手では従来経路へfallback）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init: RequestInit) => {
+        const request = JSON.parse(init.body as string) as Record<string, unknown>;
+        return Response.json({
+          schemaVersion: 1,
+          requestId: request.requestId,
+          action: 'today',
+          status: 'ok',
+          enabled: true,
+          settings: settingsFixture,
+          recipients: recipientsFixture,
+        });
+      }),
+    );
+    await expect(callIvrmBirthday(guild, localDate, config)).resolves.toEqual({
+      status: 'unavailable',
     });
   });
 
@@ -226,18 +294,36 @@ describe('callIvrmBirthday', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('対象者に生年・年齢が混入した応答は unavailable にする', async () => {
-    vi.stubGlobal(
-      'fetch',
-      mockApi({
-        enabled: true,
-        settings: settingsFixture,
-        recipients: [{ ...recipientsFixture[0], birthYear: 1990 }],
-      }),
-    );
-    await expect(callIvrmBirthday(guild, localDate, config)).resolves.toEqual({
-      status: 'unavailable',
-    });
+  it('対象者に生年が混入した応答は unavailable にする（fail-closed）', async () => {
+    for (const key of ['birthYear', 'birth_year', 'birthDate', 'dateOfBirth']) {
+      vi.stubGlobal(
+        'fetch',
+        mockApi({
+          enabled: true,
+          settings: settingsFixture,
+          recipients: [{ ...recipientsFixture[0], [key]: 1990 }],
+        }),
+      );
+      await expect(callIvrmBirthday(guild, localDate, config)).resolves.toEqual({
+        status: 'unavailable',
+      });
+    }
+  });
+
+  it('対象者の年齢が整数でも null でもない応答は unavailable にする', async () => {
+    for (const age of ['25', 25.5, -1, 151, true]) {
+      vi.stubGlobal(
+        'fetch',
+        mockApi({
+          enabled: true,
+          settings: settingsFixture,
+          recipients: [{ ...recipientsFixture[0], age }],
+        }),
+      );
+      await expect(callIvrmBirthday(guild, localDate, config)).resolves.toEqual({
+        status: 'unavailable',
+      });
+    }
   });
 
   it('不正な月日・未知のプリセット・設定欠落は unavailable にする', async () => {
@@ -279,7 +365,7 @@ describe('callIvrmBirthday', () => {
       'fetch',
       vi.fn(async () =>
         Response.json({
-          schemaVersion: 1,
+          schemaVersion: 2,
           requestId: 'someone-elses-request',
           action: 'today',
           status: 'ok',

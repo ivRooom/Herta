@@ -73,7 +73,12 @@ interface BirthdayRegistrationLike {
  * One member the worker cycle delivers to, from either source:
  * a legacy registration row (birthYear as stored) or an API
  * recipient (birthYear always null). displayName only rides
- * along on the API path, as the card's fallback name.
+ * along on the API path, as the card's fallback name. `age`
+ * only rides along on the API path too: since schemaVersion 2
+ * the API sends the age the member turns this year (never the
+ * birth year) while the settings' card.showAge is on, and the
+ * cycle uses it directly instead of deriving an age from a
+ * birth year it does not have.
  */
 export interface BirthdayCycleRegistration {
   userId: string;
@@ -81,6 +86,7 @@ export interface BirthdayCycleRegistration {
   day: number;
   birthYear: number | null;
   displayName?: string;
+  age?: number | null;
 }
 
 interface BirthdayAnnouncementContext {
@@ -225,9 +231,13 @@ export function normalizeBirthdayRoleConfig(value: unknown): BirthdayRoleConfig 
  * the plugin's own toggles (enabled, assignRole, sendAnnouncement,
  * ephemeralResponses, self-registration) and the Studio-owned card
  * layout (element positions, background asset library) stay local.
- * Age display is forced off on this path: the API never carries a
- * birth year, so {age}/{ageText} render empty and the card shows
- * name + month/day only. The card preset also comes from the API.
+ * Age display follows the API settings (#1914 S-F): the API never
+ * carries a birth year, but since schemaVersion 2 it carries the
+ * age itself while card.showAge is on, so the card can show the
+ * age without ever seeing the year it was derived from. The
+ * announcement message variables stay as validated on the Web
+ * side ({age}/{ageText} are not part of the API message
+ * contract). The card preset also comes from the API.
  * An Admin-uploaded backgroundUrl (settings.card.backgroundUrl)
  * is not part of this config: the caller fetches it once per
  * cycle and it wins over the Studio-stored background when the
@@ -248,16 +258,17 @@ export function applyIvrmBirthdaySettings(
     birthdayCardShowName: settings.card.showName,
     birthdayCardShowAvatar: settings.card.showAvatar,
     birthdayCardShowBirthday: settings.card.showBirthday,
-    birthdayCardShowAge: false,
+    birthdayCardShowAge: settings.card.showAge,
   };
 }
 
 /**
  * Converts one API recipient into the registration shape the
  * delivery pipeline already works with. birthYear is always null:
- * the API does not carry it, so age-dependent behaviour (age in
- * the message, age on the card, the celebration row's birth_year /
- * age columns) stays empty on this path by design.
+ * the API never carries it. The age the API computed for this
+ * year (schemaVersion 2, present only while card.showAge is on)
+ * rides along as `age` instead, so the card and the celebration
+ * row can carry an age without a birth year behind it.
  */
 export function toBirthdayRegistrationLike(
   recipient: IvrmBirthdayRecipient,
@@ -268,6 +279,7 @@ export function toBirthdayRegistrationLike(
     day: recipient.day,
     birthYear: null,
     displayName: recipient.displayName,
+    age: recipient.age,
   };
 }
 
@@ -556,7 +568,9 @@ export async function runBirthdayRoleCycle(
     for (const registration of todaysRegistrations) {
       const joinedAt = joinedAtByUserId.get(registration.userId) ?? null;
       const joinedLocal = joinedAt ? getLocalDateParts(joinedAt, timeZone) : null;
-      const age = calculateBirthdayAge(registration.birthYear, today.year);
+      // API recipients carry the age itself (no birth year), so
+      // it wins when present; legacy rows derive it as before.
+      const age = registration.age ?? calculateBirthdayAge(registration.birthYear, today.year);
       const serverBirthdayNumber = countServerBirthdaysSinceJoin(
         joinedLocal,
         registration,

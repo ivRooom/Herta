@@ -54,7 +54,10 @@ async function renderPreview(
     avatarBytes: config.birthdayCardShowAvatar ? await createBirthdayCardSampleAvatar() : null,
     month: BIRTHDAY_CARD_PREVIEW_SAMPLE.month,
     day: BIRTHDAY_CARD_PREVIEW_SAMPLE.day,
-    age: null,
+    // The fixed sample age is drawn only when the request
+    // turns showAge on; otherwise the preview stays age-free
+    // exactly like a delivery with showAge off.
+    age: config.birthdayCardShowAge ? BIRTHDAY_CARD_PREVIEW_SAMPLE.age : null,
     customBackground,
     remoteBackground,
   });
