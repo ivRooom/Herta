@@ -219,7 +219,13 @@ function stubNetwork(supply: Record<string, unknown>) {
     'fetch',
     vi.fn(async (url: unknown, init?: RequestInit) => {
       const href = String(url);
-      if (href.startsWith('https://api.ivrm.jp')) {
+      let isApiRequest = false;
+      try {
+        isApiRequest = new URL(href).origin === 'https://api.ivrm.jp';
+      } catch {
+        isApiRequest = false;
+      }
+      if (isApiRequest) {
         const request = JSON.parse((init?.body as string) ?? '{}') as Record<string, unknown>;
         return Response.json({
           schemaVersion: 2,
