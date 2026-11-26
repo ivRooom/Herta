@@ -23,7 +23,7 @@ const INPUT = {
   payload: {
     code: 'total-xp-100',
     name: '最初の一歩',
-    tier: 'master',
+    rank: 'master',
     xpReward: 100,
     unlockedAt: '2026-11-18T03:00:00.000Z',
   } satisfies AchievementPayload,
@@ -111,33 +111,22 @@ test('リクエストは purpose で導出した鍵で署名され、本文に�
   assert.equal(request.init.headers['X-IVRM-Timestamp'], '2026-11-23T00:00:00.000Z');
 });
 
-test('payload の rank はカード生成リクエストにも載る (#1005)', () => {
-  const withRank = buildAchievementCardRequest(
-    CONFIG,
-    {
-      ...INPUT,
-      payload: { ...INPUT.payload, rank: 'legend' },
-    },
-    'req-2',
-    '2026-11-25T00:00:00.000Z',
-  );
-  const body = JSON.parse(withRank.init.body) as { payload: Record<string, unknown> };
-  assert.deepEqual(body.payload, { ...INPUT.payload, rank: 'legend' });
+test('payload の rank はカード生成リクエストに載り、tier は送らない (#1918)', () => {
+  const request = buildAchievementCardRequest(CONFIG, INPUT, 'req-2', '2026-11-25T00:00:00.000Z');
+  const body = JSON.parse(request.init.body) as { payload: Record<string, unknown> };
+  assert.deepEqual(body.payload, INPUT.payload);
+  assert.equal(body.payload['rank'], 'master');
+  assert.equal('tier' in body.payload, false);
 
-  // rank の無い旧 payload では従来どおり rank キー自体を送らない。
-  const withoutRank = buildAchievementCardRequest(
+  const legend = buildAchievementCardRequest(
     CONFIG,
-    INPUT,
+    { ...INPUT, payload: { ...INPUT.payload, rank: 'legend' } },
     'req-3',
     '2026-11-25T00:00:00.000Z',
   );
-  const legacyBody = JSON.parse(withoutRank.init.body) as {
-    payload: Record<string, unknown>;
-  };
-  assert.deepEqual(legacyBody.payload, INPUT.payload);
-  assert.equal('rank' in legacyBody.payload, false);
+  const legendBody = JSON.parse(legend.init.body) as { payload: Record<string, unknown> };
+  assert.equal(legendBody.payload['rank'], 'legend');
 });
-
 test('正常な envelope から PNG バイト列を返す', async () => {
   const { fetchImpl } = createFetch((_url, init) => okEnvelope(init));
   const png = await fetchAchievementCardPng(INPUT, CONFIG, fetchImpl);
