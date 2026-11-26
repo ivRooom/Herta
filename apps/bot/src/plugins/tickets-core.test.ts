@@ -2,6 +2,8 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   buildTicketActionEmbed,
+  buildTicketAttachmentPayload,
+  buildTicketAttachmentSkipNote,
   buildTicketCreatePayload,
   buildTicketCreatedEmbed,
   buildTicketCreatedSuccessEmbed,
@@ -13,12 +15,17 @@ import {
   buildTicketThreadPayload,
   classifyTicketResponse,
   deriveTicketEventId,
+  downloadTicketAttachmentBytes,
+  hasSupportedTicketAttachmentMagic,
   isTicketCategory,
   normalizeTicketsConfig,
+  planTicketAttachmentTransfers,
   resolveTicketBridgeConfig,
   ticketCategoryColor,
   ticketCategoryLabel,
   ticketRetryDelayMs,
+  TICKET_ATTACHMENT_MAX_BYTES,
+  TICKET_ATTACHMENTS_PATH,
   TICKET_BODY_MAX_LENGTH,
   TICKET_CATEGORY_COLORS,
 } from './tickets-core.js';
@@ -138,24 +145,114 @@ describe('payload builders', () => {
 });
 
 describe('buildTicketMessageBody', () => {
-  it('添付は参照 (ファイル名とURL) を本文末尾へ付記する', () => {
+  it('第2段 (b): CDN URL は記録せず、転送できなかった添付の注記だけを付記する', () => {
     const body = buildTicketMessageBody('スクリーンショットです', [
-      { name: 'error.png', url: 'https://cdn.discordapp.com/attachments/1/2/error.png' },
+      buildTicketAttachmentSkipNote('error.png', 'unsupported_format'),
     ]);
     expect(body).toBe(
-      'スクリーンショットです\n[添付] error.png: https://cdn.discordapp.com/attachments/1/2/error.png',
+      'スクリーンショットです\n[添付] error.png（対応していない形式のため Web へ転送されませんでした）',
     );
+    expect(body).not.toContain('cdn.discordapp.com');
   });
 
-  it('添付が無ければ本文そのまま', () => {
+  it('注記が無ければ本文そのまま', () => {
     expect(buildTicketMessageBody('  本文  ', [])).toBe('本文');
   });
 
   it('契約上限を超える場合は付記込みで切り詰める', () => {
     const body = buildTicketMessageBody('あ'.repeat(5000), [
-      { name: 'a.png', url: 'https://example.test/a.png' },
+      buildTicketAttachmentSkipNote('a.png', 'too_large'),
     ]);
     expect(body.length).toBe(TICKET_BODY_MAX_LENGTH);
+  });
+});
+
+describe('planTicketAttachmentTransfers', () => {
+  it('25MB超の申告サイズと11件目以降は転送対象から外す', () => {
+    const files = Array.from({ length: 12 }, (_, index) => ({
+      name: `f${index}.png`,
+      url: `https://cdn.example.test/${index}`,
+      size: 100,
+    }));
+    files[0] = { ...files[0]!, size: TICKET_ATTACHMENT_MAX_BYTES + 1 };
+    const plan = planTicketAttachmentTransfers(files);
+    expect(plan.transfer.length).toBe(9);
+    expect(plan.skipped).toEqual([
+      { name: 'f0.png', reason: 'too_large' },
+      { name: 'f10.png', reason: 'too_many' },
+      { name: 'f11.png', reason: 'too_many' },
+    ]);
+  });
+});
+
+describe('hasSupportedTicketAttachmentMagic', () => {
+  it('画像・PDF・音声・動画のマジックを通し、実行ファイルと通常zipを落とす', () => {
+    expect(
+      hasSupportedTicketAttachmentMagic(
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      ),
+    ).toBe(true);
+    expect(hasSupportedTicketAttachmentMagic(new TextEncoder().encode('%PDF-1.7'))).toBe(true);
+    expect(
+      hasSupportedTicketAttachmentMagic(new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70])),
+    ).toBe(true);
+    expect(hasSupportedTicketAttachmentMagic(new TextEncoder().encode('ID3'))).toBe(true);
+    expect(hasSupportedTicketAttachmentMagic(new Uint8Array([0x4d, 0x5a, 0x90, 0]))).toBe(false);
+    expect(
+      hasSupportedTicketAttachmentMagic(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3])),
+    ).toBe(false);
+  });
+});
+
+describe('buildTicketAttachmentPayload', () => {
+  it('kind=attachment で base64 JSON を作り、eventId は決定的', () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const first = buildTicketAttachmentPayload({
+      ticketId: 'TK-0123456789AB',
+      discordMessageId: '555555555555555555',
+      fileName: 'a.png',
+      bytes,
+    });
+    const second = buildTicketAttachmentPayload({
+      ticketId: 'TK-0123456789AB',
+      discordMessageId: '555555555555555555',
+      fileName: 'a.png',
+      bytes,
+    });
+    expect(first.kind).toBe('attachment');
+    expect(first.eventId).toBe(second.eventId);
+    expect(first.sourceEventId).toBe(second.sourceEventId);
+    const parsed = JSON.parse(first.body) as Record<string, unknown>;
+    expect(parsed['ticketId']).toBe('TK-0123456789AB');
+    expect(parsed['discordMessageId']).toBe('555555555555555555');
+    expect(Buffer.from(parsed['contentBase64'] as string, 'base64')).toEqual(Buffer.from(bytes));
+    expect(TICKET_ATTACHMENTS_PATH).toBe('/v1/herta/tickets/attachments');
+  });
+});
+
+describe('downloadTicketAttachmentBytes', () => {
+  it('上限超過の応答は null に倒す', async () => {
+    const fetchImpl = (async () =>
+      new Response(new Uint8Array(10), {
+        status: 200,
+        headers: { 'content-length': String(TICKET_ATTACHMENT_MAX_BYTES + 1) },
+      })) as typeof fetch;
+    await expect(
+      downloadTicketAttachmentBytes(
+        { name: 'a.png', url: 'https://cdn.example.test/a' },
+        fetchImpl,
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it('HTTP エラーは null に倒す', async () => {
+    const fetchImpl = (async () => new Response(null, { status: 404 })) as typeof fetch;
+    await expect(
+      downloadTicketAttachmentBytes(
+        { name: 'a.png', url: 'https://cdn.example.test/a' },
+        fetchImpl,
+      ),
+    ).resolves.toBeNull();
   });
 });
 

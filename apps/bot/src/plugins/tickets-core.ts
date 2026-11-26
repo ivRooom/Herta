@@ -18,10 +18,12 @@ import type { Logger } from '@herta/logger';
 export const TICKET_CREATE_PATH = '/v1/herta/tickets';
 export const TICKET_THREAD_PATH = '/v1/herta/tickets/thread';
 export const TICKET_MESSAGES_PATH = '/v1/herta/tickets/messages';
+export const TICKET_ATTACHMENTS_PATH = '/v1/herta/tickets/attachments';
 export const TICKET_REQUEST_PATHS = {
   create: TICKET_CREATE_PATH,
   thread: TICKET_THREAD_PATH,
   message: TICKET_MESSAGES_PATH,
+  attachment: TICKET_ATTACHMENTS_PATH,
 } as const;
 
 export type TicketOutboxKind = keyof typeof TICKET_REQUEST_PATHS;
@@ -416,25 +418,199 @@ export function buildTicketMessagePayload(input: {
 export interface TicketAttachmentRef {
   name: string;
   url: string;
+  /** Discord が申告するバイト数 (無い場合は null)。実体の上限判定はダウンロード後に再確認する。 */
+  size?: number | null;
+  contentType?: string | null;
 }
 
 /**
- * 添付は第1段では参照のみ: 実体は再ホストせず、ファイル名と URL を本文末尾へ
- * 付記して Web 側の記録に残す。本文は契約上限 (4000字) を超えないよう、
- * 付記込みで切り詰める。
+ * 本文末尾への付記。第2段 (b) からは CDN URL を記録しない (署名付きで
+ * 失効するため)。転送できなかった添付だけ、理由付きの注記を付ける。
+ * 本文は契約上限 (4000字) を超えないよう、付記込みで切り詰める。
  */
-export function buildTicketMessageBody(
-  content: string,
-  attachments: readonly TicketAttachmentRef[],
-): string {
-  const suffix =
-    attachments.length > 0
-      ? attachments.map((file) => `\n[添付] ${file.name}: ${file.url}`).join('')
-      : '';
+export function buildTicketMessageBody(content: string, notes: readonly string[]): string {
+  const suffix = notes.length > 0 ? notes.map((note) => `\n${note}`).join('') : '';
   const base = content.trim();
   const combined = `${base}${suffix}`;
   if (combined.length <= TICKET_BODY_MAX_LENGTH) return combined;
   return `${combined.slice(0, TICKET_BODY_MAX_LENGTH - 1)}…`;
+}
+
+// --- 添付ファイル転送 (第2段 (b) / Herta #1013) -------------------------------
+//
+// Discord CDN の URL は署名付きで失効するため、参照ではなく取込時点で
+// 実体をダウンロードし、署名付き upload エンドポイントへ outbox 経由で
+// 転送する。上限と形式判定は Web 側 (ivrm-web #1883) と同じ: 25MB/ファイル、
+// 10件/メッセージ、形式はマジックバイトで判定する (ここでは転送可否の
+// 事前判定のみで、正本の判定は API 側が同じ規則で再実施する)。
+
+/** 添付1件の上限バイト数 (Web 側のハードリミットと同値)。 */
+export const TICKET_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+/** 1メッセージあたりの転送上限件数。 */
+export const TICKET_ATTACHMENT_MAX_FILES = 10;
+
+export type TicketAttachmentSkipReason =
+  'too_large' | 'too_many' | 'unsupported_format' | 'download_failed';
+
+export interface TicketAttachmentPlan {
+  transfer: TicketAttachmentRef[];
+  skipped: Array<{ name: string; reason: TicketAttachmentSkipReason }>;
+}
+
+/**
+ * 転送計画: 件数と申告サイズだけで決まる振り分け。形式と実サイズは
+ * ダウンロード後に再判定する (申告サイズが無い添付もここでは通す)。
+ */
+export function planTicketAttachmentTransfers(
+  attachments: readonly TicketAttachmentRef[],
+): TicketAttachmentPlan {
+  const transfer: TicketAttachmentRef[] = [];
+  const skipped: TicketAttachmentPlan['skipped'] = [];
+  attachments.forEach((file, index) => {
+    if (index >= TICKET_ATTACHMENT_MAX_FILES) {
+      skipped.push({ name: file.name, reason: 'too_many' });
+    } else if (typeof file.size === 'number' && file.size > TICKET_ATTACHMENT_MAX_BYTES) {
+      skipped.push({ name: file.name, reason: 'too_large' });
+    } else {
+      transfer.push(file);
+    }
+  });
+  return { transfer, skipped };
+}
+
+function asciiAt(bytes: Uint8Array, offset: number, text: string): boolean {
+  if (bytes.length < offset + text.length) return false;
+  for (let i = 0; i < text.length; i += 1) {
+    if (bytes[offset + i] !== text.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
+function startsWithBytes(bytes: Uint8Array, prefix: readonly number[]): boolean {
+  if (bytes.length < prefix.length) return false;
+  return prefix.every((byte, index) => bytes[index] === byte);
+}
+
+/**
+ * 転送対象形式のマジックバイト判定 (API 側の正本判定と同じ対象範囲:
+ * 画像 / PDF / Office (docx/xlsx/pptx) / テキスト / 音声 / 動画)。
+ * 実行ファイル・通常の zip 等は対象外として false を返す。
+ */
+export function hasSupportedTicketAttachmentMagic(bytes: Uint8Array): boolean {
+  if (asciiAt(bytes, 0, '%PDF-')) return true;
+  if (startsWithBytes(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return true;
+  if (startsWithBytes(bytes, [0xff, 0xd8, 0xff])) return true;
+  if (asciiAt(bytes, 0, 'GIF87a') || asciiAt(bytes, 0, 'GIF89a')) return true;
+  if (asciiAt(bytes, 0, 'RIFF') && asciiAt(bytes, 8, 'WEBP')) return true;
+  if (asciiAt(bytes, 4, 'ftyp')) return true;
+  if (startsWithBytes(bytes, [0x1a, 0x45, 0xdf, 0xa3])) return true;
+  if (asciiAt(bytes, 0, 'RIFF') && asciiAt(bytes, 8, 'WAVE')) return true;
+  if (asciiAt(bytes, 0, 'OggS')) return true;
+  if (asciiAt(bytes, 0, 'fLaC')) return true;
+  if (asciiAt(bytes, 0, 'ID3')) return true;
+  if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0) return true;
+  if (startsWithBytes(bytes, [0x50, 0x4b, 0x03, 0x04])) {
+    // zip そのものは対象外。Office 文書だけを通す。
+    const head = Buffer.from(bytes.subarray(0, 65_536)).toString('latin1');
+    return (
+      head.includes('word/document.xml') ||
+      head.includes('xl/workbook.xml') ||
+      head.includes('ppt/presentation.xml')
+    );
+  }
+  if (
+    asciiAt(bytes, 0, 'MZ') ||
+    startsWithBytes(bytes, [0x7f, 0x45, 0x4c, 0x46]) ||
+    asciiAt(bytes, 0, '#!')
+  ) {
+    return false;
+  }
+  // テキスト (UTF-8 として読め、制御文字がほぼ無いもの) は対象。
+  const sample = bytes.subarray(0, 8192);
+  if (sample.includes(0)) return false;
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(sample);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 転送できなかった添付をメッセージ本文へ残す注記 (捏造しない: 理由をそのまま書く)。 */
+export function buildTicketAttachmentSkipNote(
+  name: string,
+  reason: TicketAttachmentSkipReason,
+): string {
+  switch (reason) {
+    case 'too_large':
+      return `[添付] ${name}（25MBを超えるため Web へ転送されませんでした）`;
+    case 'too_many':
+      return `[添付] ${name}（1メッセージ10件を超えるため Web へ転送されませんでした）`;
+    case 'unsupported_format':
+      return `[添付] ${name}（対応していない形式のため Web へ転送されませんでした）`;
+    case 'download_failed':
+      return `[添付] ${name}（取得に失敗したため Web へ転送されませんでした）`;
+  }
+}
+
+/**
+ * CDN から実体を取得する。上限超過・HTTP エラーは null (呼び出し側が
+ * download_failed の注記に倒す)。転送は取込時点の一度きりで、URL は
+ * どこにも保存しない。
+ */
+export async function downloadTicketAttachmentBytes(
+  file: TicketAttachmentRef,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Uint8Array | null> {
+  let response: Response;
+  try {
+    response = await fetchImpl(file.url, {
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
+  const declared = Number(response.headers.get('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > TICKET_ATTACHMENT_MAX_BYTES) return null;
+  const buffer = await response.arrayBuffer().catch(() => null);
+  if (!buffer || buffer.byteLength === 0 || buffer.byteLength > TICKET_ATTACHMENT_MAX_BYTES) {
+    return null;
+  }
+  return new Uint8Array(buffer);
+}
+
+/**
+ * 添付 upload (/v1/herta/tickets/attachments) の outbox payload。
+ * sourceEventId はメッセージIDと内容ハッシュから決定的にし、同じ
+ * 添付の再観測では同じ eventId (= Web 側の冪等キー) になる。
+ * 転送形式は base64 JSON: 署名が body 全体の HMAC のため、multipart の
+ * ような正規形の無い形式は契約 v1 の署名方式と整合しない。
+ */
+export function buildTicketAttachmentPayload(input: {
+  ticketId: string;
+  discordMessageId: string;
+  fileName: string;
+  contentType?: string | null;
+  bytes: Uint8Array;
+}): TicketOutboxPayload {
+  const digest = createHash('sha256').update(input.bytes).digest('hex').slice(0, 16);
+  const sourceEventId = `ticket-attach:${input.discordMessageId}:${digest}`;
+  const body = JSON.stringify({
+    ticketId: input.ticketId,
+    discordMessageId: input.discordMessageId,
+    fileName: input.fileName,
+    ...(input.contentType ? { contentType: input.contentType } : {}),
+    contentBase64: Buffer.from(input.bytes).toString('base64'),
+  });
+  return {
+    sourceEventId,
+    eventId: deriveTicketEventId(sourceEventId),
+    kind: 'attachment',
+    ticketId: input.ticketId,
+    body,
+  };
 }
 
 export type TicketDeliveryOutcome = 'sent' | 'dropped' | 'auth_failure' | 'retryable';
@@ -450,7 +626,7 @@ export type TicketDeliveryOutcome = 'sent' | 'dropped' | 'auth_failure' | 'retry
 export function classifyTicketResponse(status: number): TicketDeliveryOutcome {
   if (status === 200 || status === 201) return 'sent';
   if (status === 401) return 'auth_failure';
-  if (status === 403 || status === 409 || status === 422) return 'dropped';
+  if (status === 403 || status === 409 || status === 413 || status === 422) return 'dropped';
   return 'retryable';
 }
 
@@ -549,7 +725,8 @@ export async function sendTicketOutboxPayload(
     const response = await fetch(request.url, {
       ...request.init,
       redirect: 'error',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      // 添付 (最大25MBの base64) は通常の契約リクエストより長く見積もる。
+      signal: AbortSignal.timeout(payload.kind === 'attachment' ? 120_000 : REQUEST_TIMEOUT_MS),
     });
     return { outcome: classifyTicketResponse(response.status), status: response.status };
   } catch (error) {

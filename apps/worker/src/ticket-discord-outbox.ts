@@ -1,3 +1,4 @@
+import { createHash, createHmac } from 'node:crypto';
 import type { Logger } from '@herta/logger';
 import { Pool } from 'pg';
 
@@ -61,12 +62,23 @@ export interface TicketOutboxRow {
   attempts: number;
 }
 
+/** 添付メタ (ivrm-web #1883 の A6 契約)。bytes は含まず、poller が署名付き download から取得する。 */
+export interface TicketAttachmentMeta {
+  id: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  scanStatus: 'pending' | 'clean' | 'infected' | 'error';
+}
+
 export interface TicketMessageAddedPayload {
   ticketId: string;
   discordThreadId: string;
   body: string;
   authorKind: 'requester' | 'staff';
   authorDiscordUserId?: string;
+  attachments?: TicketAttachmentMeta[];
+  attachmentsOnly?: boolean;
 }
 
 export interface TicketStatusChangedPayload {
@@ -92,12 +104,63 @@ export interface TicketDiscordPollerRuntime {
   close(): Promise<void>;
 }
 
+/** Web API からの添付取得用の署名ブリッジ (bot と同じ HERTA_TICKET_SECRET)。未設定なら clean 添付も取得できず、プレースホルダ表示に倒す。 */
+export interface TicketAttachmentBridge {
+  apiBaseUrl: string;
+  /** HMAC 共有鍵 (ivrm-web の HERTA_TICKET_SECRET と同値)。 */
+  secret: string;
+}
+
 export interface StartTicketDiscordPollerOptions {
   logger: Logger;
   store: TicketDiscordOutboxStore;
   discordBotToken: string;
   scanIntervalSeconds?: number;
   fetchImpl?: typeof fetch;
+  attachmentBridge?: TicketAttachmentBridge | null;
+}
+
+const ATTACHMENT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SCAN_STATUSES = ['pending', 'clean', 'infected', 'error'] as const;
+
+function parseAttachmentMeta(value: unknown): TicketAttachmentMeta[] {
+  if (!Array.isArray(value)) return [];
+  const metas: TicketAttachmentMeta[] = [];
+  for (const entry of value.slice(0, 10)) {
+    if (!isRecord(entry)) continue;
+    const id = entry['id'];
+    const fileName = entry['fileName'];
+    const contentType = entry['contentType'];
+    const sizeBytes = entry['sizeBytes'];
+    const scanStatus = entry['scanStatus'];
+    if (typeof id !== 'string' || !ATTACHMENT_ID_PATTERN.test(id)) continue;
+    if (typeof fileName !== 'string' || fileName.length < 1 || fileName.length > 200) continue;
+    if (typeof contentType !== 'string' || contentType.length < 1) continue;
+    if (typeof sizeBytes !== 'number' || sizeBytes <= 0) continue;
+    if (
+      typeof scanStatus !== 'string' ||
+      !(SCAN_STATUSES as readonly string[]).includes(scanStatus)
+    ) {
+      continue;
+    }
+    metas.push({
+      id,
+      fileName,
+      contentType,
+      sizeBytes,
+      scanStatus: scanStatus as TicketAttachmentMeta['scanStatus'],
+    });
+  }
+  return metas;
+}
+
+/** clean 以外の添付を Discord へ送る際のプレースホルダ文。実体は絶対に送らない。 */
+export function ticketAttachmentPlaceholder(meta: TicketAttachmentMeta): string {
+  if (meta.scanStatus === 'infected') {
+    return `📎 ${meta.fileName}（ウイルスが検出されたため削除されました）`;
+  }
+  return `📎 ${meta.fileName}（スキャン中のため表示できません）`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -134,6 +197,7 @@ export function parseTicketOutboxPayload(
     if (typeof body !== 'string' || body.length < 1 || body.length > 4000) return null;
     if (authorKind !== 'requester' && authorKind !== 'staff') return null;
     const authorDiscordUserId = payload['authorDiscordUserId'];
+    const attachments = parseAttachmentMeta(payload['attachments']);
     return {
       kind,
       payload: {
@@ -144,6 +208,8 @@ export function parseTicketOutboxPayload(
         ...(typeof authorDiscordUserId === 'string' && SNOWFLAKE_PATTERN.test(authorDiscordUserId)
           ? { authorDiscordUserId }
           : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
+        ...(payload['attachmentsOnly'] === true ? { attachmentsOnly: true } : {}),
       },
     };
   }
@@ -171,16 +237,18 @@ export interface DiscordMessageBody {
 export function buildTicketDiscordMessage(
   outboxId: string,
   parsed: ParsedTicketPayload,
+  placeholderLines: readonly string[] = [],
 ): DiscordMessageBody {
   const marker = ticketOutboxMarker(outboxId);
   if (parsed.kind === 'message_added') {
     const { payload } = parsed;
     const authorLabel = payload.authorKind === 'staff' ? '運営' : '依頼者';
+    const description = [payload.body, ...placeholderLines].join('\n').slice(0, 4096);
     return {
       embeds: [
         {
           title: `🎫 ${payload.ticketId} への返信（${authorLabel}・Web）`,
-          description: payload.body,
+          description,
           footer: { text: marker },
         },
       ],
@@ -348,6 +416,94 @@ async function postDiscordThreadMessage(input: {
   return message.id;
 }
 
+/** sourceEventId から eventId (UUID v5 形式) を決定的に導出する。bot の tickets-core と同じ方式。 */
+export function deriveTicketAttachmentEventId(sourceEventId: string): string {
+  const digest = createHash('sha256').update(`herta-ticket-event:${sourceEventId}`).digest();
+  const bytes = Buffer.from(digest.subarray(0, 16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export const TICKET_ATTACHMENT_DOWNLOAD_PATH = '/v1/herta/tickets/attachments';
+
+/**
+ * clean な添付の実体を署名付き download エンドポイントから取得する。
+ * 署名は契約 v1 と同じ canonical (METHOD\nPATH\ntimestamp\neventId\nbody、
+ * GET の body は空文字列)。失敗は例外 (呼び出し側で再試行に倒す)。
+ */
+export async function fetchTicketAttachmentBytes(input: {
+  fetchImpl: typeof fetch;
+  bridge: TicketAttachmentBridge;
+  attachmentId: string;
+  outboxId: string;
+}): Promise<Uint8Array> {
+  const path = `${TICKET_ATTACHMENT_DOWNLOAD_PATH}/${input.attachmentId}`;
+  const timestamp = new Date().toISOString();
+  const eventId = deriveTicketAttachmentEventId(
+    `ticket-attachment-download:${input.outboxId}:${input.attachmentId}`,
+  );
+  const signature = createHmac('sha256', input.bridge.secret)
+    .update(['GET', path, timestamp, eventId, ''].join('\n'))
+    .digest('hex');
+  const response = await input.fetchImpl(`${input.bridge.apiBaseUrl}${path}`, {
+    headers: {
+      'X-IVRM-Timestamp': timestamp,
+      'X-IVRM-Event-Id': eventId,
+      'X-IVRM-Signature': signature,
+    },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) {
+    throw new Error(`ticket_attachment_download_failed_${response.status}`);
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+export interface TicketDiscordFile {
+  name: string;
+  contentType: string;
+  bytes: Uint8Array;
+}
+
+/** files 付き投稿 (multipart)。payload_json 側の footer マーカーは JSON 投稿と同一。 */
+async function postDiscordThreadMessageWithFiles(input: {
+  fetchImpl: typeof fetch;
+  token: string;
+  threadId: string;
+  body: DiscordMessageBody;
+  files: readonly TicketDiscordFile[];
+}): Promise<string> {
+  const form = new FormData();
+  form.set('payload_json', JSON.stringify(input.body));
+  input.files.forEach((file, index) => {
+    form.set(
+      `files[${index}]`,
+      new Blob([new Uint8Array(file.bytes)], { type: file.contentType }),
+      file.name,
+    );
+  });
+  const response = await input.fetchImpl(
+    `${DISCORD_API_BASE_URL}/channels/${input.threadId}/messages`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bot ${input.token}` },
+      body: form,
+      signal: AbortSignal.timeout(60_000),
+    },
+  );
+  const classification = classifyDiscordPostStatus(response.status);
+  if (classification !== 'success') {
+    throw new TicketDiscordPostError(response.status, classification);
+  }
+  const message = (await response.json()) as { id?: unknown };
+  if (typeof message.id !== 'string' || !SNOWFLAKE_PATTERN.test(message.id)) {
+    throw new Error('discord_post_missing_message_id');
+  }
+  return message.id;
+}
+
 export class TicketDiscordPostError extends Error {
   readonly status: number;
   readonly classification: Exclude<DiscordPostClassification, 'success'>;
@@ -423,13 +579,46 @@ export async function startTicketDiscordPollerRuntime(
         await options.store.ackSent(row.id, alreadyDeliveredId);
         return;
       }
-      const body = buildTicketDiscordMessage(row.id, parsed);
-      const discordMessageId = await postDiscordThreadMessage({
-        fetchImpl,
-        token: options.discordBotToken,
-        threadId,
-        body,
-      });
+      // 添付 (A6): clean は実体を取得して files 付きで送り、それ以外は
+      // プレースホルダ文だけを送る (実体は絶対に転送しない)。ブリッジ
+      // 未設定・取得失敗は行全体を再試行に倒し、ファイル無しの本文だけが
+      // 先に届いてしまう不完全な配送を避ける。
+      const attachments = parsed.kind === 'message_added' ? (parsed.payload.attachments ?? []) : [];
+      const placeholderLines: string[] = [];
+      const files: TicketDiscordFile[] = [];
+      for (const meta of attachments) {
+        if (meta.scanStatus !== 'clean') {
+          placeholderLines.push(ticketAttachmentPlaceholder(meta));
+          continue;
+        }
+        if (!options.attachmentBridge) {
+          placeholderLines.push(`📎 ${meta.fileName}（添付の取得設定がないため表示できません）`);
+          continue;
+        }
+        const bytes = await fetchTicketAttachmentBytes({
+          fetchImpl,
+          bridge: options.attachmentBridge,
+          attachmentId: meta.id,
+          outboxId: row.id,
+        });
+        files.push({ name: meta.fileName, contentType: meta.contentType, bytes });
+      }
+      const body = buildTicketDiscordMessage(row.id, parsed, placeholderLines);
+      const discordMessageId =
+        files.length > 0
+          ? await postDiscordThreadMessageWithFiles({
+              fetchImpl,
+              token: options.discordBotToken,
+              threadId,
+              body,
+              files,
+            })
+          : await postDiscordThreadMessage({
+              fetchImpl,
+              token: options.discordBotToken,
+              threadId,
+              body,
+            });
       await options.store.ackSent(row.id, discordMessageId);
     } catch (error) {
       const permanent =
