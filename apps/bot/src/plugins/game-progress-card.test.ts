@@ -302,3 +302,26 @@ describe('Genshin progress card render (#1010)', () => {
     expect(metadata.height).toBe(GENSHIN_PROGRESS_CARD_HEIGHT);
   }, 30_000);
 });
+
+describe('Genshin progress card background painting (#1036)', () => {
+  // Regression: the renderer embedded the WebP asset as a data URI, but
+  // librsvg (sharp's SVG rasterizer) cannot rasterize WebP data URIs and
+  // silently dropped the image, so production cards came out flat even
+  // though the asset was present. This test renders with the committed
+  // asset in place and checks the actual pixels, not just the layout.
+  it('paints the background photo instead of the flat fill', async () => {
+    const png = await renderGenshinProgressCard(screenshotInput);
+    const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+    // Sample the top strip (y=6): above the frame and every panel, only
+    // the background image and the vertical shade gradient cover it. The
+    // gradient is x-invariant, so a painted photo yields many distinct
+    // colors along the strip, while a dropped image leaves exactly one
+    // (the gradient over the flat #101620 fill).
+    const colors = new Set<string>();
+    for (let x = 20; x < info.width - 20; x += 10) {
+      const i = (6 * info.width + x) * info.channels;
+      colors.add(`${data[i]},${data[i + 1]},${data[i + 2]}`);
+    }
+    expect(colors.size).toBeGreaterThan(10);
+  }, 30_000);
+});
