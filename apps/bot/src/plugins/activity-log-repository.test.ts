@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@herta/db';
 import {
   countRecentUserEvents,
+  hasRecordedAuditLogEntry,
   listMemberActivityEvents,
+  MEMBER_ACTIVITY_EVENT_TYPES,
   recordMemberActivityEvent,
   scrubExpiredMemberActivityContent,
 } from './activity-log-repository.js';
@@ -61,6 +63,39 @@ describe('recordMemberActivityEvent', () => {
     expect(data.messageId).toBeNull();
     expect(data.content).toBeNull();
     expect(data.metadata).toBeUndefined();
+  });
+});
+
+describe('MEMBER_ACTIVITY_EVENT_TYPES', () => {
+  it('権限上書き3種別を含み、全種別がDBのVARCHAR(32)に収まる', () => {
+    expect(MEMBER_ACTIVITY_EVENT_TYPES).toContain('channel_overwrite_create');
+    expect(MEMBER_ACTIVITY_EVENT_TYPES).toContain('channel_overwrite_update');
+    expect(MEMBER_ACTIVITY_EVENT_TYPES).toContain('channel_overwrite_delete');
+    for (const eventType of MEMBER_ACTIVITY_EVENT_TYPES) {
+      expect(eventType.length).toBeLessThanOrEqual(32);
+    }
+  });
+});
+
+describe('hasRecordedAuditLogEntry', () => {
+  it('metadata.auditLogEntryIdの完全一致で行の有無を返す', async () => {
+    const findFirst = vi.fn().mockResolvedValue({ id: 'row-1' });
+    const prisma = mockPrisma({ findFirst });
+
+    await expect(hasRecordedAuditLogEntry(prisma, 'guild-1', 'entry-1')).resolves.toBe(true);
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        guildId: 'guild-1',
+        metadata: { path: ['auditLogEntryId'], equals: 'entry-1' },
+      },
+      select: { id: true },
+    });
+  });
+
+  it('行が無ければfalseを返す', async () => {
+    const findFirst = vi.fn().mockResolvedValue(null);
+    const prisma = mockPrisma({ findFirst });
+    await expect(hasRecordedAuditLogEntry(prisma, 'guild-1', 'entry-2')).resolves.toBe(false);
   });
 });
 

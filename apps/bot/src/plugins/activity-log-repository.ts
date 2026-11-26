@@ -18,6 +18,9 @@ export const MEMBER_ACTIVITY_EVENT_TYPES = [
   'channel_create',
   'channel_delete',
   'channel_update',
+  'channel_overwrite_create',
+  'channel_overwrite_update',
+  'channel_overwrite_delete',
   'guild_role_create',
   'guild_role_update',
   'guild_role_delete',
@@ -78,6 +81,27 @@ export async function scrubExpiredMemberActivityContent(
     data: { content: null, contentScrubbedAt: new Date() },
   });
   return result.count;
+}
+
+/**
+ * Audit Log経由で記録したイベントの冪等チェック。metadata.auditLogEntryIdに
+ * Discord Audit LogエントリIDを保持し、guildAuditLogEntryCreateの即時取り込みと
+ * 起動時のfetchAuditLogs補完が同じエントリを二重記録しないようにする。
+ * metadataのJSON path比較のため完全一致のみ(countRecentUserEventsと同じ方式)。
+ */
+export async function hasRecordedAuditLogEntry(
+  prisma: PrismaClient,
+  guildId: string,
+  auditLogEntryId: string,
+): Promise<boolean> {
+  const row = await prisma.memberActivityEvent.findFirst({
+    where: {
+      guildId,
+      metadata: { path: ['auditLogEntryId'], equals: auditLogEntryId },
+    },
+    select: { id: true },
+  });
+  return row !== null;
 }
 
 export interface CountRecentUserEventsInput {

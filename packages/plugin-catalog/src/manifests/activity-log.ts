@@ -5,7 +5,7 @@ export const activityLogManifest: PluginManifest = {
   name: 'Activity Log',
   version: '1.0.0',
   description:
-    'VC入退室・メッセージ作成/編集/削除・絵文字登録・アバター/ニックネーム/ロール変更・チャンネル/Role管理・サーバー参加退出・BAN/タイムアウト・招待リンク作成等のメンバー行動を記録します。モデレーション調査・統計分析の両方に使え、短時間の大量投稿/削除も検知できます',
+    'VC入退室・メッセージ作成/編集/削除・絵文字登録・アバター/ニックネーム/ロール変更・チャンネル/Role管理・チャンネル権限上書き変更・サーバー参加退出・BAN/タイムアウト・招待リンク作成等のメンバー行動を記録します。モデレーション調査・統計分析の両方に使え、短時間の大量投稿/削除も検知できます',
   author: { name: 'Herta' },
   category: 'moderation',
   permissions: [
