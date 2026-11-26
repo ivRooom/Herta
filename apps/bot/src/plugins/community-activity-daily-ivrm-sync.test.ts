@@ -6,6 +6,7 @@ import {
   activityDailyDateKeys,
   buildActivityDailySyncRequest,
   collectActivityDailyRows,
+  foldChannelPairsToGaugeRows,
   foldCommandExecutionsToDailyRows,
   jstActivityDateKey,
   pushActivityDailyToIvrmWeb,
@@ -139,12 +140,50 @@ describe('foldCommandExecutionsToDailyRows', () => {
   });
 });
 
+describe('foldChannelPairsToGaugeRows', () => {
+  it('ユーザーごとのdistinctチャンネル数をJST当日のgauge行にする', () => {
+    const folded = foldChannelPairsToGaugeRows(
+      [
+        { userId: 'u1', channelId: 'c1' },
+        { userId: 'u1', channelId: 'c2' },
+        { userId: 'u1', channelId: 'c1' },
+        { userId: 'u2', channelId: 'c1' },
+      ],
+      '2026-11-23',
+    );
+    expect(folded).toEqual([
+      { discordUserId: 'u1', activityDate: '2026-11-23', metric: 'channels_total', value: 2 },
+      { discordUserId: 'u2', activityDate: '2026-11-23', metric: 'channels_total', value: 1 },
+    ]);
+  });
+
+  it('組が無ければ行を出さない', () => {
+    expect(foldChannelPairsToGaugeRows([], '2026-11-23')).toEqual([]);
+  });
+});
+
 describe('collectActivityDailyRows', () => {
-  it('reactions_givenの日次とcommandsの畳み込みを統合し、窓と正本の条件で引く', async () => {
+  it('reactions given/receivedの日次とcommandsの畳み込みとchannels gaugeを統合し、窓と正本の条件で引く', async () => {
     const communityActivityDaily = {
       findMany: vi.fn().mockResolvedValue([
-        { userId: 'u1', activityDate: new Date('2026-11-23T00:00:00.000Z'), value: 3n },
-        { userId: 'u2', activityDate: new Date('2026-11-22T00:00:00.000Z'), value: 1n },
+        {
+          userId: 'u1',
+          activityDate: new Date('2026-11-23T00:00:00.000Z'),
+          metric: 'reactions_given',
+          value: 3n,
+        },
+        {
+          userId: 'u1',
+          activityDate: new Date('2026-11-23T00:00:00.000Z'),
+          metric: 'reactions_received',
+          value: 5n,
+        },
+        {
+          userId: 'u2',
+          activityDate: new Date('2026-11-22T00:00:00.000Z'),
+          metric: 'reactions_given',
+          value: 1n,
+        },
       ]),
     };
     const commandExecutionEvent = {
@@ -153,7 +192,18 @@ describe('collectActivityDailyRows', () => {
         { userId: 'u1', executedAt: new Date('2026-11-23T05:00:00.000Z') },
       ]),
     };
-    const prisma = { communityActivityDaily, commandExecutionEvent } as unknown as PrismaClient;
+    const communityActivityChannelDaily = {
+      findMany: vi.fn().mockResolvedValue([
+        { userId: 'u1', channelId: 'c1' },
+        { userId: 'u1', channelId: 'c2' },
+        { userId: 'u2', channelId: 'c1' },
+      ]),
+    };
+    const prisma = {
+      communityActivityDaily,
+      commandExecutionEvent,
+      communityActivityChannelDaily,
+    } as unknown as PrismaClient;
 
     // JST では 2026-11-23 19:00
     const collected = await collectActivityDailyRows(
@@ -164,15 +214,24 @@ describe('collectActivityDailyRows', () => {
 
     expect(collected).toEqual([
       { discordUserId: 'u2', activityDate: '2026-11-22', metric: 'reactions_given', value: 1 },
+      { discordUserId: 'u1', activityDate: '2026-11-23', metric: 'channels_total', value: 2 },
       { discordUserId: 'u1', activityDate: '2026-11-23', metric: 'commands', value: 2 },
       { discordUserId: 'u1', activityDate: '2026-11-23', metric: 'reactions_given', value: 3 },
+      { discordUserId: 'u1', activityDate: '2026-11-23', metric: 'reactions_received', value: 5 },
+      { discordUserId: 'u2', activityDate: '2026-11-23', metric: 'channels_total', value: 1 },
     ]);
 
     const reactionArgs = communityActivityDaily.findMany.mock.calls[0]![0];
     expect(reactionArgs.where.guildId).toBe(GUILD_ID);
-    expect(reactionArgs.where.metric).toBe('reactions_given');
+    expect(reactionArgs.where.metric).toEqual({
+      in: ['reactions_given', 'reactions_received'],
+    });
     expect(reactionArgs.where.activityDate.gte).toEqual(new Date('2026-11-16T00:00:00.000Z'));
     expect(reactionArgs.where.activityDate.lte).toEqual(new Date('2026-11-23T00:00:00.000Z'));
+
+    const channelArgs = communityActivityChannelDaily.findMany.mock.calls[0]![0];
+    expect(channelArgs.where.guildId).toBe(GUILD_ID);
+    expect(channelArgs.where.metric).toBe('messages');
 
     const commandArgs = commandExecutionEvent.findMany.mock.calls[0]![0];
     expect(commandArgs.where.guildId).toBe(GUILD_ID);
@@ -180,6 +239,38 @@ describe('collectActivityDailyRows', () => {
     // JST 2026-11-16 0:00 = UTC 2026-11-15 15:00、窓の終わりは JST 2026-11-24 0:00
     expect(commandArgs.where.executedAt.gte).toEqual(new Date('2026-11-15T15:00:00.000Z'));
     expect(commandArgs.where.executedAt.lt).toEqual(new Date('2026-11-23T15:00:00.000Z'));
+  });
+
+  it('チャンネル内訳を読めなくてもcount系は送れる (gaugeだけfail-soft)', async () => {
+    const communityActivityDaily = {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          userId: 'u1',
+          activityDate: new Date('2026-11-23T00:00:00.000Z'),
+          metric: 'reactions_given',
+          value: 3n,
+        },
+      ]),
+    };
+    const commandExecutionEvent = { findMany: vi.fn().mockResolvedValue([]) };
+    const communityActivityChannelDaily = {
+      findMany: vi.fn().mockRejectedValue(new Error('relation does not exist')),
+    };
+    const prisma = {
+      communityActivityDaily,
+      commandExecutionEvent,
+      communityActivityChannelDaily,
+    } as unknown as PrismaClient;
+
+    const collected = await collectActivityDailyRows(
+      prisma,
+      GUILD_ID,
+      new Date('2026-11-23T10:00:00.000Z'),
+    );
+
+    expect(collected).toEqual([
+      { discordUserId: 'u1', activityDate: '2026-11-23', metric: 'reactions_given', value: 3 },
+    ]);
   });
 });
 
