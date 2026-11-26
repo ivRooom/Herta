@@ -475,3 +475,143 @@ test('isDiscordRoutedRank: 未知・未設定は安全側 (未知ランクは送
   assert.equal(isDiscordRoutedRank('master', undefined), true);
   assert.equal(isDiscordRoutedRank('master', 'unknown-value'), true);
 });
+
+test('バッジ画像は生成カードより優先して Embed 画像になる (#1854)', () => {
+  const payload = {
+    code: 'total-xp-100',
+    name: '最初の一歩',
+    tier: 'master',
+    xpReward: 100,
+    unlockedAt: '2026-11-18T03:00:00.000Z',
+  };
+  const withBoth = buildAchievementNotificationMessage({
+    displayName: 'いゔる',
+    discordUserId: 'discord-1',
+    payload,
+    badgeImageUrl: 'https://example.com/badge.webp',
+    cardFileName: ACHIEVEMENT_CARD_FILENAME,
+  });
+  const embedWithBoth = withBoth.embeds[0] as { image?: { url: string } };
+  assert.equal(embedWithBoth.image?.url, 'https://example.com/badge.webp');
+
+  const badgeOnly = buildAchievementNotificationMessage({
+    displayName: 'いゔる',
+    discordUserId: 'discord-1',
+    payload,
+    badgeImageUrl: 'https://example.com/badge.webp',
+  });
+  const embedBadgeOnly = badgeOnly.embeds[0] as { image?: { url: string } };
+  assert.equal(embedBadgeOnly.image?.url, 'https://example.com/badge.webp');
+});
+
+test('バッジ画像が解決できたらカードを取得せず JSON 投稿でバッジ画像を送る (#1854)', async () => {
+  const { logger } = createLogger();
+  const fake = createStore([createRow()]);
+  const badgeRequests: string[] = [];
+  fake.store.resolveBadgeImageUrl = async (achievementId) => {
+    badgeRequests.push(achievementId);
+    return 'https://example.com/badge.webp';
+  };
+  const { fetchImpl, calls } = createFetch((url) => {
+    if (url.includes('/members/')) {
+      return new Response(JSON.stringify({ nick: 'いゔる', user: { username: 'ivuru' } }), {
+        status: 200,
+      });
+    }
+    return new Response('{}', { status: 200 });
+  });
+  let cardCalls = 0;
+  const runtime = await startAchievementNotificationRuntime({
+    logger,
+    store: fake.store,
+    discordBotToken: 'token',
+    guildId: 'guild-1',
+    resolveChannelId: async () => 'channel-1',
+    fetchImpl,
+    fetchCardPng: async () => {
+      cardCalls += 1;
+      return TEST_CARD_PNG;
+    },
+    now: () => new Date('2026-11-18T04:00:00.000Z'),
+  });
+  await runtime.close();
+  assert.deepEqual(fake.sent, ['unlock-1']);
+  assert.deepEqual(badgeRequests, ['ach_total_xp_100']);
+  assert.equal(cardCalls, 0);
+  const post = calls.find((call) => call.url.includes('/channels/channel-1/messages'));
+  assert.ok(post);
+  assert.equal(typeof post.init?.body, 'string');
+  const body = JSON.parse(String(post.init?.body)) as {
+    embeds: Array<{ image?: { url: string } }>;
+  };
+  assert.equal(body.embeds[0]?.image?.url, 'https://example.com/badge.webp');
+});
+
+test('バッジ画像の解決が失敗したら生成カードにフォールバックする (#1854)', async () => {
+  const { logger } = createLogger();
+  const fake = createStore([createRow()]);
+  fake.store.resolveBadgeImageUrl = async () => {
+    throw new Error('badge boom');
+  };
+  const { fetchImpl, calls } = createFetch((url) => {
+    if (url.includes('/members/')) {
+      return new Response(JSON.stringify({ user: { username: 'ivuru' } }), { status: 200 });
+    }
+    return new Response('{}', { status: 200 });
+  });
+  let cardCalls = 0;
+  const runtime = await startAchievementNotificationRuntime({
+    logger,
+    store: fake.store,
+    discordBotToken: 'token',
+    guildId: 'guild-1',
+    resolveChannelId: async () => 'channel-1',
+    fetchImpl,
+    fetchCardPng: async () => {
+      cardCalls += 1;
+      return TEST_CARD_PNG;
+    },
+  });
+  await runtime.close();
+  assert.deepEqual(fake.sent, ['unlock-1']);
+  assert.equal(cardCalls, 1);
+  const post = calls.find((call) => call.url.includes('/channels/channel-1/messages'));
+  assert.ok(post);
+  assert.ok(post.init?.body instanceof FormData);
+});
+
+test('バッジ画像が https でない場合は使わず生成カードにフォールバックする (#1854)', async () => {
+  const { logger } = createLogger();
+  const fake = createStore([createRow()]);
+  fake.store.resolveBadgeImageUrl = async () => 'http://example.com/badge.webp';
+  const { fetchImpl, calls } = createFetch((url) => {
+    if (url.includes('/members/')) {
+      return new Response(JSON.stringify({ user: { username: 'ivuru' } }), { status: 200 });
+    }
+    return new Response('{}', { status: 200 });
+  });
+  let cardCalls = 0;
+  const runtime = await startAchievementNotificationRuntime({
+    logger,
+    store: fake.store,
+    discordBotToken: 'token',
+    guildId: 'guild-1',
+    resolveChannelId: async () => 'channel-1',
+    fetchImpl,
+    fetchCardPng: async () => {
+      cardCalls += 1;
+      return TEST_CARD_PNG;
+    },
+  });
+  await runtime.close();
+  assert.deepEqual(fake.sent, ['unlock-1']);
+  assert.equal(cardCalls, 1);
+  const post = calls.find((call) => call.url.includes('/channels/channel-1/messages'));
+  assert.ok(post);
+  const form = post.init?.body;
+  assert.ok(form instanceof FormData);
+  const payloadJson = JSON.parse(String(form.get('payload_json'))) as {
+    embeds: Array<{ image?: { url: string } }>;
+  };
+  assert.equal(payloadJson.embeds[0]?.image?.url, 'attachment://achievement-card.png');
+});
