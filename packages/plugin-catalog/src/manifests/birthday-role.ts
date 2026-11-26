@@ -3,7 +3,7 @@ import { BIRTHDAY_CARD_ASSET_ID_PATTERN, type PluginManifest } from '@herta/shar
 export const birthdayRoleManifest: PluginManifest = {
   id: 'birthday-role',
   name: 'Birthday Role',
-  version: '1.7.0',
+  version: '1.8.0',
   description: '誕生日の登録・確認と、誕生日当日のRole付与・お祝い通知・Birthday Cardを提供します',
   author: { name: 'Herta' },
   category: 'fun',
@@ -28,7 +28,7 @@ export const birthdayRoleManifest: PluginManifest = {
         type: 'boolean',
         title: 'ivrm-web連携（プロフィール誕生日）を使う',
         description:
-          'ONにすると当日の対象者と配信設定（お祝い投稿Channel・誕生日Role・お祝いメッセージ・2月29日の扱い・Birthday CardのON/OFFとプリセット等）を ivrm-web の署名付きAPIから取得します。連携中はこれらの配信系設定の正本は Web Admin で、この画面の同名設定より API の値が優先されます（カードのレイアウト細部と背景アセットライブラリは引き続きこの画面が正本ですが、Web Admin でカード背景URLが設定されている場合はそちらが背景として優先されます）。APIが「配信OFF」を返した場合は配信しません。API取得に失敗した場合は従来の登録データとこの画面の設定へ自動で切り替えて配信を継続します。OFF（既定）の間は従来どおり動作します。',
+          'ONにすると当日の対象者と配信設定（お祝い投稿Channel・誕生日Role・お祝いメッセージ・2月29日の扱い・Birthday CardのON/OFFとプリセット等）を ivrm-web の署名付きAPIから取得します。連携中はこれらの配信系設定の正本は Web Admin で、この画面の同名設定より API の値が優先されます（カードのレイアウト細部と背景アセットライブラリは引き続きこの画面が正本ですが、Web Admin でカード背景URLが設定されている場合はそちらが背景として優先され、Web Admin のDBプリセットが選択されている場合はその定義（背景・文字色）で描画します）。APIが「配信OFF」を返した場合は配信しません。API取得に失敗した場合は従来の登録データとこの画面の設定へ自動で切り替えて配信を継続します。OFF（既定）の間は従来どおり動作します。',
         default: false,
       },
       ephemeralResponses: {

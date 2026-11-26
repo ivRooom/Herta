@@ -34,6 +34,7 @@ const settingsFixture: IvrmBirthdaySettings = {
     showAvatar: true,
     showBirthday: true,
     showAge: false,
+    presetDefinition: null,
   },
 };
 
@@ -154,6 +155,72 @@ describe('callIvrmBirthday', () => {
         { ...recipientsFixture[1], age: null },
       ],
     });
+  });
+
+  it('card.presetDefinition があれば定義ごと受理する (#1028 R3-E)', async () => {
+    const presetDefinition = {
+      id: 'my-custom-preset',
+      label: 'カスタムプリセット',
+      backgroundUrl: 'https://media.example.com/birthday/bg.webp',
+      textColor: '#ff0000',
+      textStroke: '#0000ff',
+    };
+    const settings = {
+      ...settingsFixture,
+      card: { ...settingsFixture.card, presetDefinition },
+    };
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings,
+        recipients: recipientsFixture,
+      }),
+    );
+    const result = await callIvrmBirthday(guild, localDate, config);
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok' && result.enabled) {
+      expect(result.settings.card.presetDefinition).toEqual(presetDefinition);
+    }
+  });
+
+  it('card.presetDefinition が不正なら定義だけを落として設定は受理する (#1028 R3-E)', async () => {
+    for (const presetDefinition of [
+      {
+        id: 'my-custom-preset',
+        label: 'カスタムプリセット',
+        backgroundUrl: 'http://media.example.com/birthday/bg.webp',
+        textColor: '#ff0000',
+        textStroke: '#0000ff',
+      },
+      {
+        id: 'my-custom-preset',
+        label: 'カスタムプリセット',
+        backgroundUrl: 'https://media.example.com/birthday/bg.webp',
+        textColor: 'red',
+        textStroke: '#0000ff',
+      },
+      'not-a-definition',
+    ]) {
+      const settings = {
+        ...settingsFixture,
+        card: { ...settingsFixture.card, presetDefinition },
+      };
+      vi.stubGlobal(
+        'fetch',
+        mockApi({
+          enabled: true,
+          settings,
+          recipients: recipientsFixture,
+        }),
+      );
+      const result = await callIvrmBirthday(guild, localDate, config);
+      expect(result.status).toBe('ok');
+      if (result.status === 'ok' && result.enabled) {
+        expect(result.settings.card.presetDefinition).toBeNull();
+        expect(result.settings.card.preset).toBe(settingsFixture.card.preset);
+      }
+    }
   });
 
   it('card.showAge キーが無い旧設定は showAge: false として受理する', async () => {

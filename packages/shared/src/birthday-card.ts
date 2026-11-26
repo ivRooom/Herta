@@ -217,6 +217,79 @@ export function birthdayCardPreset(id: BirthdayCardPresetId) {
   return BIRTHDAY_CARD_PRESETS.find((preset) => preset.id === id) ?? BIRTHDAY_CARD_PRESETS[0];
 }
 
+/**
+ * A database-backed card preset defined outside this repo
+ * (ivrm-web Admin, #1921 R3-D) and carried whole by the supply
+ * API when one is selected (#1930/#1028 R3-E): the renderer
+ * draws it as an ad-hoc preset definition instead of resolving
+ * a bundled preset by id. `backgroundUrl` points at the
+ * Admin-uploaded background image; the caller fetches it
+ * through the same validated download path as
+ * card.backgroundUrl and hands the bytes to the renderer.
+ */
+export interface BirthdayCardPresetDefinition {
+  id: string;
+  label: string;
+  backgroundUrl: string;
+  textColor: string;
+  textStroke: string;
+}
+
+const BIRTHDAY_CARD_PRESET_DEFINITION_ID_REGEX = /^[a-z0-9][a-z0-9-]{1,62}$/;
+const BIRTHDAY_CARD_HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+const BIRTHDAY_CARD_PRESET_DEFINITION_KEYS = [
+  'backgroundUrl',
+  'id',
+  'label',
+  'textColor',
+  'textStroke',
+] as const;
+
+export function isBirthdayCardHexColor(value: unknown): value is string {
+  return typeof value === 'string' && BIRTHDAY_CARD_HEX_COLOR_REGEX.test(value);
+}
+
+/**
+ * Validates one preset definition carried over a wire. The key
+ * set is exact (the contract sends exactly these five keys) and
+ * every field is checked: the id follows the DB preset slug
+ * rule, the background must be an https URL, and the text
+ * colors must be #rrggbb. Anything else returns null so the
+ * caller can drop the definition and fall back to the bundled
+ * preset resolution instead of failing the whole delivery.
+ */
+export function parseBirthdayCardPresetDefinition(
+  value: unknown,
+): BirthdayCardPresetDefinition | null {
+  if (!isRecord(value)) return null;
+  if (Object.keys(value).sort().join() !== [...BIRTHDAY_CARD_PRESET_DEFINITION_KEYS].sort().join())
+    return null;
+  if (typeof value.id !== 'string' || !BIRTHDAY_CARD_PRESET_DEFINITION_ID_REGEX.test(value.id))
+    return null;
+  if (typeof value.label !== 'string' || value.label.length === 0 || value.label.length > 200)
+    return null;
+  if (
+    typeof value.backgroundUrl !== 'string' ||
+    value.backgroundUrl.length === 0 ||
+    value.backgroundUrl.length > 2048
+  )
+    return null;
+  try {
+    if (new URL(value.backgroundUrl).protocol !== 'https:') return null;
+  } catch {
+    return null;
+  }
+  if (!isBirthdayCardHexColor(value.textColor) || !isBirthdayCardHexColor(value.textStroke))
+    return null;
+  return {
+    id: value.id,
+    label: value.label,
+    backgroundUrl: value.backgroundUrl,
+    textColor: value.textColor,
+    textStroke: value.textStroke,
+  };
+}
+
 export function normalizeBirthdayCardAssetId(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim();

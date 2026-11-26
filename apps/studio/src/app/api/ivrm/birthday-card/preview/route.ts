@@ -25,9 +25,12 @@ function isPluginConfig(value: unknown): value is Record<string, unknown> {
  * Renders one preview PNG for the fixed sample subject. The
  * background chain mirrors the bot's delivery path: the
  * Admin-supplied backgroundUrl wins when it downloads and
- * validates, then the Studio-stored background (custom /
- * asset), then the bundled preset inside the renderer. No
- * delivery rows are written; a preview has no side effects.
+ * validates, then a carried DB preset definition's background
+ * (#1028 R3-E), then the Studio-stored background (custom /
+ * asset), then the bundled preset inside the renderer. The
+ * definition's text colors apply whenever the request carries
+ * one, whichever background wins. No delivery rows are
+ * written; a preview has no side effects.
  */
 async function renderPreview(
   guildId: string,
@@ -35,12 +38,18 @@ async function renderPreview(
   card: BirthdayCardPreviewCardInput,
 ): Promise<Buffer> {
   const config = buildBirthdayCardPreviewConfig(rawPluginConfig, card);
+  const presetDefinition = card.presetDefinition ?? null;
   const remoteBackground = card.backgroundUrl
     ? await fetchBirthdayCardBackgroundImage(card.backgroundUrl)
     : null;
+  const definitionBackground =
+    !remoteBackground && presetDefinition
+      ? await fetchBirthdayCardBackgroundImage(presetDefinition.backgroundUrl)
+      : null;
   let customBackground: Buffer | null = null;
   if (
     !remoteBackground &&
+    !definitionBackground &&
     (config.birthdayCardBackgroundSource === 'custom' ||
       config.birthdayCardBackgroundSource === 'asset')
   ) {
@@ -60,6 +69,8 @@ async function renderPreview(
     age: config.birthdayCardShowAge ? BIRTHDAY_CARD_PREVIEW_SAMPLE.age : null,
     customBackground,
     remoteBackground,
+    presetDefinition,
+    definitionBackground,
   });
 }
 
