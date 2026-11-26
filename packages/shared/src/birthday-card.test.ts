@@ -4,6 +4,7 @@ import {
   BIRTHDAY_CARD_ASSET_MAX_COUNT,
   normalizeBirthdayCardAssetId,
   normalizeBirthdayCardConfig,
+  parseBirthdayCardPresetDefinition,
 } from './birthday-card.js';
 
 const ASSET_ID = '123e4567-e89b-42d3-a456-426614174000';
@@ -39,4 +40,32 @@ test('既存custom背景設定は後方互換で維持する', () => {
 
 test('Asset LibraryはGuildごとに有限件数へ制限する', () => {
   assert.equal(BIRTHDAY_CARD_ASSET_MAX_COUNT, 24);
+});
+
+test('DBプリセット定義は正しい形だけを受理する (#1028 R3-E)', () => {
+  const definition = {
+    id: 'my-custom-preset',
+    label: 'カスタムプリセット',
+    backgroundUrl: 'https://media.example.com/birthday/bg.webp',
+    textColor: '#ff0000',
+    textStroke: '#00FF00',
+  };
+  assert.deepEqual(parseBirthdayCardPresetDefinition(definition), definition);
+
+  for (const invalid of [
+    null,
+    'my-custom-preset',
+    { ...definition, id: 'Bad Slug' },
+    { ...definition, id: 'a' },
+    { ...definition, label: '' },
+    { ...definition, backgroundUrl: 'http://media.example.com/birthday/bg.webp' },
+    { ...definition, backgroundUrl: 'not-a-url' },
+    { ...definition, textColor: 'red' },
+    { ...definition, textColor: '#fff' },
+    { ...definition, textStroke: '#12345678' },
+    { ...definition, extra: true },
+    { id: definition.id, label: definition.label },
+  ]) {
+    assert.equal(parseBirthdayCardPresetDefinition(invalid), null);
+  }
 });

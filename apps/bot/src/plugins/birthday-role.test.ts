@@ -141,6 +141,7 @@ describe('ivrm-web連携の設定適用 (#961 S5a)', () => {
       showAvatar: true,
       showBirthday: false,
       showAge: false,
+      presetDefinition: null,
     },
   };
 

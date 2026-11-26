@@ -3,6 +3,7 @@ import {
   birthdayCardPreset,
   inspectBirthdayCardBackgroundImage,
   type BirthdayCardConfig,
+  type BirthdayCardPresetDefinition,
 } from '@herta/shared';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +31,25 @@ export interface BirthdayCardRenderInput {
    * Studio-stored custom background and the bundled preset.
    */
   remoteBackground?: Uint8Array | null;
+  /**
+   * A database preset definition carried whole by the API
+   * (#1028 R3-E). When present, its text colors replace the
+   * bundled preset's for this render — including when
+   * `remoteBackground` supplies the background, because the
+   * explicit backgroundUrl override and the preset definition
+   * are independent selections on the Web side. The definition
+   * never replaces the layout: positions and sizes still come
+   * from `config`.
+   */
+  presetDefinition?: BirthdayCardPresetDefinition | null;
+  /**
+   * Background bytes fetched from `presetDefinition.backgroundUrl`,
+   * already download-validated by the caller. Background
+   * priority: `remoteBackground` (the explicit card.backgroundUrl)
+   * wins, then these bytes, then the Studio-stored custom
+   * background, then the bundled preset asset.
+   */
+  definitionBackground?: Uint8Array | null;
   /**
    * Pre-fetched avatar image bytes, used instead of downloading
    * `avatarUrl`. For callers that cannot hand the renderer a
@@ -71,8 +91,14 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
     }
   }
 
+  // A carried preset definition supplies the text colors even
+  // when another source wins the background (#1028 R3-E); only
+  // the bundled preset's colors are replaced, never the layout.
+  const textColor = input.presetDefinition?.textColor ?? preset.textColor;
+  const textStroke = input.presetDefinition?.textStroke ?? preset.textStroke;
+
   layers.push({
-    input: Buffer.from(renderTextOverlay(input, preset.textColor, preset.textStroke)),
+    input: Buffer.from(renderTextOverlay(input, textColor, textStroke)),
     left: 0,
     top: 0,
   });
@@ -84,6 +110,18 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
       // A payload that passed validation can still fail to compose;
       // continue to the Studio-stored background / preset chain
       // instead of dropping the birthday card delivery.
+    }
+  }
+
+  if (
+    input.definitionBackground &&
+    inspectBirthdayCardBackgroundImage(input.definitionBackground)
+  ) {
+    try {
+      return await composeBirthdayCard(Buffer.from(input.definitionBackground), layers);
+    } catch {
+      // Same reasoning as the remote background above: fall
+      // through to the stored background / preset chain.
     }
   }
 
