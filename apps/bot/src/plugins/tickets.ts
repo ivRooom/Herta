@@ -581,6 +581,7 @@ async function handleTicketMessage(
       buildTicketAttachmentPayload({
         ticketId: link.ticketId,
         discordMessageId: message.id,
+        attachmentId: file.id ?? null,
         fileName: file.name,
         contentType: file.contentType ?? null,
         bytes,
@@ -598,8 +599,10 @@ async function handleTicketMessage(
     notes,
   );
   if (!body.trim()) return;
-  // メッセージ本体を先に積み、添付はその後ろに続ける (Web 側で
-  // discordMessageId からメッセージへ紐付けられる順序を保つ)。
+  // メッセージ本体を先頭に、添付をその後ろに続けて、1回の enqueue で
+  // 原子的に積む (Web 側で discordMessageId からメッセージへ紐付けられる
+  // 順序を保つ)。別々に積むと、片方の失敗で「添付のない本文」や
+  // 「本文のない添付」が残る部分状態が生じる。
   await enqueueTicketPayloads(context.prisma, message.guildId, [
     buildTicketMessagePayload({
       ticketId: link.ticketId,
@@ -607,27 +610,20 @@ async function handleTicketMessage(
       discordMessageId: message.id,
       body,
     }),
+    ...attachmentPayloads,
   ]).catch((error) =>
     context.logger.warn(
       { err: error, ticketId: link.ticketId },
       'チケット返信の登録に失敗しました',
     ),
   );
-  if (attachmentPayloads.length > 0) {
-    await enqueueTicketPayloads(context.prisma, message.guildId, attachmentPayloads).catch(
-      (error) =>
-        context.logger.warn(
-          { err: error, ticketId: link.ticketId },
-          'チケット添付の登録に失敗しました',
-        ),
-    );
-  }
 }
 
 function attachmentRefs(attachments: unknown): TicketAttachmentRef[] {
   const collect = (value: unknown): TicketAttachmentRef[] => {
     if (!value || typeof value !== 'object') return [];
     const record = value as {
+      id?: unknown;
       name?: unknown;
       url?: unknown;
       size?: unknown;
@@ -636,6 +632,7 @@ function attachmentRefs(attachments: unknown): TicketAttachmentRef[] {
     if (typeof record.name === 'string' && typeof record.url === 'string') {
       return [
         {
+          id: typeof record.id === 'string' ? record.id : null,
           name: record.name,
           url: record.url,
           size: typeof record.size === 'number' ? record.size : null,

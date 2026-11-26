@@ -416,6 +416,8 @@ export function buildTicketMessagePayload(input: {
 }
 
 export interface TicketAttachmentRef {
+  /** Discord 添付 ID。冪等キーの一意化に使う (無い場合は内容ハッシュで代替する)。 */
+  id?: string | null;
   name: string;
   url: string;
   /** Discord が申告するバイト数 (無い場合は null)。実体の上限判定はダウンロード後に再確認する。 */
@@ -426,14 +428,21 @@ export interface TicketAttachmentRef {
 /**
  * 本文末尾への付記。第2段 (b) からは CDN URL を記録しない (署名付きで
  * 失効するため)。転送できなかった添付だけ、理由付きの注記を付ける。
- * 本文は契約上限 (4000字) を超えないよう、付記込みで切り詰める。
+ * 本文は契約上限 (4000字) を超えないよう切り詰めるが、注記が脱落すると
+ * 「添付が届いていない理由」が Web 側から消えるため、注記分を先に
+ * 予約して本文側を詰める。
  */
 export function buildTicketMessageBody(content: string, notes: readonly string[]): string {
   const suffix = notes.length > 0 ? notes.map((note) => `\n${note}`).join('') : '';
   const base = content.trim();
   const combined = `${base}${suffix}`;
   if (combined.length <= TICKET_BODY_MAX_LENGTH) return combined;
-  return `${combined.slice(0, TICKET_BODY_MAX_LENGTH - 1)}…`;
+  if (suffix.length >= TICKET_BODY_MAX_LENGTH) {
+    // 注記だけで上限を超える場合 (通常は到達しない) は注記側を切り詰める。
+    return `${suffix.slice(0, TICKET_BODY_MAX_LENGTH - 1)}…`;
+  }
+  const baseLimit = TICKET_BODY_MAX_LENGTH - suffix.length;
+  return `${base.slice(0, baseLimit - 1)}…${suffix}`;
 }
 
 // --- 添付ファイル転送 (第2段 (b) / Herta #1013) -------------------------------
@@ -491,6 +500,69 @@ function startsWithBytes(bytes: Uint8Array, prefix: readonly number[]): boolean 
   return prefix.every((byte, index) => bytes[index] === byte);
 }
 
+const ZIP_EOCD_SIGNATURE = 0x06054b50;
+const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
+/** 中央ディレクトリ走査の上限 (壊れた・巨大なアーカイブでの暴走防止)。 */
+const ZIP_MAX_ENTRIES = 1024;
+
+/**
+ * ZIP のエントリ名一覧を中央ディレクトリ (末尾側) から読む。
+ * ローカルヘッダの並び順や格納位置に依存しないため、大きなメディアを
+ * 前方に格納した Office 文書でも主パートを取りこぼさない。EOCD が
+ * 見つからない・構造が壊れている場合は空配列 (判定側は対象外に倒す)。
+ */
+function readZipEntryNames(bytes: Uint8Array): string[] {
+  if (bytes.length < 22) return [];
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // EOCD は末尾から最大で (コメント上限 64KiB + 固定長 22 バイト) の範囲にある。
+  const searchFloor = Math.max(0, bytes.length - (65_536 + 22));
+  let eocdOffset = -1;
+  for (let offset = bytes.length - 22; offset >= searchFloor; offset -= 1) {
+    if (view.getUint32(offset, true) === ZIP_EOCD_SIGNATURE) {
+      eocdOffset = offset;
+      break;
+    }
+  }
+  if (eocdOffset < 0) return [];
+  const entryCount = view.getUint16(eocdOffset + 10, true);
+  let offset = view.getUint32(eocdOffset + 16, true);
+  const names: string[] = [];
+  const scanCount = Math.min(entryCount, ZIP_MAX_ENTRIES);
+  for (let index = 0; index < scanCount; index += 1) {
+    if (offset + 46 > bytes.length) break;
+    if (view.getUint32(offset, true) !== ZIP_CENTRAL_DIRECTORY_SIGNATURE) break;
+    const nameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const nameStart = offset + 46;
+    if (nameStart + nameLength > bytes.length) break;
+    names.push(Buffer.from(bytes.subarray(nameStart, nameStart + nameLength)).toString('utf8'));
+    offset = nameStart + nameLength + extraLength + commentLength;
+  }
+  return names;
+}
+
+/**
+ * UTF-8 妥当性判定。先頭サンプルだけを fatal デコードすると、サンプル
+ * 境界で分断されたマルチバイト文字を不正と誤判定するため、デコーダの
+ * 状態を保持したまま全量を流し込み、実終端でのみ flush する。
+ */
+function isValidUtf8(bytes: Uint8Array): boolean {
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  const CHUNK_BYTES = 8192;
+  try {
+    for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
+      decoder.decode(bytes.subarray(offset, Math.min(offset + CHUNK_BYTES, bytes.length)), {
+        stream: true,
+      });
+    }
+    decoder.decode();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 転送対象形式のマジックバイト判定 (API 側の正本判定と同じ対象範囲:
  * 画像 / PDF / Office (docx/xlsx/pptx) / テキスト / 音声 / 動画)。
@@ -510,12 +582,14 @@ export function hasSupportedTicketAttachmentMagic(bytes: Uint8Array): boolean {
   if (asciiAt(bytes, 0, 'ID3')) return true;
   if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0) return true;
   if (startsWithBytes(bytes, [0x50, 0x4b, 0x03, 0x04])) {
-    // zip そのものは対象外。Office 文書だけを通す。
-    const head = Buffer.from(bytes.subarray(0, 65_536)).toString('latin1');
+    // zip そのものは対象外。Office 文書だけを通す。エントリ名は中央
+    // ディレクトリから引く (先頭だけを見ると、前方に大きなメディアを
+    // 格納した DOCX 等の主パートが範囲外になり取りこぼす)。
+    const entryNames = readZipEntryNames(bytes);
     return (
-      head.includes('word/document.xml') ||
-      head.includes('xl/workbook.xml') ||
-      head.includes('ppt/presentation.xml')
+      entryNames.includes('word/document.xml') ||
+      entryNames.includes('xl/workbook.xml') ||
+      entryNames.includes('ppt/presentation.xml')
     );
   }
   if (
@@ -528,12 +602,7 @@ export function hasSupportedTicketAttachmentMagic(bytes: Uint8Array): boolean {
   // テキスト (UTF-8 として読め、制御文字がほぼ無いもの) は対象。
   const sample = bytes.subarray(0, 8192);
   if (sample.includes(0)) return false;
-  try {
-    new TextDecoder('utf-8', { fatal: true }).decode(sample);
-    return true;
-  } catch {
-    return false;
-  }
+  return isValidUtf8(bytes);
 }
 
 /** 転送できなかった添付をメッセージ本文へ残す注記 (捏造しない: 理由をそのまま書く)。 */
@@ -574,29 +643,70 @@ export async function downloadTicketAttachmentBytes(
   if (!response.ok) return null;
   const declared = Number(response.headers.get('content-length') ?? '');
   if (Number.isFinite(declared) && declared > TICKET_ATTACHMENT_MAX_BYTES) return null;
-  const buffer = await response.arrayBuffer().catch(() => null);
-  if (!buffer || buffer.byteLength === 0 || buffer.byteLength > TICKET_ATTACHMENT_MAX_BYTES) {
+  // Content-Length が無い応答でも上限を守るため、読みながら累積バイト数を
+  // 数え、超過した時点で読み取りを中断する (全量取得後の判定では、超過分
+  // の帯域とバッファを消費してしまい上限の意味がない)。
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const buffer = await response.arrayBuffer().catch(() => null);
+    if (!buffer || buffer.byteLength === 0 || buffer.byteLength > TICKET_ATTACHMENT_MAX_BYTES) {
+      return null;
+    }
+    return new Uint8Array(buffer);
+  }
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    let done = false;
+    while (!done) {
+      const chunk = await reader.read();
+      done = chunk.done;
+      if (chunk.value) {
+        totalBytes += chunk.value.byteLength;
+        if (totalBytes > TICKET_ATTACHMENT_MAX_BYTES) {
+          await reader.cancel().catch(() => undefined);
+          return null;
+        }
+        chunks.push(chunk.value);
+      }
+    }
+  } catch {
     return null;
   }
-  return new Uint8Array(buffer);
+  if (totalBytes === 0) return null;
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 /**
  * 添付 upload (/v1/herta/tickets/attachments) の outbox payload。
- * sourceEventId はメッセージIDと内容ハッシュから決定的にし、同じ
- * 添付の再観測では同じ eventId (= Web 側の冪等キー) になる。
+ * sourceEventId はメッセージIDと Discord 添付 ID から決定的にし、同じ
+ * 添付の再観測では同じ eventId (= Web 側の冪等キー) になる。内容ハッシュ
+ * だけだと、同一メッセージ内の同一バイト添付 (別ファイル) が同じキーに
+ * 衝突して1件脱落するため、添付 ID を必ず含める。添付 ID が無い場合のみ
+ * 内容ハッシュで代替する。なお sourceEventId は Herta 内の outbox 一意
+ * キー専用で、Web 側へ送られる Event-Id は deriveTicketEventId が常に
+ * UUID 形式へ導出するため、この形式変更は Web 側の検証に触れない。
  * 転送形式は base64 JSON: 署名が body 全体の HMAC のため、multipart の
  * ような正規形の無い形式は契約 v1 の署名方式と整合しない。
  */
 export function buildTicketAttachmentPayload(input: {
   ticketId: string;
   discordMessageId: string;
+  attachmentId?: string | null;
   fileName: string;
   contentType?: string | null;
   bytes: Uint8Array;
 }): TicketOutboxPayload {
   const digest = createHash('sha256').update(input.bytes).digest('hex').slice(0, 16);
-  const sourceEventId = `ticket-attach:${input.discordMessageId}:${digest}`;
+  const sourceEventId = input.attachmentId
+    ? `ticket-attach:${input.discordMessageId}:${input.attachmentId}`
+    : `ticket-attach:${input.discordMessageId}:${digest}`;
   const body = JSON.stringify({
     ticketId: input.ticketId,
     discordMessageId: input.discordMessageId,

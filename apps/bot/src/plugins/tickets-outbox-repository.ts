@@ -10,7 +10,9 @@ const DUE_BATCH_LIMIT = 100;
 /**
  * payload を outbox へ冪等に積む。sourceEventId の一意制約で重複を弾くため、
  * 同じ Discord メッセージを再観測しても二重配送にはならない (初回分の
- * body が正として残る)。
+ * body が正として残る)。関連する payload 群 (メッセージ本文とその添付
+ * など) は1回の呼び出しで渡し、トランザクションで原子的に積む。片方だけ
+ * が残る部分状態を作らないため、呼び出し側で分割して積んではいけない。
  */
 export async function enqueueTicketPayloads(
   prisma: PrismaClient,
@@ -18,18 +20,20 @@ export async function enqueueTicketPayloads(
   payloads: readonly TicketOutboxPayload[],
 ): Promise<number> {
   if (payloads.length === 0) return 0;
-  const result = await prisma.ticketEventOutbox.createMany({
-    data: payloads.map((payload) => ({
-      sourceEventId: payload.sourceEventId,
-      eventId: payload.eventId,
-      guildId,
-      kind: payload.kind,
-      ticketId: payload.ticketId,
-      body: payload.body,
-    })),
-    skipDuplicates: true,
-  });
-  return result.count;
+  const [result] = await prisma.$transaction([
+    prisma.ticketEventOutbox.createMany({
+      data: payloads.map((payload) => ({
+        sourceEventId: payload.sourceEventId,
+        eventId: payload.eventId,
+        guildId,
+        kind: payload.kind,
+        ticketId: payload.ticketId,
+        body: payload.body,
+      })),
+      skipDuplicates: true,
+    }),
+  ]);
+  return result?.count ?? 0;
 }
 
 export interface TicketOutboxRow {

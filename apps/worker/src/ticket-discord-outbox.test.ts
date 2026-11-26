@@ -102,6 +102,37 @@ test('message_added の文面: 本文とマーカー、メンション無効', (
   assert.deepEqual(body.allowed_mentions, { parse: [] });
 });
 
+test('message_added の文面: 長い本文でも添付プレースホルダは切り詰めで脱落しない', () => {
+  const parsed = parseTicketOutboxPayload('message_added', {
+    ...MESSAGE_PAYLOAD,
+    body: 'あ'.repeat(4000),
+  });
+  assert.ok(parsed);
+  const longName = 'x'.repeat(200);
+  const placeholders = [
+    ticketAttachmentPlaceholder({
+      id: '1',
+      fileName: `${longName}-a.png`,
+      contentType: 'image/png',
+      sizeBytes: 10,
+      scanStatus: 'infected',
+    }),
+    ticketAttachmentPlaceholder({
+      id: '2',
+      fileName: `${longName}-b.png`,
+      contentType: 'image/png',
+      sizeBytes: 10,
+      scanStatus: 'infected',
+    }),
+  ];
+  const body = buildTicketDiscordMessage('11', parsed, placeholders);
+  const description = String(body.embeds[0]?.['description']);
+  assert.ok(description.length <= 4096);
+  for (const line of placeholders) {
+    assert.ok(description.includes(line), `プレースホルダが脱落している: ${line.slice(0, 40)}`);
+  }
+});
+
 test('status_changed の文面: 日本語ラベルで案内する', () => {
   const parsed = parseTicketOutboxPayload('status_changed', {
     ticketId: 'TK-ABCDEF012345',

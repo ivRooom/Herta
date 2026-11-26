@@ -243,7 +243,14 @@ export function buildTicketDiscordMessage(
   if (parsed.kind === 'message_added') {
     const { payload } = parsed;
     const authorLabel = payload.authorKind === 'staff' ? '運営' : '依頼者';
-    const description = [payload.body, ...placeholderLines].join('\n').slice(0, 4096);
+    // Embed 上限 (4096字) の切り詰めで添付プレースホルダが脱落すると、
+    // ファイルが届いていない理由が読めなくなる。プレースホルダ分を
+    // 先に予約し、本文側を詰める (短い本文は従来どおりそのまま)。
+    const placeholderSuffix = placeholderLines.length > 0 ? `\n${placeholderLines.join('\n')}` : '';
+    const description =
+      placeholderSuffix.length >= 4096
+        ? placeholderSuffix.slice(0, 4096)
+        : `${payload.body.slice(0, 4096 - placeholderSuffix.length)}${placeholderSuffix}`;
     return {
       embeds: [
         {

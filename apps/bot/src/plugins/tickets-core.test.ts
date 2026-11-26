@@ -165,7 +165,85 @@ describe('buildTicketMessageBody', () => {
     ]);
     expect(body.length).toBe(TICKET_BODY_MAX_LENGTH);
   });
+
+  it('長い本文でも注記は切り詰めで脱落しない (注記分を予約して本文を詰める)', () => {
+    const noteA = buildTicketAttachmentSkipNote('a.png', 'too_large');
+    const noteB = buildTicketAttachmentSkipNote('b.png', 'unsupported_format');
+    const body = buildTicketMessageBody('あ'.repeat(5000), [noteA, noteB]);
+    expect(body.length).toBe(TICKET_BODY_MAX_LENGTH);
+    expect(body).toContain(noteA);
+    expect(body.endsWith(noteB)).toBe(true);
+  });
 });
+
+/** 中央ディレクトリ付きの最小 ZIP (無圧縮) を組み立てるテスト用ヘルパー。 */
+function buildZipBytes(entries: Array<{ name: string; data: Uint8Array }>): Uint8Array {
+  const encoder = new TextEncoder();
+  const pushU16 = (arr: number[], value: number) => {
+    arr.push(value & 0xff, (value >> 8) & 0xff);
+  };
+  const pushU32 = (arr: number[], value: number) => {
+    arr.push(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff);
+  };
+  const parts: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const nameBytes = encoder.encode(entry.name);
+    const local: number[] = [];
+    pushU32(local, 0x04034b50);
+    pushU16(local, 20);
+    pushU16(local, 0);
+    pushU16(local, 0);
+    pushU16(local, 0);
+    pushU16(local, 0);
+    pushU32(local, 0);
+    pushU32(local, entry.data.length);
+    pushU32(local, entry.data.length);
+    pushU16(local, nameBytes.length);
+    pushU16(local, 0);
+    parts.push(new Uint8Array(local), nameBytes, entry.data);
+    const central: number[] = [];
+    pushU32(central, 0x02014b50);
+    pushU16(central, 20);
+    pushU16(central, 20);
+    pushU16(central, 0);
+    pushU16(central, 0);
+    pushU16(central, 0);
+    pushU16(central, 0);
+    pushU32(central, 0);
+    pushU32(central, entry.data.length);
+    pushU32(central, entry.data.length);
+    pushU16(central, nameBytes.length);
+    pushU16(central, 0);
+    pushU16(central, 0);
+    pushU16(central, 0);
+    pushU16(central, 0);
+    pushU32(central, 0);
+    pushU32(central, offset);
+    centrals.push(new Uint8Array(central), nameBytes);
+    offset += local.length + nameBytes.length + entry.data.length;
+  }
+  const cdOffset = offset;
+  const cdSize = centrals.reduce((sum, part) => sum + part.length, 0);
+  const eocd: number[] = [];
+  pushU32(eocd, 0x06054b50);
+  pushU16(eocd, 0);
+  pushU16(eocd, 0);
+  pushU16(eocd, entries.length);
+  pushU16(eocd, entries.length);
+  pushU32(eocd, cdSize);
+  pushU32(eocd, cdOffset);
+  pushU16(eocd, 0);
+  const all = [...parts, ...centrals, new Uint8Array(eocd)];
+  const out = new Uint8Array(all.reduce((sum, part) => sum + part.length, 0));
+  let position = 0;
+  for (const part of all) {
+    out.set(part, position);
+    position += part.length;
+  }
+  return out;
+}
 
 describe('planTicketAttachmentTransfers', () => {
   it('25MB超の申告サイズと11件目以降は転送対象から外す', () => {
@@ -202,6 +280,28 @@ describe('hasSupportedTicketAttachmentMagic', () => {
       hasSupportedTicketAttachmentMagic(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3])),
     ).toBe(false);
   });
+
+  it('大きなメディアを前方に格納した DOCX も中央ディレクトリで判定する', () => {
+    // word/document.xml のローカルヘッダが先頭 64KiB の外にある構成。
+    // 先頭走査だけの判定では取りこぼす。
+    const docx = buildZipBytes([
+      { name: 'word/media/image1.png', data: new Uint8Array(70_000) },
+      { name: 'word/document.xml', data: new TextEncoder().encode('<w:document/>') },
+    ]);
+    expect(hasSupportedTicketAttachmentMagic(docx)).toBe(true);
+    const plainZip = buildZipBytes([
+      { name: 'readme.txt', data: new TextEncoder().encode('hello') },
+    ]);
+    expect(hasSupportedTicketAttachmentMagic(plainZip)).toBe(false);
+  });
+
+  it('サンプル境界で分断されるマルチバイト文字を含むテキストを通す', () => {
+    // 'あ' は UTF-8 で3バイト。8192 バイトのサンプル境界が文字の途中に来る。
+    const text = 'あ'.repeat(3000);
+    expect(hasSupportedTicketAttachmentMagic(new TextEncoder().encode(text))).toBe(true);
+    // 不正な UTF-8 は引き続き落とす。
+    expect(hasSupportedTicketAttachmentMagic(new Uint8Array([0x61, 0xc3, 0x28, 0x62]))).toBe(false);
+  });
 });
 
 describe('buildTicketAttachmentPayload', () => {
@@ -228,6 +328,34 @@ describe('buildTicketAttachmentPayload', () => {
     expect(Buffer.from(parsed['contentBase64'] as string, 'base64')).toEqual(Buffer.from(bytes));
     expect(TICKET_ATTACHMENTS_PATH).toBe('/v1/herta/tickets/attachments');
   });
+
+  it('同一バイトでも添付 ID が違えば冪等キーが分かれ、同じ添付では一致する', () => {
+    const bytes = new Uint8Array([9, 9, 9]);
+    const base = {
+      ticketId: 'TK-0123456789AB',
+      discordMessageId: '555555555555555555',
+      bytes,
+    };
+    const first = buildTicketAttachmentPayload({
+      ...base,
+      fileName: 'before.txt',
+      attachmentId: '700000000000000001',
+    });
+    const second = buildTicketAttachmentPayload({
+      ...base,
+      fileName: 'after.txt',
+      attachmentId: '700000000000000002',
+    });
+    expect(first.sourceEventId).not.toBe(second.sourceEventId);
+    expect(first.eventId).not.toBe(second.eventId);
+    const replay = buildTicketAttachmentPayload({
+      ...base,
+      fileName: 'before.txt',
+      attachmentId: '700000000000000001',
+    });
+    expect(replay.sourceEventId).toBe(first.sourceEventId);
+    expect(replay.eventId).toBe(first.eventId);
+  });
 });
 
 describe('downloadTicketAttachmentBytes', () => {
@@ -253,6 +381,46 @@ describe('downloadTicketAttachmentBytes', () => {
         fetchImpl,
       ),
     ).resolves.toBeNull();
+  });
+
+  it('Content-Length が無い応答でも、上限を超えた時点で読み取りを中断する', async () => {
+    let pulls = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > 30) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+    });
+    const fetchImpl = (async () => new Response(stream, { status: 200 })) as typeof fetch;
+    await expect(
+      downloadTicketAttachmentBytes(
+        { name: 'big.bin', url: 'https://cdn.example.test/big' },
+        fetchImpl,
+      ),
+    ).resolves.toBeNull();
+    // 25MiB = 25 チャンク分を超えたところで打ち切る (全 30 チャンクを読み切らない)。
+    expect(pulls).toBeLessThan(30);
+  });
+
+  it('Content-Length が無い小さな応答は実体を返す', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('hello '));
+        controller.enqueue(new TextEncoder().encode('world'));
+        controller.close();
+      },
+    });
+    const fetchImpl = (async () => new Response(stream, { status: 200 })) as typeof fetch;
+    const bytes = await downloadTicketAttachmentBytes(
+      { name: 'a.txt', url: 'https://cdn.example.test/a' },
+      fetchImpl,
+    );
+    expect(bytes).not.toBeNull();
+    expect(new TextDecoder().decode(bytes!)).toBe('hello world');
   });
 });
 
