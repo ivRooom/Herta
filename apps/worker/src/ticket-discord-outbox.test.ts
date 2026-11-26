@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildTicketDiscordMessage,
   classifyDiscordPostStatus,
+  deriveTicketAttachmentEventId,
   fetchDiscordBotUserId,
   findDeliveredMessageId,
   normalizeTicketScanIntervalSeconds,
@@ -10,8 +11,10 @@ import {
   payloadDeclaresInternal,
   startTicketDiscordPollerRuntime,
   textContainsOutboxMarker,
+  ticketAttachmentPlaceholder,
   ticketOutboxMarker,
   type TicketDiscordOutboxStore,
+  type TicketOutboxRow,
 } from './ticket-discord-outbox.js';
 
 const BOT_USER_ID = '100000000000000001';
@@ -97,6 +100,37 @@ test('message_added の文面: 本文とマーカー、メンション無効', (
   assert.match(String(embed['title']), /運営/);
   assert.deepEqual(embed['footer'], { text: 'ticket-outbox:7' });
   assert.deepEqual(body.allowed_mentions, { parse: [] });
+});
+
+test('message_added の文面: 長い本文でも添付プレースホルダは切り詰めで脱落しない', () => {
+  const parsed = parseTicketOutboxPayload('message_added', {
+    ...MESSAGE_PAYLOAD,
+    body: 'あ'.repeat(4000),
+  });
+  assert.ok(parsed);
+  const longName = 'x'.repeat(200);
+  const placeholders = [
+    ticketAttachmentPlaceholder({
+      id: '1',
+      fileName: `${longName}-a.png`,
+      contentType: 'image/png',
+      sizeBytes: 10,
+      scanStatus: 'infected',
+    }),
+    ticketAttachmentPlaceholder({
+      id: '2',
+      fileName: `${longName}-b.png`,
+      contentType: 'image/png',
+      sizeBytes: 10,
+      scanStatus: 'infected',
+    }),
+  ];
+  const body = buildTicketDiscordMessage('11', parsed, placeholders);
+  const description = String(body.embeds[0]?.['description']);
+  assert.ok(description.length <= 4096);
+  for (const line of placeholders) {
+    assert.ok(description.includes(line), `プレースホルダが脱落している: ${line.slice(0, 40)}`);
+  }
 });
 
 test('status_changed の文面: 日本語ラベルで案内する', () => {
@@ -242,4 +276,182 @@ test('スキャン間隔の正規化 (既定60秒、15〜600秒)', () => {
   assert.equal(normalizeTicketScanIntervalSeconds(1), 15);
   assert.equal(normalizeTicketScanIntervalSeconds(9999), 600);
   assert.equal(normalizeTicketScanIntervalSeconds(Number.NaN), 60);
+});
+
+const ATTACHMENT_ID = '123e4567-e89b-42d3-a456-426614174000';
+const ATTACHMENT_PAYLOAD = {
+  ...MESSAGE_PAYLOAD,
+  attachments: [
+    {
+      id: ATTACHMENT_ID,
+      fileName: 'shot.png',
+      contentType: 'image/png',
+      sizeBytes: 12,
+      scanStatus: 'clean',
+    },
+    {
+      id: '123e4567-e89b-42d3-a456-426614174001',
+      fileName: 'evil.png',
+      contentType: 'image/png',
+      sizeBytes: 10,
+      scanStatus: 'infected',
+    },
+    {
+      id: 'not-a-uuid',
+      fileName: 'x.png',
+      contentType: 'image/png',
+      sizeBytes: 1,
+      scanStatus: 'clean',
+    },
+  ],
+};
+
+test('message_added payload の添付メタを検証して取り込む (不正な要素は落とす)', () => {
+  const parsed = parseTicketOutboxPayload('message_added', ATTACHMENT_PAYLOAD);
+  assert.equal(parsed?.kind, 'message_added');
+  if (parsed?.kind !== 'message_added') return;
+  assert.equal(parsed.payload.attachments?.length, 2);
+  assert.equal(parsed.payload.attachments?.[0]?.scanStatus, 'clean');
+  assert.equal(parsed.payload.attachments?.[1]?.scanStatus, 'infected');
+});
+
+test('clean 以外の添付プレースホルダ文', () => {
+  const base = {
+    id: ATTACHMENT_ID,
+    fileName: 'a.png',
+    contentType: 'image/png',
+    sizeBytes: 1,
+  } as const;
+  assert.match(ticketAttachmentPlaceholder({ ...base, scanStatus: 'pending' }), /スキャン中/);
+  assert.match(ticketAttachmentPlaceholder({ ...base, scanStatus: 'error' }), /スキャン中/);
+  assert.match(ticketAttachmentPlaceholder({ ...base, scanStatus: 'infected' }), /削除されました/);
+});
+
+test('添付 download の eventId は outbox と添付ごとに決定的', () => {
+  assert.equal(
+    deriveTicketAttachmentEventId('ticket-attachment-download:7:x'),
+    deriveTicketAttachmentEventId('ticket-attachment-download:7:x'),
+  );
+  assert.notEqual(
+    deriveTicketAttachmentEventId('ticket-attachment-download:7:x'),
+    deriveTicketAttachmentEventId('ticket-attachment-download:8:x'),
+  );
+});
+
+test('clean 添付は files 付きで投稿し、infected はプレースホルダになる (footer マーカー維持)', async () => {
+  const row: TicketOutboxRow = {
+    id: '7',
+    ticketId: 'TK-ABCDEF012345',
+    kind: 'message_added',
+    payload: ATTACHMENT_PAYLOAD,
+    payloadHash: 'hash',
+    attempts: 0,
+  };
+  let postedForm: FormData | null = null;
+  let ackedMessageId: string | null = null;
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    const target = String(url);
+    if (target.endsWith('/users/@me')) {
+      return new Response(JSON.stringify({ id: BOT_USER_ID }), { status: 200 });
+    }
+    if (target.includes('api.example.test')) {
+      assert.match(target, new RegExp(`/v1/herta/tickets/attachments/${ATTACHMENT_ID}$`));
+      const headers = new Headers(init?.headers);
+      assert.ok(headers.get('X-IVRM-Signature'));
+      assert.ok(headers.get('X-IVRM-Event-Id'));
+      return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { status: 200 });
+    }
+    if (target.includes(`/channels/${THREAD_ID}/messages`) && (init?.method ?? 'GET') === 'GET') {
+      return new Response(JSON.stringify([]), { status: 200 });
+    }
+    if (target.includes(`/channels/${THREAD_ID}/messages`)) {
+      postedForm = init?.body as FormData;
+      return new Response(JSON.stringify({ id: '300000000000000099' }), { status: 200 });
+    }
+    throw new Error(`unexpected fetch: ${target}`);
+  }) as typeof fetch;
+  const store: TicketDiscordOutboxStore = {
+    async claim() {
+      return [row];
+    },
+    async ackSent(_id, discordMessageId) {
+      ackedMessageId = discordMessageId;
+    },
+    async ackFailed() {
+      throw new Error('ackFailed must not be called');
+    },
+    async close() {},
+  };
+  const logger = { error() {}, warn() {}, info() {}, debug() {} };
+  const runtime = await startTicketDiscordPollerRuntime({
+    logger: logger as never,
+    store,
+    discordBotToken: 'token',
+    fetchImpl,
+    attachmentBridge: { apiBaseUrl: 'https://api.example.test', secret: 'bridge-secret' },
+  });
+  await runtime.close();
+  assert.equal(ackedMessageId, '300000000000000099');
+  assert.ok(postedForm);
+  const form = postedForm as FormData;
+  const payloadJson = JSON.parse(String(form.get('payload_json'))) as {
+    embeds: Array<{ description: string; footer: { text: string } }>;
+  };
+  assert.equal(payloadJson.embeds[0]?.footer.text, 'ticket-outbox:7');
+  assert.match(payloadJson.embeds[0]?.description ?? '', /削除されました/);
+  const file = form.get('files[0]');
+  assert.ok(file instanceof Blob);
+  assert.equal((file as Blob).size, 4);
+});
+
+test('ブリッジ未設定なら clean 添付もプレースホルダで送る (実体は送らない)', async () => {
+  const row: TicketOutboxRow = {
+    id: '8',
+    ticketId: 'TK-ABCDEF012345',
+    kind: 'message_added',
+    payload: {
+      ...MESSAGE_PAYLOAD,
+      attachments: [ATTACHMENT_PAYLOAD.attachments[0]],
+    },
+    payloadHash: 'hash',
+    attempts: 0,
+  };
+  let postedJson: { embeds: Array<{ description: string }> } | null = null;
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    const target = String(url);
+    if (target.endsWith('/users/@me')) {
+      return new Response(JSON.stringify({ id: BOT_USER_ID }), { status: 200 });
+    }
+    if (target.includes(`/channels/${THREAD_ID}/messages`) && (init?.method ?? 'GET') === 'GET') {
+      return new Response(JSON.stringify([]), { status: 200 });
+    }
+    if (target.includes(`/channels/${THREAD_ID}/messages`)) {
+      postedJson = JSON.parse(String(init?.body)) as {
+        embeds: Array<{ description: string }>;
+      };
+      return new Response(JSON.stringify({ id: '300000000000000098' }), { status: 200 });
+    }
+    throw new Error(`unexpected fetch: ${target}`);
+  }) as typeof fetch;
+  const store: TicketDiscordOutboxStore = {
+    async claim() {
+      return [row];
+    },
+    async ackSent() {},
+    async ackFailed() {
+      throw new Error('ackFailed must not be called');
+    },
+    async close() {},
+  };
+  const logger = { error() {}, warn() {}, info() {}, debug() {} };
+  const runtime = await startTicketDiscordPollerRuntime({
+    logger: logger as never,
+    store,
+    discordBotToken: 'token',
+    fetchImpl,
+  });
+  await runtime.close();
+  const posted = postedJson as { embeds: Array<{ description: string }> } | null;
+  assert.ok(posted);
+  assert.match(posted.embeds[0]?.description ?? '', /取得設定がないため/);
 });

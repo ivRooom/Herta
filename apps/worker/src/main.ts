@@ -306,6 +306,10 @@ async function main() {
         process.env['TICKET_DISCORD_POLLER_SCAN_INTERVAL_SECONDS'] ?? '',
         10,
       );
+      // 添付取得ブリッジ (第2段 (b)): bot と同じ env が揃う場合のみ有効。
+      // 欠ければ poller は添付をプレースホルダ表示に倒す (fail-closed)。
+      const ticketAttachmentApiBaseUrl = process.env['IVRM_WEB_API_BASE_URL']?.trim();
+      const ticketAttachmentSecret = process.env['HERTA_TICKET_SECRET']?.trim();
       ticketDiscordPollerRuntime = await startTicketDiscordPollerRuntime({
         logger,
         store: createTicketDiscordOutboxStore(ivrmServicesDatabaseUrl),
@@ -313,6 +317,13 @@ async function main() {
         scanIntervalSeconds: Number.isFinite(configuredTicketScanInterval)
           ? configuredTicketScanInterval
           : undefined,
+        attachmentBridge:
+          ticketAttachmentApiBaseUrl && ticketAttachmentSecret
+            ? {
+                apiBaseUrl: ticketAttachmentApiBaseUrl.replace(/\/+$/, ''),
+                secret: ticketAttachmentSecret,
+              }
+            : null,
       });
       logger.info('チケット配送Pollerを開始しました');
     } catch (error) {
