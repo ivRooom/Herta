@@ -25,7 +25,7 @@ import {
   buildTicketMessagePayload,
   buildTicketPanelEmbed,
   buildTicketThreadPayload,
-  downloadTicketAttachmentBytes,
+  downloadTicketAttachment,
   hasSupportedTicketAttachmentMagic,
   isTicketCategory,
   normalizeTicketsConfig,
@@ -34,8 +34,11 @@ import {
   sendTicketCreate,
   sendTicketOutboxPayload,
   ticketCategoryLabel,
+  TicketAttachmentByteBudget,
+  TicketAttachmentIntakeLimiter,
   TICKET_BODY_MAX_LENGTH,
   TICKET_SUBJECT_MAX_LENGTH,
+  type TicketAttachmentDownloadResult,
   type TicketAttachmentRef,
   type TicketCategory,
   type TicketEmbed,
@@ -59,6 +62,12 @@ import {
 const EPHEMERAL_FLAG = 64;
 const CUSTOM_ID_PREFIX = 'herta:tickets:v1:';
 const WORKER_INTERVAL_MS = 30_000;
+/**
+ * 添付取込の同時実行制限。取込中は実体と base64 をメモリに保持する
+ * ため、大きなメッセージが重なっても保持量を bound する (上限本数と
+ * 1メッセージ合計上限の根拠は tickets-core 側の定数を参照)。
+ */
+const ticketAttachmentIntakeLimiter = new TicketAttachmentIntakeLimiter();
 const workerTimers = new Map<string, ReturnType<typeof setInterval>>();
 const workerRunning = new Set<string>();
 
@@ -567,26 +576,42 @@ async function handleTicketMessage(
     buildTicketAttachmentSkipNote(entry.name, entry.reason),
   );
   const attachmentPayloads: TicketOutboxPayload[] = [];
-  for (const file of plan.transfer) {
-    const bytes = await downloadTicketAttachmentBytes(file).catch(() => null);
-    if (!bytes) {
-      notes.push(buildTicketAttachmentSkipNote(file.name, 'download_failed'));
-      continue;
-    }
-    if (!hasSupportedTicketAttachmentMagic(bytes)) {
-      notes.push(buildTicketAttachmentSkipNote(file.name, 'unsupported_format'));
-      continue;
-    }
-    attachmentPayloads.push(
-      buildTicketAttachmentPayload({
-        ticketId: link.ticketId,
-        discordMessageId: message.id,
-        attachmentId: file.id ?? null,
-        fileName: file.name,
-        contentType: file.contentType ?? null,
-        bytes,
-      }),
-    );
+  if (plan.transfer.length > 0) {
+    // 取込中は実体と base64 を保持するため、同時実行数を制限し、
+    // 1メッセージ分の保持量も実バイト数の予算で bound する。予算を
+    // 超えた分は payload 化せずスキップ注記に回す (下の enqueue の
+    // 原子性は維持される)。
+    await ticketAttachmentIntakeLimiter.run(async () => {
+      const budget = new TicketAttachmentByteBudget();
+      for (const file of plan.transfer) {
+        const downloaded: TicketAttachmentDownloadResult = await downloadTicketAttachment(
+          file,
+        ).catch(() => ({ ok: false, reason: 'download_failed' }) as const);
+        if (!downloaded.ok) {
+          notes.push(buildTicketAttachmentSkipNote(file.name, downloaded.reason));
+          continue;
+        }
+        const bytes = downloaded.bytes;
+        if (!hasSupportedTicketAttachmentMagic(bytes)) {
+          notes.push(buildTicketAttachmentSkipNote(file.name, 'unsupported_format'));
+          continue;
+        }
+        if (!budget.tryReserve(bytes.byteLength)) {
+          notes.push(buildTicketAttachmentSkipNote(file.name, 'message_too_large'));
+          continue;
+        }
+        attachmentPayloads.push(
+          buildTicketAttachmentPayload({
+            ticketId: link.ticketId,
+            discordMessageId: message.id,
+            attachmentId: file.id ?? null,
+            fileName: file.name,
+            contentType: file.contentType ?? null,
+            bytes,
+          }),
+        );
+      }
+    });
   }
 
   const hasText = (message.content ?? '').trim().length > 0;
@@ -602,7 +627,9 @@ async function handleTicketMessage(
   // メッセージ本体を先頭に、添付をその後ろに続けて、1回の enqueue で
   // 原子的に積む (Web 側で discordMessageId からメッセージへ紐付けられる
   // 順序を保つ)。別々に積むと、片方の失敗で「添付のない本文」や
-  // 「本文のない添付」が残る部分状態が生じる。
+  // 「本文のない添付」が残る部分状態が生じる。再観測された場合は
+  // enqueue 側のポリシーでバッチ一式が no-op になり、初回に確定した
+  // 本文 (スキップ注記を含む) と添付の組がそのまま正として残る。
   await enqueueTicketPayloads(context.prisma, message.guildId, [
     buildTicketMessagePayload({
       ticketId: link.ticketId,

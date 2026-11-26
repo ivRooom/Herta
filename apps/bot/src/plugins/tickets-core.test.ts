@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   buildTicketActionEmbed,
@@ -15,7 +16,7 @@ import {
   buildTicketThreadPayload,
   classifyTicketResponse,
   deriveTicketEventId,
-  downloadTicketAttachmentBytes,
+  downloadTicketAttachment,
   hasSupportedTicketAttachmentMagic,
   isTicketCategory,
   normalizeTicketsConfig,
@@ -24,7 +25,10 @@ import {
   ticketCategoryColor,
   ticketCategoryLabel,
   ticketRetryDelayMs,
+  TicketAttachmentByteBudget,
+  TicketAttachmentIntakeLimiter,
   TICKET_ATTACHMENT_MAX_BYTES,
+  TICKET_ATTACHMENT_MESSAGE_MAX_BYTES,
   TICKET_ATTACHMENTS_PATH,
   TICKET_BODY_MAX_LENGTH,
   TICKET_CATEGORY_COLORS,
@@ -176,8 +180,10 @@ describe('buildTicketMessageBody', () => {
   });
 });
 
-/** 中央ディレクトリ付きの最小 ZIP (無圧縮) を組み立てるテスト用ヘルパー。 */
-function buildZipBytes(entries: Array<{ name: string; data: Uint8Array }>): Uint8Array {
+/** 中央ディレクトリ付きの最小 ZIP を組み立てるテスト用ヘルパー (deflate 指定も可)。 */
+function buildZipBytes(
+  entries: Array<{ name: string; data: Uint8Array; deflate?: boolean }>,
+): Uint8Array {
   const encoder = new TextEncoder();
   const pushU16 = (arr: number[], value: number) => {
     arr.push(value & 0xff, (value >> 8) & 0xff);
@@ -190,29 +196,31 @@ function buildZipBytes(entries: Array<{ name: string; data: Uint8Array }>): Uint
   let offset = 0;
   for (const entry of entries) {
     const nameBytes = encoder.encode(entry.name);
+    const stored = entry.deflate ? new Uint8Array(deflateRawSync(entry.data)) : entry.data;
+    const method = entry.deflate ? 8 : 0;
     const local: number[] = [];
     pushU32(local, 0x04034b50);
     pushU16(local, 20);
     pushU16(local, 0);
-    pushU16(local, 0);
+    pushU16(local, method);
     pushU16(local, 0);
     pushU16(local, 0);
     pushU32(local, 0);
-    pushU32(local, entry.data.length);
+    pushU32(local, stored.length);
     pushU32(local, entry.data.length);
     pushU16(local, nameBytes.length);
     pushU16(local, 0);
-    parts.push(new Uint8Array(local), nameBytes, entry.data);
+    parts.push(new Uint8Array(local), nameBytes, stored);
     const central: number[] = [];
     pushU32(central, 0x02014b50);
     pushU16(central, 20);
     pushU16(central, 20);
     pushU16(central, 0);
-    pushU16(central, 0);
+    pushU16(central, method);
     pushU16(central, 0);
     pushU16(central, 0);
     pushU32(central, 0);
-    pushU32(central, entry.data.length);
+    pushU32(central, stored.length);
     pushU32(central, entry.data.length);
     pushU16(central, nameBytes.length);
     pushU16(central, 0);
@@ -222,7 +230,7 @@ function buildZipBytes(entries: Array<{ name: string; data: Uint8Array }>): Uint
     pushU32(central, 0);
     pushU32(central, offset);
     centrals.push(new Uint8Array(central), nameBytes);
-    offset += local.length + nameBytes.length + entry.data.length;
+    offset += local.length + nameBytes.length + stored.length;
   }
   const cdOffset = offset;
   const cdSize = centrals.reduce((sum, part) => sum + part.length, 0);
@@ -261,6 +269,21 @@ describe('planTicketAttachmentTransfers', () => {
       { name: 'f11.png', reason: 'too_many' },
     ]);
   });
+
+  it('申告サイズの合計が1メッセージ上限を超える分は message_too_large で落とす', () => {
+    const twentyMiB = 20 * 1024 * 1024;
+    const files = [0, 1, 2].map((index) => ({
+      name: `big${index}.png`,
+      url: `https://cdn.example.test/${index}`,
+      size: twentyMiB,
+    }));
+    const plan = planTicketAttachmentTransfers(files);
+    // 20MiB × 2 = 40MiB は上限 (50MiB) 内、3件目で超える。
+    expect(plan.transfer.map((file) => file.name)).toEqual(['big0.png', 'big1.png']);
+    expect(plan.skipped).toEqual([{ name: 'big2.png', reason: 'message_too_large' }]);
+    expect(TICKET_ATTACHMENT_MESSAGE_MAX_BYTES).toBe(50 * 1024 * 1024);
+    expect(buildTicketAttachmentSkipNote('big2.png', 'message_too_large')).toContain('50MB');
+  });
 });
 
 describe('hasSupportedTicketAttachmentMagic', () => {
@@ -283,8 +306,21 @@ describe('hasSupportedTicketAttachmentMagic', () => {
 
   it('大きなメディアを前方に格納した DOCX も中央ディレクトリで判定する', () => {
     // word/document.xml のローカルヘッダが先頭 64KiB の外にある構成。
-    // 先頭走査だけの判定では取りこぼす。
+    // 先頭走査だけの判定では取りこぼす。[Content_Types].xml は実際の
+    // DOCX と同様に deflate 圧縮して格納する。
     const docx = buildZipBytes([
+      {
+        name: '[Content_Types].xml',
+        data: new TextEncoder().encode(
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+            '<Default Extension="xml" ContentType="application/xml"/>' +
+            '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+            '</Types>',
+        ),
+        deflate: true,
+      },
       { name: 'word/media/image1.png', data: new Uint8Array(70_000) },
       { name: 'word/document.xml', data: new TextEncoder().encode('<w:document/>') },
     ]);
@@ -293,6 +329,49 @@ describe('hasSupportedTicketAttachmentMagic', () => {
       { name: 'readme.txt', data: new TextEncoder().encode('hello') },
     ]);
     expect(hasSupportedTicketAttachmentMagic(plainZip)).toBe(false);
+  });
+
+  it('主パートのエントリ名だけを持つ通常 ZIP は Office と誤認しない', () => {
+    // 展開したファイルを寄せ集めた ZIP: word/document.xml はあるが、
+    // パッケージのメタデータ ([Content_Types].xml) が無い。
+    const noMetadata = buildZipBytes([
+      { name: 'word/document.xml', data: new TextEncoder().encode('<w:document/>') },
+    ]);
+    expect(hasSupportedTicketAttachmentMagic(noMetadata)).toBe(false);
+    // [Content_Types].xml があっても主パートの Override 宣言が無ければ対象外。
+    const noOverride = buildZipBytes([
+      {
+        name: '[Content_Types].xml',
+        data: new TextEncoder().encode(
+          '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+            '<Default Extension="xml" ContentType="application/xml"/>' +
+            '</Types>',
+        ),
+      },
+      { name: 'word/document.xml', data: new TextEncoder().encode('<w:document/>') },
+    ]);
+    expect(hasSupportedTicketAttachmentMagic(noOverride)).toBe(false);
+  });
+
+  it('主パートが1025件目以降にある XLSX も中央ディレクトリの範囲で判定する', () => {
+    // 件数上限で走査を止めると主パートに届かない構成。
+    const fillers = Array.from({ length: 1030 }, (_, index) => ({
+      name: `xl/media/filler${index}.bin`,
+      data: new Uint8Array(0),
+    }));
+    const xlsx = buildZipBytes([
+      {
+        name: '[Content_Types].xml',
+        data: new TextEncoder().encode(
+          '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+            '</Types>',
+        ),
+      },
+      ...fillers,
+      { name: 'xl/workbook.xml', data: new TextEncoder().encode('<workbook/>') },
+    ]);
+    expect(hasSupportedTicketAttachmentMagic(xlsx)).toBe(true);
   });
 
   it('サンプル境界で分断されるマルチバイト文字を含むテキストを通す', () => {
@@ -358,32 +437,55 @@ describe('buildTicketAttachmentPayload', () => {
   });
 });
 
-describe('downloadTicketAttachmentBytes', () => {
-  it('上限超過の応答は null に倒す', async () => {
+describe('downloadTicketAttachment', () => {
+  it('宣言サイズが上限超過の応答は too_large とし、body を cancel する', async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(10));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
     const fetchImpl = (async () =>
-      new Response(new Uint8Array(10), {
+      new Response(stream, {
         status: 200,
         headers: { 'content-length': String(TICKET_ATTACHMENT_MAX_BYTES + 1) },
       })) as typeof fetch;
     await expect(
-      downloadTicketAttachmentBytes(
-        { name: 'a.png', url: 'https://cdn.example.test/a' },
-        fetchImpl,
-      ),
-    ).resolves.toBeNull();
+      downloadTicketAttachment({ name: 'a.png', url: 'https://cdn.example.test/a' }, fetchImpl),
+    ).resolves.toEqual({ ok: false, reason: 'too_large' });
+    expect(cancelled).toBe(true);
   });
 
-  it('HTTP エラーは null に倒す', async () => {
-    const fetchImpl = (async () => new Response(null, { status: 404 })) as typeof fetch;
+  it('HTTP エラーは download_failed とし、body を cancel する', async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(10));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const fetchImpl = (async () => new Response(stream, { status: 404 })) as typeof fetch;
     await expect(
-      downloadTicketAttachmentBytes(
-        { name: 'a.png', url: 'https://cdn.example.test/a' },
-        fetchImpl,
-      ),
-    ).resolves.toBeNull();
+      downloadTicketAttachment({ name: 'a.png', url: 'https://cdn.example.test/a' }, fetchImpl),
+    ).resolves.toEqual({ ok: false, reason: 'download_failed' });
+    expect(cancelled).toBe(true);
   });
 
-  it('Content-Length が無い応答でも、上限を超えた時点で読み取りを中断する', async () => {
+  it('通信失敗は download_failed に倒す', async () => {
+    const fetchImpl = (async () => {
+      throw new Error('network down');
+    }) as unknown as typeof fetch;
+    await expect(
+      downloadTicketAttachment({ name: 'a.png', url: 'https://cdn.example.test/a' }, fetchImpl),
+    ).resolves.toEqual({ ok: false, reason: 'download_failed' });
+  });
+
+  it('Content-Length が無い応答でも、上限を超えた時点で読み取りを中断し too_large を返す', async () => {
     let pulls = 0;
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {
@@ -397,11 +499,8 @@ describe('downloadTicketAttachmentBytes', () => {
     });
     const fetchImpl = (async () => new Response(stream, { status: 200 })) as typeof fetch;
     await expect(
-      downloadTicketAttachmentBytes(
-        { name: 'big.bin', url: 'https://cdn.example.test/big' },
-        fetchImpl,
-      ),
-    ).resolves.toBeNull();
+      downloadTicketAttachment({ name: 'big.bin', url: 'https://cdn.example.test/big' }, fetchImpl),
+    ).resolves.toEqual({ ok: false, reason: 'too_large' });
     // 25MiB = 25 チャンク分を超えたところで打ち切る (全 30 チャンクを読み切らない)。
     expect(pulls).toBeLessThan(30);
   });
@@ -415,12 +514,59 @@ describe('downloadTicketAttachmentBytes', () => {
       },
     });
     const fetchImpl = (async () => new Response(stream, { status: 200 })) as typeof fetch;
-    const bytes = await downloadTicketAttachmentBytes(
+    const result = await downloadTicketAttachment(
       { name: 'a.txt', url: 'https://cdn.example.test/a' },
       fetchImpl,
     );
-    expect(bytes).not.toBeNull();
-    expect(new TextDecoder().decode(bytes!)).toBe('hello world');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(new TextDecoder().decode(result.bytes)).toBe('hello world');
+  });
+});
+
+describe('TicketAttachmentByteBudget', () => {
+  it('合計上限の範囲内だけ予約でき、失敗した予約は消費しない', () => {
+    const budget = new TicketAttachmentByteBudget(100);
+    expect(budget.tryReserve(60)).toBe(true);
+    expect(budget.tryReserve(41)).toBe(false);
+    expect(budget.tryReserve(40)).toBe(true);
+    expect(budget.tryReserve(1)).toBe(false);
+  });
+
+  it('既定の上限は1メッセージ合計上限と一致する', () => {
+    const budget = new TicketAttachmentByteBudget();
+    expect(budget.tryReserve(TICKET_ATTACHMENT_MESSAGE_MAX_BYTES)).toBe(true);
+    expect(budget.tryReserve(1)).toBe(false);
+  });
+});
+
+describe('TicketAttachmentIntakeLimiter', () => {
+  it('同時実行数が上限を超えず、全タスクが完了する', async () => {
+    const limiter = new TicketAttachmentIntakeLimiter(2);
+    let active = 0;
+    let maxActive = 0;
+    let completed = 0;
+    const tasks = Array.from({ length: 6 }, () =>
+      limiter.run(async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+        completed += 1;
+      }),
+    );
+    await Promise.all(tasks);
+    expect(maxActive).toBe(2);
+    expect(completed).toBe(6);
+  });
+
+  it('タスクが失敗してもスロットを解放し、後続が進む', async () => {
+    const limiter = new TicketAttachmentIntakeLimiter(1);
+    await expect(
+      limiter.run(async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    await expect(limiter.run(async () => 'ok')).resolves.toBe('ok');
   });
 });
 
