@@ -296,7 +296,7 @@ test('通知本文の段階表示は rank で行う (#1918)', () => {
   assert.equal(beginnerEmbed.color, 0x4ade80);
   assert.equal(beginnerEmbed.fields[0]?.value, 'ビギナー');
 });
-test('ランク表は rank 7 段階を持ち、未知の値は汎用表示に落ちる (#1918)', () => {
+test('ランク表は rank 8 段階を持ち、未知の値は汎用表示に落ちる (#1918 / #1943)', () => {
   assert.deepEqual(rankPresentation('master'), { label: 'マスター', emoji: '💠', color: 0xa78bfa });
   assert.deepEqual(rankPresentation('diamond'), {
     label: 'ダイヤモンド',
@@ -315,9 +315,16 @@ test('ランク表は rank 7 段階を持ち、未知の値は汎用表示に落
     emoji: '🌱',
     color: 0x4ade80,
   });
-  // 旧ティア名 platinum は表に無く、汎用表示に落ちる。
+  // platinum は 8 段化 (#1943) で実在の段階になった
+  // (旧ティア名の互換表示ではない)。
   assert.deepEqual(rankPresentation('platinum'), {
-    label: 'platinum',
+    label: 'プラチナ',
+    emoji: '💍',
+    color: 0x5eead4,
+  });
+  // 未知の値は汎用表示に落ちる。
+  assert.deepEqual(rankPresentation('rainbow'), {
+    label: 'rainbow',
     emoji: '🏆',
     color: 0x5865f2,
   });
@@ -436,13 +443,18 @@ test('カード取得が null や例外でも従来の JSON 投稿にフォー�
   }
 });
 
-test('isDiscordRoutedRank: 既定 (master) では master 以上だけ Discord 行き', () => {
-  assert.equal(isDiscordRoutedRank('bronze', 'master'), false);
-  assert.equal(isDiscordRoutedRank('silver', 'master'), false);
-  assert.equal(isDiscordRoutedRank('gold', 'master'), false);
+test('isDiscordRoutedRank: 下限 platinum では platinum 以上だけ Discord 行き (#1943)', () => {
+  // #1589 以来の下限 (旧 master 以上) は 8 段化後は platinum。
+  assert.equal(isDiscordRoutedRank('bronze', 'platinum'), false);
+  assert.equal(isDiscordRoutedRank('silver', 'platinum'), false);
+  assert.equal(isDiscordRoutedRank('gold', 'platinum'), false);
+  assert.equal(isDiscordRoutedRank('platinum', 'platinum'), true);
+  assert.equal(isDiscordRoutedRank('diamond', 'platinum'), true);
+  assert.equal(isDiscordRoutedRank('master', 'platinum'), true);
+  assert.equal(isDiscordRoutedRank('legend', 'platinum'), true);
+  // 新 master は diamond より上: 下限 master では diamond は届かない。
+  assert.equal(isDiscordRoutedRank('diamond', 'master'), false);
   assert.equal(isDiscordRoutedRank('master', 'master'), true);
-  assert.equal(isDiscordRoutedRank('diamond', 'master'), true);
-  assert.equal(isDiscordRoutedRank('legend', 'master'), true);
 });
 
 test('isDiscordRoutedRank: 最低ランク設定に従う', () => {
@@ -453,10 +465,13 @@ test('isDiscordRoutedRank: 最低ランク設定に従う', () => {
   assert.equal(isDiscordRoutedRank('bronze', 'bronze'), true);
 });
 
-test('isDiscordRoutedRank: beginner は最下段で、既存の順序は不変 (#1005)', () => {
+test('isDiscordRoutedRank: beginner は最下段、platinum と master の順序 (#1005 / #1943)', () => {
   assert.equal(ACHIEVEMENT_RANK_ORDER['beginner'], -1);
   assert.equal(ACHIEVEMENT_RANK_ORDER['bronze'], 0);
-  assert.equal(ACHIEVEMENT_RANK_ORDER['legend'], 5);
+  assert.equal(ACHIEVEMENT_RANK_ORDER['platinum'], 3);
+  assert.equal(ACHIEVEMENT_RANK_ORDER['diamond'], 4);
+  assert.equal(ACHIEVEMENT_RANK_ORDER['master'], 5);
+  assert.equal(ACHIEVEMENT_RANK_ORDER['legend'], 6);
   assert.equal(isDiscordRoutedRank('beginner', 'master'), false);
   assert.equal(isDiscordRoutedRank('beginner', 'bronze'), false);
   assert.equal(isDiscordRoutedRank('beginner', 'beginner'), true);
@@ -466,8 +481,8 @@ test('isDiscordRoutedRank: beginner は最下段で、既存の順序は不変 (
   assert.equal(isDiscordRoutedRank('unknown-value', 'beginner'), false);
 });
 
-test('isDiscordRoutedRank: 未知・未設定は安全側 (未知ランクは送らない、未設定は master 扱い)', () => {
-  assert.equal(isDiscordRoutedRank('platinum', 'master'), false);
+test('isDiscordRoutedRank: 未知・未設定は安全側 (未知ランクは送らない、未設定は platinum 扱い)', () => {
+  assert.equal(isDiscordRoutedRank('rainbow', 'master'), false);
   assert.equal(isDiscordRoutedRank(null, 'master'), false);
   assert.equal(isDiscordRoutedRank(undefined, 'master'), false);
   assert.equal(isDiscordRoutedRank('gold', null), false);
