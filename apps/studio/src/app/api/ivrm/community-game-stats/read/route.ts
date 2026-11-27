@@ -1,16 +1,24 @@
 import { prisma } from '@/lib/db';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import {
   authorizeCommunityGameStatsRead,
   buildCommunityMatrix,
   buildCommunityMomentum,
   buildCommunityWeekdaySeconds,
+  COMMUNITY_CHANNEL_BREAKDOWN_LIMIT,
   COMMUNITY_GAME_STATS_GAMES_LIMIT,
   COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT,
   formatCommunityGameEarliestDate,
   projectCommunityActivityMessageRankingRow,
   projectCommunityActivityTotals,
   projectCommunityActivityUserTotals,
+  projectCommunityActivityUserTotalsV4,
   projectCommunityActivityVoiceRankingRow,
+  projectCommunityChannelMessageRow,
+  projectCommunityChannelName,
+  projectCommunityChannelVoiceRow,
+  projectCommunityCharUnitsRankingRow,
+  projectCommunityCharUnitsTotalsRow,
   projectCommunityGameDailyPointRow,
   projectCommunityGameDetailRow,
   projectCommunityGamePlayerRow,
@@ -30,7 +38,9 @@ import {
   type CommunityActivityMessageRankingItem,
   type CommunityActivityTotals,
   type CommunityActivityUserTotals,
+  type CommunityActivityUserTotalsV4,
   type CommunityActivityVoiceRankingItem,
+  type CommunityChannelsOverview,
   type CommunityGameDetail,
   type CommunityGameStatsInput,
   type CommunityGameViewer,
@@ -145,6 +155,133 @@ async function readUserActivity(
     return projectCommunityActivityUserTotals(rows);
   } catch (error) {
     console.error('community_activity_read_failed', error);
+    return null;
+  }
+}
+/**
+ * v4 user activity (S6, #1054): the v2 read plus the user's
+ * message_char_units total, projected by the separate v4
+ * projection so the v2/v3 activity shape stays untouched.
+ */
+async function readUserActivityV4(
+  input: CommunityGameStatsInput,
+): Promise<CommunityActivityUserTotalsV4 | null> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ metric: string; total: bigint }>>`
+      SELECT metric, SUM(value)::bigint AS total
+      FROM community_activity_daily
+      WHERE guild_id = ${input.guildId} AND user_id = ${input.discordUserId}
+        AND metric IN ('voice_seconds', 'messages', 'online_seconds', 'message_char_units')
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY metric`;
+    return projectCommunityActivityUserTotalsV4(rows);
+  } catch (error) {
+    console.error('community_activity_read_failed', error);
+    return null;
+  }
+}
+/**
+ * v4 overview channels section (S6, #1054): the per-channel
+ * breakdowns from community_activity_channel_daily (voice
+ * stay and message counts, top 25 each) plus the
+ * message_char_units totals and member ranking from
+ * community_activity_daily. Same fail-soft and casting rules
+ * as the other sections. Channel names are not stored in
+ * the database: they are resolved from the bot's guild
+ * options (the same source the Studio community dashboard
+ * uses), and a channel that no longer resolves — deleted,
+ * or the bot unreachable — keeps name: null rather than an
+ * invented label.
+ */
+async function readOverviewChannels(
+  input: CommunityGameStatsInput,
+): Promise<CommunityChannelsOverview | null> {
+  try {
+    const recordedRows = await prisma.$queryRaw<Array<{ recordedFrom: Date | string | null }>>`
+      SELECT MIN(activity_date) AS "recordedFrom" FROM community_activity_channel_daily
+      WHERE guild_id = ${input.guildId}`;
+    const voiceRows = await prisma.$queryRaw<
+      Array<{ channelId: string; totalSeconds: bigint; memberCount: number }>
+    >`SELECT channel_id AS "channelId", SUM(value)::bigint AS "totalSeconds",
+        COUNT(DISTINCT user_id)::int AS "memberCount"
+      FROM community_activity_channel_daily
+      WHERE guild_id = ${input.guildId} AND metric = 'voice_seconds'
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY channel_id
+      ORDER BY SUM(value) DESC, channel_id ASC
+      LIMIT ${COMMUNITY_CHANNEL_BREAKDOWN_LIMIT}`;
+    const messageRows = await prisma.$queryRaw<
+      Array<{ channelId: string; totalCount: bigint; memberCount: number }>
+    >`SELECT channel_id AS "channelId", SUM(value)::bigint AS "totalCount",
+        COUNT(DISTINCT user_id)::int AS "memberCount"
+      FROM community_activity_channel_daily
+      WHERE guild_id = ${input.guildId} AND metric = 'messages'
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY channel_id
+      ORDER BY SUM(value) DESC, channel_id ASC
+      LIMIT ${COMMUNITY_CHANNEL_BREAKDOWN_LIMIT}`;
+    const charTotalsRows = await prisma.$queryRaw<
+      Array<{ totalUnits: bigint | null; memberCount: number }>
+    >`SELECT SUM(value)::bigint AS "totalUnits",
+        COUNT(DISTINCT user_id)::int AS "memberCount"
+      FROM community_activity_daily
+      WHERE guild_id = ${input.guildId} AND metric = 'message_char_units'
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date`;
+    const charRows = await prisma.$queryRaw<
+      Array<{ discordUserId: string; totalUnits: bigint }>
+    >`SELECT user_id AS "discordUserId", SUM(value)::bigint AS "totalUnits"
+      FROM community_activity_daily
+      WHERE guild_id = ${input.guildId} AND metric = 'message_char_units'
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY user_id
+      ORDER BY SUM(value) DESC, user_id ASC
+      LIMIT ${input.limit} OFFSET ${input.offset}`;
+    const charCounts = await prisma.$queryRaw<Array<{ total: number }>>`
+      SELECT COUNT(*)::int AS total FROM (
+        SELECT user_id FROM community_activity_daily
+        WHERE guild_id = ${input.guildId} AND metric = 'message_char_units'
+          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+        GROUP BY user_id) ranked_users`;
+    const voice = voiceRows.map((row) => projectCommunityChannelVoiceRow(row));
+    const messages = messageRows.map((row) => projectCommunityChannelMessageRow(row));
+    let nameById = new Map<string, string>();
+    if (voice.length + messages.length > 0) {
+      try {
+        const options = await getGuildConfigurationOptionsCached(input.guildId);
+        nameById = new Map((options?.channels ?? []).map((channel) => [channel.id, channel.name]));
+      } catch {
+        // Names degrade to null; the section itself stands.
+      }
+    }
+    const charTotal = charCounts[0]?.total ?? 0;
+    return {
+      recordedFrom: formatCommunityGameEarliestDate(recordedRows[0]?.recordedFrom),
+      voiceChannels: voice.map((item) => ({
+        ...item,
+        name: projectCommunityChannelName(nameById.get(item.channelId)),
+      })),
+      messageChannels: messages.map((item) => ({
+        ...item,
+        name: projectCommunityChannelName(nameById.get(item.channelId)),
+      })),
+      charUnits: {
+        ...projectCommunityCharUnitsTotalsRow({
+          totalUnits: charTotalsRows[0]?.totalUnits ?? 0n,
+          memberCount: charTotalsRows[0]?.memberCount ?? 0,
+        }),
+        ranking: {
+          items: charRows.map((row) => projectCommunityCharUnitsRankingRow(row)),
+          pagination: {
+            limit: input.limit,
+            offset: input.offset,
+            total: charTotal,
+            hasNext: input.offset + charRows.length < charTotal,
+          },
+        },
+      },
+    };
+  } catch (error) {
+    console.error('community_channels_read_failed', error);
     return null;
   }
 }
@@ -448,8 +585,17 @@ export async function POST(request: Request) {
           totalSeconds: toCommunityGameSeconds(totals[0]?.totalSeconds ?? 0n),
           games: rows.map((row) => projectCommunityUserGameRow(row)),
         },
-        ...(input.version >= 2 ? { activity: await readUserActivity(input) } : {}),
-        ...(input.version === 3 ? { insights: await readUserInsights(input) } : {}),
+        ...(input.version >= 2
+          ? {
+              activity:
+                input.version === 4
+                  ? await readUserActivityV4(input)
+                  : await readUserActivity(input),
+            }
+          : {}),
+        ...(input.version === 3 || input.version === 4
+          ? { insights: await readUserInsights(input) }
+          : {}),
       });
     }
     const gameRows = await prisma.$queryRaw<
@@ -503,7 +649,10 @@ export async function POST(request: Request) {
         },
       },
       ...(input.version >= 2 ? { activity: await readOverviewActivity(input) } : {}),
-      ...(input.version === 3 ? { insights: await readOverviewInsights(input) } : {}),
+      ...(input.version === 3 || input.version === 4
+        ? { insights: await readOverviewInsights(input) }
+        : {}),
+      ...(input.version === 4 ? { channels: await readOverviewChannels(input) } : {}),
     });
   } catch (error) {
     console.error('community_game_stats_read_failed', error);
