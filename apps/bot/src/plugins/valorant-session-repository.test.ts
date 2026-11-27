@@ -32,6 +32,13 @@ describe('VALORANT session custom IDs', () => {
     expect(parseValorantSessionAction(prefix + 'add-INVALID')).toBeNull();
     expect(parseValorantSessionAction(prefix + 'vc-choose-bad')).toBeNull();
   });
+  it('parses the troll-off toggle action', () => {
+    expect(
+      parseValorantSessionAction(
+        VALORANT_SESSION_PREFIX + 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05:troll-off',
+      )?.action,
+    ).toBe('troll-off');
+  });
   it('parses strictly scoped join/leave/draw/cancel actions', () => {
     for (const action of ['join', 'leave', 'draw', 'cancel']) {
       expect(

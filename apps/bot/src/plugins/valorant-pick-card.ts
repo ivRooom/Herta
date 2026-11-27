@@ -6,6 +6,8 @@ export interface ValorantPickCardEntry {
   agentName: string;
   displayName: string;
   playerLabel?: string;
+  /** 縛り (トロールガチャ) が付いた参加者だけ、カード表示用の短い表記 */
+  trollText?: string | null;
 }
 
 export interface ValorantPickCardInput {
