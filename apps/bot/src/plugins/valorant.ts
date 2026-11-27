@@ -620,6 +620,29 @@ async function handleRandom(
       flags: [],
     });
     await setValorantSessionMessageId(prisma, interaction.guildId, session.id, message.id);
+    if (vcAutoJoin) {
+      // A member who enters the pinned VC between session creation and the
+      // message ID being stored is auto-registered, but that registration
+      // cannot refresh the post (messageId was still null) and this handler
+      // has just posted its pre-registration snapshot. Reload the session
+      // and refresh the initial post when a registration landed in that
+      // window; a later re-entry reports changed=false and would never
+      // repair the display. Fail-soft: the DB stays the source of truth.
+      let reloaded: ValorantSessionSnapshot | null = null;
+      try {
+        reloaded = await getValorantSession(prisma, interaction.guildId, session.id);
+      } catch {
+        reloaded = null;
+      }
+      if (
+        reloaded &&
+        reloaded.participants.some(
+          ({ userId }) => !session.participants.some((entry) => entry.userId === userId),
+        )
+      ) {
+        await syncValorantRecruitmentFromClient(interaction.client, prisma, logger, reloaded);
+      }
+    }
   } catch (error) {
     logger.error(
       {

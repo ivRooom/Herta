@@ -14,6 +14,7 @@ function fixture(
   maxParticipants = 5,
   expiryOverride?: Date,
   vcAutoJoin = false,
+  earlyJoiners: string[] | null = null,
 ) {
   const create = vi.fn().mockResolvedValue({
     id: 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05',
@@ -33,6 +34,49 @@ function fixture(
   const memberSlots = Object.fromEntries(members.map((user, i) => [`member${i + 1}`, user]));
   const update = vi.fn().mockResolvedValue({});
   const findUnique = vi.fn().mockResolvedValue({ enabled, config: { enabled, maxParticipants } });
+  // Models a member auto-registered after session creation but before the
+  // message ID was stored (#1048): the reload after storing the ID sees them.
+  const messageEdit = vi.fn().mockResolvedValue({});
+  const findFirst =
+    earlyJoiners === null
+      ? undefined
+      : vi.fn().mockResolvedValue({
+          id: 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05',
+          mode: map ? 'TACTICAL' : 'RANDOM',
+          mapId: map,
+          guildId: 'guild',
+          channelId: 'channel',
+          messageId: 'posted-message',
+          creatorId: 'owner',
+          status: 'OPEN',
+          voiceChannelId: '123456789012345678',
+          vcAutoJoin: true,
+          optedOutUserIds: [],
+          trollOffUserIds: [],
+          maxParticipants: 5,
+          participants: earlyJoiners.map((userId) => ({ userId })),
+          expiresAt: expiryOverride ?? new Date(Date.now() + 10000),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: null,
+          result: null,
+          candidates: [],
+        });
+  const client =
+    earlyJoiners === null
+      ? undefined
+      : {
+          guilds: {
+            fetch: vi.fn().mockResolvedValue({
+              channels: {
+                fetch: vi.fn().mockResolvedValue({
+                  isTextBased: () => true,
+                  messages: { fetch: vi.fn().mockResolvedValue({ edit: messageEdit }) },
+                }),
+              },
+            }),
+          },
+        };
   const followUp = vi.fn().mockResolvedValue({ id: 'posted-message' });
   const editReply = vi.fn();
   const deferReply = vi.fn();
@@ -55,12 +99,13 @@ function fixture(
     reply,
     editReply,
     followUp,
+    client,
   };
   const context = {
     config: { enabled },
     prisma: {
       guildPlugin: { findUnique },
-      valorantPickSession: { create, update },
+      valorantPickSession: { create, update, findFirst },
       valorantRoster: { findUnique: vi.fn().mockResolvedValue(null) },
     },
     logger: { error: vi.fn(), warn: vi.fn() },
@@ -69,6 +114,8 @@ function fixture(
     create,
     update,
     findUnique,
+    findFirst,
+    messageEdit,
     followUp,
     editReply,
     deferReply,
@@ -142,6 +189,26 @@ describe('VALORANT button recruitment slash command', () => {
         data: expect.objectContaining({ vcAutoJoin: false }),
       }),
     );
+  });
+  it('refreshes the initial post when a member is auto-registered before the message ID is stored', async () => {
+    const f = fixture(null, true, [], 5, undefined, true, ['111111111111111111']);
+    await f.run();
+    expect(f.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { messageId: 'posted-message' } }),
+    );
+    expect(f.findFirst).toHaveBeenCalled();
+    expect(f.messageEdit).toHaveBeenCalledOnce();
+    const payload = f.messageEdit.mock.calls[0]![0] as {
+      embeds: Array<{ data: { description?: string } }>;
+    };
+    expect(payload.embeds[0]!.data.description).toContain('参加者：1 / 5');
+    expect(payload.embeds[0]!.data.description).toContain('<@111111111111111111>');
+  });
+  it('leaves the initial post alone when nobody joined before the message ID was stored', async () => {
+    const f = fixture(null, true, [], 5, undefined, true, []);
+    await f.run();
+    expect(f.findFirst).toHaveBeenCalled();
+    expect(f.messageEdit).not.toHaveBeenCalled();
   });
   it('uses tactical mode when a map is selected', async () => {
     const f = fixture('Ascent');
