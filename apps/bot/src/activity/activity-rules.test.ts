@@ -3,9 +3,11 @@ import {
   communityPointsRatesFromConfig,
   evaluateMessageActivity,
   GAME_ACTIVITY_TYPES,
+  gameActivityIdentityKey,
   hasMessageCooldownElapsed,
   isExcludedGameActivityName,
   normalizeActivityRulesConfig,
+  selectPrimaryGameActivity,
   selectPrimaryGameActivityName,
   shouldCountCommandPoints,
   shouldCountGamePresence,
@@ -37,6 +39,7 @@ describe('Activity Rules v1.3', () => {
       countOnlinePresence: true,
       countGamePresence: true,
       excludedGameActivityNames: ['Valorant Tracker App'],
+      excludedGameApplicationIds: [],
       countCommandPoints: true,
       messagePointsPerMessage: 2,
       reactionPointsPerReaction: 1,
@@ -390,6 +393,53 @@ describe('Activity Rules v1.3', () => {
     expect(
       selectPrimaryGameActivityName([{ type: playing, name: 'Valorant Tracker App' }], excluded),
     ).toBeNull();
+  });
+
+  it('ゲーム選択はapplication_idを保持し、id除外と同一性キー判定ができる (#1060)', () => {
+    const playing = GAME_ACTIVITY_TYPES.playing;
+    // applicationIdはそのまま返し、名前版の選択結果と一致する
+    expect(
+      selectPrimaryGameActivity(
+        [{ type: playing, name: 'Genshin Impact', applicationId: '100000000000000001' }],
+        [],
+      ),
+    ).toEqual({ name: 'Genshin Impact', applicationId: '100000000000000001' });
+    // idが無い・null・snowflakeでない値はnullへ倒す(名前キーへフォールバック)
+    expect(selectPrimaryGameActivity([{ type: playing, name: 'Some Game' }], [])).toEqual({
+      name: 'Some Game',
+      applicationId: null,
+    });
+    expect(
+      selectPrimaryGameActivity([{ type: playing, name: 'Some Game', applicationId: null }], []),
+    ).toEqual({ name: 'Some Game', applicationId: null });
+    expect(
+      selectPrimaryGameActivity(
+        [{ type: playing, name: 'Some Game', applicationId: 'not-a-snowflake' }],
+        [],
+      ),
+    ).toEqual({ name: 'Some Game', applicationId: null });
+    // 名前が除外でなくてもapplication_idが除外なら次点へ進む
+    expect(
+      selectPrimaryGameActivity(
+        [
+          { type: playing, name: 'Tracker Clone', applicationId: '111' },
+          { type: playing, name: 'VALORANT', applicationId: '222' },
+        ],
+        [],
+        ['111'],
+      ),
+    ).toEqual({ name: 'VALORANT', applicationId: '222' });
+    // 同一性キーはid優先: 同じアプリの表示名ゆれは同一、id無しは名前で判定
+    expect(
+      gameActivityIdentityKey({ name: 'Genshin Impact', applicationId: '100000000000000001' }),
+    ).toBe(gameActivityIdentityKey({ name: '原神', applicationId: '100000000000000001' }));
+    expect(gameActivityIdentityKey({ name: '原神', applicationId: null })).toBe('name:原神');
+    // 除外IDリストの正規化: snowflake以外と重複を落とす
+    expect(
+      normalizeActivityRulesConfig({
+        excludedGameApplicationIds: ['100000000000000001', 'bad', '100000000000000001'],
+      }).excludedGameApplicationIds,
+    ).toEqual(['100000000000000001']);
   });
 
   it('LFG・Team Split・Poll参加ポイントは設定OFFまたは除外Roleで無効化できる', () => {

@@ -31,6 +31,17 @@ const GAME_ACTIVITY_TYPE_PRIORITY: readonly number[] = [
 export interface GameActivityLike {
   type: number;
   name?: string | null;
+  /**
+   * Discordのapplication_id(Rich Presence連携・detectable登録ゲームでは付くが、
+   * 未登録の検出ではnullになり得る)。名寄せ(S7)の統合キーに使う。
+   */
+  applicationId?: string | null;
+}
+
+/** 計測対象として選ばれたゲーム。applicationIdはsnowflakeでない値を弾いた後の値。 */
+export interface PrimaryGameActivity {
+  name: string;
+  applicationId: string | null;
 }
 
 /** 除外判定は前後空白を除いた完全一致(大文字小文字は区別しない)。 */
@@ -43,18 +54,47 @@ export function isExcludedGameActivityName(
   return excludedGameActivityNames.some((excluded) => excluded.trim().toLowerCase() === normalized);
 }
 
+/** application_idの除外判定は完全一致のみ(null・空は常に対象外=除外しない)。 */
+export function isExcludedGameActivityId(
+  applicationId: string | null | undefined,
+  excludedGameApplicationIds: readonly string[],
+): boolean {
+  if (!applicationId) return false;
+  return excludedGameApplicationIds.includes(applicationId);
+}
+
 /**
- * presenceのactivities全件から計測対象のゲーム名を1つだけ選ぶ。
+ * activityのapplicationIdをsnowflake文字列へ正規化する。数値文字列でない値
+ * (未設定・null・型崩れ)はnullとして扱い、名寄せは名前キーへフォールバックする。
+ */
+export function normalizeGameApplicationId(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^\d+$/.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * セッション同一性のキー。applicationIdがある場合はidを優先し、同じアプリの
+ * 表示名ゆれ(ローカライズ名・改名)ではセッションを切り替えない。idが無い
+ * 場合は従来どおり名前で判定する。
+ */
+export function gameActivityIdentityKey(activity: PrimaryGameActivity): string {
+  return activity.applicationId ? `app:${activity.applicationId}` : `name:${activity.name}`;
+}
+
+/**
+ * presenceのactivities全件から計測対象のゲームを1つだけ選ぶ。
  *
  * community_game_sessions は PK(guildId, userId) で進行中セッションを1行しか
  * 持てないため、複数ゲームの同時計測(複数セッション化)はせず、優先順位で
  * 1件に絞る。種別内ではactivitiesの並び順(従来どおり先頭優先)を維持し、
- * 除外リストに一致するものはスキップして次点の候補へ進む。
+ * 除外リスト(名前・application_id)に一致するものはスキップして次点の候補へ進む。
  */
-export function selectPrimaryGameActivityName(
+export function selectPrimaryGameActivity(
   activities: readonly GameActivityLike[] | null | undefined,
   excludedGameActivityNames: readonly string[],
-): string | null {
+  excludedGameApplicationIds: readonly string[] = [],
+): PrimaryGameActivity | null {
   if (!activities?.length) return null;
   for (const type of GAME_ACTIVITY_TYPE_PRIORITY) {
     for (const activity of activities) {
@@ -62,10 +102,19 @@ export function selectPrimaryGameActivityName(
       const name = activity.name?.trim() ?? '';
       if (!name) continue;
       if (isExcludedGameActivityName(name, excludedGameActivityNames)) continue;
-      return name;
+      const applicationId = normalizeGameApplicationId(activity.applicationId);
+      if (isExcludedGameActivityId(applicationId, excludedGameApplicationIds)) continue;
+      return { name, applicationId };
     }
   }
   return null;
+}
+
+export function selectPrimaryGameActivityName(
+  activities: readonly GameActivityLike[] | null | undefined,
+  excludedGameActivityNames: readonly string[],
+): string | null {
+  return selectPrimaryGameActivity(activities, excludedGameActivityNames)?.name ?? null;
 }
 
 export interface ActivityRulesConfig {
@@ -86,6 +135,7 @@ export interface ActivityRulesConfig {
   countOnlinePresence: boolean;
   countGamePresence: boolean;
   excludedGameActivityNames: string[];
+  excludedGameApplicationIds: string[];
   countCommandPoints: boolean;
   messagePointsPerMessage: number;
   reactionPointsPerReaction: number;
@@ -209,6 +259,9 @@ export function normalizeActivityRulesConfig(value: unknown): ActivityRulesConfi
     countGamePresence:
       source.countGamePresence === undefined ? true : source.countGamePresence === true,
     excludedGameActivityNames: normalizedGameActivityNames(source.excludedGameActivityNames),
+    // application_idの除外は名前リストの補助(名前ゆれへの耐性用)。既定値は空で、
+    // 実presenceで確認できたidだけをGuild設定へ明示して使う。
+    excludedGameApplicationIds: normalizedIds(source.excludedGameApplicationIds, 50),
     countCommandPoints:
       source.countCommandPoints === undefined ? true : source.countCommandPoints === true,
     messagePointsPerMessage: clamp(toInteger(source.messagePointsPerMessage, 2), 0, 20),
