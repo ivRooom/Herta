@@ -41,6 +41,7 @@ function context() {
     guildId: f.status.guildId,
     prisma: {},
     client: { user: { id: 'bot' } },
+    logger: { warn: vi.fn() },
     config: { enabled: true, notificationRoleId: role },
   } as unknown as Parameters<typeof handleDailyParticipation>[0];
 }
