@@ -1644,6 +1644,7 @@ model ValorantPickSession {
   mapId           String?                     @map("map_id") @db.VarChar(32)
   voiceChannelId  String?                     @map("voice_channel_id")
   optedOutUserIds String[]                    @default([]) @map("opted_out_user_ids")
+  trollOffUserIds String[]                    @default([]) @map("troll_off_user_ids")
   maxParticipants Int                         @default(5) @map("max_participants")
   expiresAt       DateTime                    @map("expires_at") @db.Timestamptz(3)
   completedAt     DateTime?                   @map("completed_at") @db.Timestamptz(3)

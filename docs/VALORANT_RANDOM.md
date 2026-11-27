@@ -126,6 +126,19 @@ Discord告知用にユーザーから提供された参考画像の**紫×ピン
 
 Rollback: 本番直前の正常GHCR imageへ戻しBot/API health確認。DB復元は不要。
 
+## トロールガチャ (縛り) 合流（2026-11-27 / Issue #1047、ivrm-web Epic #2010 S2）
+
+抽選確定時に、参加者のうち Guild 設定の人数 (既定2人) へ「縛り」を割り当てる追加レイヤー。判定・確率は Herta 側に持たず、ivrm-web の抽選エンジン (S1、PR #2018) が正本。Herta はエージェント確定後に Bot API `POST /valorant/bot/troll/draw` を呼び、返ってきた割当を表示へ合流させるだけ (二重抽選しない)。
+
+- **有効化条件 (すべて必要)**: ①Guild プラグイン設定 `trollGachaEnabled=true` (既定 false) ②Bot 環境変数 `IVRM_WEB_API_BASE_URL` と `HERTA_TROLL_BOT_SECRET` (ivrm-web 側と同値) が設定済み ③ivrm-web 側で S1 がマージ・有効化済み。いずれか欠けても抽選自体は従来どおり動作する (fail-soft)。
+- **Guild 設定**: `trollCount` (1〜5、既定2)、`trollRarityFilter` (all / rare_plus / super_rare_plus)、`trollCategories` (troll / punishment / settings / custom の部分集合)。確率 (N55/R30/SR11/UR4) とフィルター時の再正規化は S1 側の固定仕様。
+- **トロールオフ (本人指定)**: 募集中の参加者は「🎭 縛りオフ切替」ボタンで自分の対象外指定を切り替える。状態はセッション行の `troll_off_user_ids` (migration 20261127090000) に保存し、抽選時に API の `trollOffDiscordUserIds` へ渡す。@指定の即時抽選では募集フェーズが無いため指定できない。
+- **表示**: 結果 Embed の各行へ縛り (レアリティ・カテゴリ・文言) を併記し、1200×680 ピックカードにも対象者の行へ描画する (カードは短縮表記、全文は Embed)。割当はセッションの result JSON へ保存するため、表示の再構築でも同じ縛りが残る。90日匿名化は result 内の `userId` キーを再帰的に除去する既存処理で、縛りの文言・レアリティは識別子を含まないため保持される。
+- **冪等性**: 冪等キーは `herta-valorant-troll:<セッション行ID>`。完了済み行は不変で再抽選は新しい行を作るため、行 ID がそのまま抽選世代になる。再送時は S1 が記録済みの割当を `alreadyDrawn=true` で返す。
+- **fail-soft**: API の HTTP エラー (401/404/409/422/503)・タイムアウト (5秒)・応答不正はすべて「縛りなし」で抽選結果を表示し、失敗は httpStatus とエラーコードをログに残す。縛りの保存だけ失敗した場合は表示のみ合流し、警告ログを残す。
+- **認証**: 署名は deco-gacha / submission-review と同形式 (`${timestamp}.${eventId}.POST.${pathname}.${body}` の HMAC-SHA256、ヘッダー `X-IVRM-*`)。シークレットは用途別に分離し、`HERTA_TROLL_BOT_SECRET` を新設 (compose の bot サービスへ配線済み。本番の実値設定は有効化ゲート側の作業)。
+- **受入**: 本番 Discord での有人確認は別ゲート (この変更の完了条件に含めない)。
+
 ## DB・互換性・プライバシー
 
 新規 migration 20261030100000_valorant_pick_sessions でセッション・参加者テーブルを追加。

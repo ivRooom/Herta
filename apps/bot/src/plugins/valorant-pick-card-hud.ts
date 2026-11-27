@@ -110,8 +110,15 @@ function solo(
     '<rect x="56" y="447" width="476" height="65" rx="11" fill="#10132e" stroke="#755ac2" stroke-width="1"/>',
     text('PLAYER', 71, 467, 11, '#bfb5de', 700),
     text(entry.playerLabel ?? 'PLAYER 01', 71, 496, 24, '#f9f2ff', 750, 17),
-    text('ROLE', 59, 544, 12, '#bfb5de', 700),
-    text(roles[0] ?? 'エージェント', 134, 544, 18, '#ff8ac9', 750, 13),
+    ...(entry.trollText
+      ? [
+          text('縛り', 59, 544, 12, '#bfb5de', 700),
+          text(entry.trollText, 134, 544, 15, '#ff8ac9', 750, 24),
+        ]
+      : [
+          text('ROLE', 59, 544, 12, '#bfb5de', 700),
+          text(roles[0] ?? 'エージェント', 134, 544, 18, '#ff8ac9', 750, 13),
+        ]),
   );
   return parts.join('');
 }
@@ -195,8 +202,10 @@ function squad(
         ' V' +
         (y + rowHeight - 12) +
         '" stroke="#67518d" stroke-width="1"/>',
-      text(entry.displayName, 350, mid + 2, 20, '#fff8ff', 850, 9),
-      text(roles[i] ?? 'エージェント', 350, mid + 22, 12, color, 700, 13),
+      text(entry.displayName, 350, entry.trollText ? mid - 4 : mid + 2, 20, '#fff8ff', 850, 9),
+      entry.trollText
+        ? text(entry.trollText, 350, mid + 17, 12, '#ff8ac9', 750, 18)
+        : text(roles[i] ?? 'エージェント', 350, mid + 22, 12, color, 700, 13),
       '<clipPath id="poster-art-' + i + '"><path d="' + borderPath + '"/></clipPath>',
       '<path d="' +
         borderPath +
