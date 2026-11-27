@@ -88,6 +88,42 @@ describe('VALORANT pick card', () => {
     }
   });
 
+  it('draws troll assignments on the card for solo and squad entries', () => {
+    const trollText = '縛り[レア] ショーティのみで戦う';
+    const solo = renderValorantHudSvg(
+      {
+        mode: 'RANDOM',
+        mapName: '指定なし',
+        entries: [
+          { agentName: 'Jett', displayName: 'ジェット', playerLabel: '参加者1', trollText },
+        ],
+      },
+      [null],
+      ['デュエリスト'],
+    );
+    expect(solo).toContain('縛り[レア]');
+    expect(solo).toContain('ショーティのみで戦う');
+    expect(solo).toContain('縛り</text>');
+
+    const squad = renderValorantHudSvg(
+      {
+        mode: 'RANDOM',
+        mapName: 'アセント',
+        entries: [
+          { agentName: 'Jett', displayName: 'ジェット', playerLabel: '参加者1', trollText },
+          { agentName: 'Sage', displayName: 'セージ', playerLabel: '参加者2' },
+          { agentName: 'Sova', displayName: 'ソーヴァ', playerLabel: '参加者3' },
+        ],
+      },
+      [null, null, null],
+      ['デュエリスト', 'センチネル', 'イニシエーター'],
+    );
+    expect(squad).toContain('縛り[レア]');
+    // Entries without a troll keep their role line.
+    expect(squad).toContain('センチネル');
+    expect(squad).toContain('イニシエーター');
+  });
+
   it('renders 1 to 5 players as bounded PNG without upstream images', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('assets unavailable')));
     for (const count of [1, 2, 3, 4, 5]) {
