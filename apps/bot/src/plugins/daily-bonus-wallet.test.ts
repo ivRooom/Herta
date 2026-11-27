@@ -203,9 +203,7 @@ describe('daily bonus wallet failure diagnostics', () => {
     configure();
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        Response.json({ error: 'daily_login_unavailable' }, { status: 503 }),
-      ),
+      vi.fn(async () => Response.json({ error: 'daily_login_unavailable' }, { status: 503 })),
     );
     expect(await dailyBonusStatus(guild, user)).toEqual({
       status: 'unavailable',
