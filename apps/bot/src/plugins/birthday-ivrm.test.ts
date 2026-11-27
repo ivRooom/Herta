@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildBirthdayRequest,
   callIvrmBirthday,
+  parseBirthdayDeliveryTime,
   BIRTHDAY_PATH,
   BIRTHDAY_PURPOSE,
   type IvrmBirthdaySettings,
@@ -26,6 +27,7 @@ const settingsFixture: IvrmBirthdaySettings = {
   announcementMessage: '🎂 {user} お誕生日おめでとう！',
   leapDayPolicy: 'february-28',
   pointsAmount: 300,
+  deliveryTime: '09:00',
   card: {
     enabled: true,
     preset: 'herta-lavender-tea',
@@ -107,6 +109,21 @@ describe('buildBirthdayRequest', () => {
       .update(['POST', BIRTHDAY_PATH, timestamp, requestId, request.init.body].join('\n'))
       .digest('hex');
     expect(headers['X-IVRM-Signature']).not.toBe(questSignature);
+  });
+});
+
+describe('parseBirthdayDeliveryTime', () => {
+  it('HH:mm形式だけを受理し、それ以外は既定09:00に解決する', () => {
+    expect(parseBirthdayDeliveryTime('09:00')).toBe('09:00');
+    expect(parseBirthdayDeliveryTime('18:30')).toBe('18:30');
+    expect(parseBirthdayDeliveryTime('00:00')).toBe('00:00');
+    expect(parseBirthdayDeliveryTime('23:59')).toBe('23:59');
+    expect(parseBirthdayDeliveryTime(undefined)).toBe('09:00');
+    expect(parseBirthdayDeliveryTime(null)).toBe('09:00');
+    expect(parseBirthdayDeliveryTime('9:00')).toBe('09:00');
+    expect(parseBirthdayDeliveryTime('24:00')).toBe('09:00');
+    expect(parseBirthdayDeliveryTime('09:60')).toBe('09:00');
+    expect(parseBirthdayDeliveryTime(900)).toBe('09:00');
   });
 });
 
@@ -259,6 +276,48 @@ describe('callIvrmBirthday', () => {
     );
     await expect(callIvrmBirthday(guild, localDate, config)).resolves.toEqual({
       status: 'unavailable',
+    });
+  });
+
+  it('deliveryTimeを受理し、欠落・不正は既定09:00に解決する', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: { ...settingsFixture, deliveryTime: '18:30' },
+        recipients: recipientsFixture,
+      }),
+    );
+    await expect(callIvrmBirthday(guild, localDate, config)).resolves.toMatchObject({
+      status: 'ok',
+      enabled: true,
+      settings: { deliveryTime: '18:30' },
+    });
+
+    const settingsWithoutTime: Record<string, unknown> = { ...settingsFixture };
+    delete settingsWithoutTime.deliveryTime;
+    vi.stubGlobal(
+      'fetch',
+      mockApi({ enabled: true, settings: settingsWithoutTime, recipients: recipientsFixture }),
+    );
+    await expect(callIvrmBirthday(guild, localDate, config)).resolves.toMatchObject({
+      status: 'ok',
+      enabled: true,
+      settings: { deliveryTime: '09:00' },
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        enabled: true,
+        settings: { ...settingsFixture, deliveryTime: '25:00' },
+        recipients: recipientsFixture,
+      }),
+    );
+    await expect(callIvrmBirthday(guild, localDate, config)).resolves.toMatchObject({
+      status: 'ok',
+      enabled: true,
+      settings: { deliveryTime: '09:00' },
     });
   });
 
