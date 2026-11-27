@@ -40,11 +40,16 @@ import {
 import { renderDailyQuestionCard, type DailyQuestionCardResult } from './daily-question-card.js';
 import { replyDailyParticipationAnswer } from './daily-result-card-reply.js';
 import { dailySupportActionRow, type DailySupportReference } from './daily-support.js';
+import type { PluginRuntimeContext } from '@herta/plugin-sdk';
 
 interface Context {
   guildId: string;
   prisma: PrismaClient;
   client: Client;
+  // daily-bonus.ts から渡される PluginRuntimeContext と同じロガー。
+  // ローカル Context には元々 logger が無く、#1066 初版はここで型落ちした。
+  // PluginRuntimeContext は TConfig が必須のため unknown を明示する。
+  logger: PluginRuntimeContext<unknown>['logger'];
   config: {
     enabled: boolean;
     notificationRoleId: string;
