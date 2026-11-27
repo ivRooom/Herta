@@ -52,6 +52,11 @@ import {
   reconcileMbtiRole as reconcileMbtiRoleForMember,
   type MbtiRoleReconciliationResult,
 } from './plugins/mbti-roles.js';
+import {
+  runManualBirthdayDeliveryForGuild,
+  type ManualBirthdayDeliveryInput,
+  type ManualBirthdayDeliveryResult,
+} from './plugins/birthday-role.js';
 import { syncGuildCommands } from './plugins/sync.js';
 import type { SlashCommand } from './commands/registry.js';
 import { DiscordHealthTracker } from './health/discord-state.js';
@@ -1530,6 +1535,21 @@ export class HertaBot {
       resultType,
       logger: this.logger,
     });
+  }
+
+  /**
+   * 誕生日の手動配信(#1062)。StudioはBotトークンを持たないため、内部API
+   * (health/server.tsの/internal/guilds/:guildId/birthday/manual-delivery)
+   * 経由でこのメソッドが呼ばれる。実行本体はBirthday Roleプラグインの
+   * runManualBirthdayDeliveryで、通常サイクルと同じ配信処理・冪等キーを
+   * 共有する。プラグインが有効化されていないGuildでは、プラグイン側が
+   * 理由コード plugin_not_enabled を結果として返す。
+   */
+  async runManualBirthdayDelivery(
+    guildId: string,
+    input: ManualBirthdayDeliveryInput,
+  ): Promise<ManualBirthdayDeliveryResult> {
+    return runManualBirthdayDeliveryForGuild(guildId, input);
   }
 
   async reconcileGuildXpRewardRoles(event: XpRoleSweepEvent): Promise<void> {
