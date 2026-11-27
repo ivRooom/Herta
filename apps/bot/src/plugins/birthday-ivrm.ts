@@ -26,6 +26,23 @@ export const IVRM_BIRTHDAY_LEAP_DAY_POLICIES: readonly IvrmBirthdayLeapDayPolicy
   'skip',
 ];
 
+export const DEFAULT_BIRTHDAY_DELIVERY_TIME = '09:00';
+
+const BIRTHDAY_DELIVERY_TIME_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
+/**
+ * Resolves the delivery time-of-day (JST, "HH:mm") from the
+ * settings payload (#1921 R3-B). ivrm-web resolves a missing key
+ * to the default on its side, but the bot defends itself the same
+ * way: a missing or malformed value means the default 09:00,
+ * never "deliver immediately".
+ */
+export function parseBirthdayDeliveryTime(value: unknown): string {
+  return typeof value === 'string' && BIRTHDAY_DELIVERY_TIME_PATTERN.test(value)
+    ? value
+    : DEFAULT_BIRTHDAY_DELIVERY_TIME;
+}
+
 export const IVRM_BIRTHDAY_CARD_PRESETS = [
   'herta-night-board',
   'herta-lavender-tea',
@@ -82,6 +99,12 @@ export interface IvrmBirthdaySettings {
   announcementMessage: string;
   leapDayPolicy: IvrmBirthdayLeapDayPolicy;
   pointsAmount: number;
+  /**
+   * The JST time-of-day ("HH:mm") at or after which the day's
+   * celebrations may be delivered. Always resolved by the parser:
+   * a missing or malformed wire value becomes the default 09:00.
+   */
+  deliveryTime: string;
   card: IvrmBirthdayCardSettings;
 }
 
@@ -245,6 +268,7 @@ function parseSettings(value: unknown): IvrmBirthdaySettings | undefined {
     announcementMessage: value.announcementMessage,
     leapDayPolicy: value.leapDayPolicy,
     pointsAmount: value.pointsAmount,
+    deliveryTime: parseBirthdayDeliveryTime(value.deliveryTime),
     card,
   };
 }
