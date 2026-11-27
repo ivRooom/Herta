@@ -20,6 +20,7 @@ import {
   failBirthdayDelivery,
   getBirthdayRegistration,
   listBirthdayRegistrations,
+  listDeliveredBirthdayUserIds,
   listPendingBirthdayRoleAssignments,
   markBirthdayRoleAssignmentReconciled,
   recoverStaleBirthdayDelivery,
@@ -343,8 +344,47 @@ export function getLocalDateParts(now: Date, timeZone: string): LocalDateParts {
   return { year, month, day };
 }
 
+export function getLocalMinutesOfDay(now: Date, timeZone: string): number {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = formatter.formatToParts(now);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? '0');
+  return read('hour') * 60 + read('minute');
+}
+
+/**
+ * Whether the local time-of-day has reached the configured
+ * delivery time (#1921 R3-B). `deliveryTime` is the validated
+ * "HH:mm" the API settings carry; the birthday-ivrm parser has
+ * already resolved a missing or malformed value to the default
+ * 09:00, so this only ever compares well-formed values. The
+ * ivrm path judges the day in JST, hence the default timezone.
+ */
+export function isBirthdayDeliveryTimeReached(
+  now: Date,
+  deliveryTime: string,
+  timeZone = 'Asia/Tokyo',
+): boolean {
+  const [hour = 0, minute = 0] = deliveryTime.split(':').map(Number);
+  return getLocalMinutesOfDay(now, timeZone) >= hour * 60 + minute;
+}
+
 export function formatLocalDate(parts: LocalDateParts): string {
   return `${parts.year.toString().padStart(4, '0')}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}`;
+}
+
+export function previousLocalDateParts(parts: LocalDateParts): LocalDateParts {
+  const utc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day - 1));
+  return {
+    year: utc.getUTCFullYear(),
+    month: utc.getUTCMonth() + 1,
+    day: utc.getUTCDate(),
+  };
 }
 
 export function countServerBirthdaysSinceJoin(
@@ -462,7 +502,10 @@ export async function runBirthdayRoleCycle(
     let today = getLocalDateParts(now, timeZone);
     let todaysRegistrations: BirthdayCycleRegistration[] | null = null;
     let ivrmBackgroundUrl: string | null = null;
+    let ivrmDeliveryTime: string | null = null;
     let ivrmPresetDefinition: BirthdayCardPresetDefinition | null = null;
+    let catchUpRegistrations: BirthdayCycleRegistration[] = [];
+    let catchUpDateParts: LocalDateParts | null = null;
 
     if (config.useIvrmApiSource) {
       const jstToday = getLocalDateParts(now, 'Asia/Tokyo');
@@ -482,7 +525,54 @@ export async function runBirthdayRoleCycle(
         today = jstToday;
         todaysRegistrations = result.recipients.map(toBirthdayRegistrationLike);
         ivrmBackgroundUrl = result.settings.card.backgroundUrl;
+        ivrmDeliveryTime = result.settings.deliveryTime;
         ivrmPresetDefinition = result.settings.card.presetDefinition;
+
+        // Previous-date catch-up (#1027 review follow-up). The
+        // delivery-time gate below can defer a day's celebrations
+        // past the last cycle of that day (an hourly worker whose
+        // cycles run at :30 never reaches a 23:59 delivery time),
+        // and the next day's fetch only asks for the new date, so
+        // without this pass the deferred members would silently
+        // never be celebrated. The supply API answers for any
+        // JST date, so each cycle also asks for yesterday's
+        // recipients and keeps the ones with no completed
+        // delivery: a past date is always due, exactly like the
+        // Web-side points runner judges it. The catch-up is not
+        // gated by today's delivery time, delivers under
+        // yesterday's localDate (the per-date idempotency keys
+        // keep it from double-delivering), and reuses today's
+        // settings. A failed yesterday fetch only skips the
+        // catch-up for this cycle; today's flow continues.
+        const yesterdayParts = previousLocalDateParts(jstToday);
+        const yesterdayLocalDate = formatLocalDate(yesterdayParts);
+        const yesterdayResult = await callIvrmBirthday(context.guildId, yesterdayLocalDate);
+        if (yesterdayResult.status === 'ok' && yesterdayResult.enabled) {
+          const todaysUserIds = new Set(
+            result.recipients.map((recipient) => recipient.discordUserId),
+          );
+          const candidates = yesterdayResult.recipients
+            .map(toBirthdayRegistrationLike)
+            .filter((registration) => !todaysUserIds.has(registration.userId));
+          if (candidates.length > 0) {
+            const deliveredUserIds = new Set(
+              await listDeliveredBirthdayUserIds(
+                context.prisma,
+                context.guildId,
+                yesterdayLocalDate,
+              ),
+            );
+            catchUpRegistrations = candidates.filter(
+              (registration) => !deliveredUserIds.has(registration.userId),
+            );
+            if (catchUpRegistrations.length > 0) catchUpDateParts = yesterdayParts;
+          }
+        } else if (yesterdayResult.status !== 'ok') {
+          context.logger.warn(
+            { guildId: context.guildId, status: yesterdayResult.status },
+            '前日分の誕生日取得に失敗したため未配信の回収をスキップします',
+          );
+        }
       } else {
         context.logger.warn(
           { guildId: context.guildId, status: result.status },
@@ -505,16 +595,50 @@ export async function runBirthdayRoleCycle(
       });
     }
     const todaysUsers = new Set(todaysRegistrations.map((registration) => registration.userId));
+
+    // Delivery-time gate (#1921 R3-B, ivrm path only). Before
+    // the configured JST delivery time, the celebrations wait
+    // for a later cycle: today's recipients stay in todaysUsers
+    // so the cleanup below keeps protecting them, but no
+    // celebration row, role grant or announcement happens yet.
+    // The cleanup itself is never gated, and the legacy path
+    // (including the fail-soft fallback above, which leaves
+    // ivrmDeliveryTime null) has no delivery time and stays
+    // immediate. Delivery idempotency keys are per-date, so
+    // carrying the delivery over to the next cycle cannot
+    // double-deliver.
+    if (ivrmDeliveryTime !== null && !isBirthdayDeliveryTimeReached(now, ivrmDeliveryTime)) {
+      context.logger.info(
+        { guildId: context.guildId, deliveryTime: ivrmDeliveryTime },
+        '配信時刻前のため誕生日お祝いを次サイクルへ持ち越します',
+      );
+      todaysRegistrations = [];
+    }
+
     const guild = await context.client.guilds.fetch(context.guildId);
 
+    // Delivery passes: today first, then the previous date's
+    // catch-up (#1027). Each pass delivers under its own
+    // localDate so the idempotency keys, celebration rows and
+    // role bookkeeping stay per-date; the role cleanup below
+    // still runs once for the whole cycle.
+    const passes: Array<{
+      registrations: BirthdayCycleRegistration[];
+      dateParts: LocalDateParts;
+    }> = [{ registrations: todaysRegistrations, dateParts: today }];
+    if (catchUpDateParts && catchUpRegistrations.length > 0) {
+      passes.push({ registrations: catchUpRegistrations, dateParts: catchUpDateParts });
+    }
+    const allRegistrations = passes.flatMap((pass) => pass.registrations);
+
     const storedMembers =
-      todaysRegistrations.length === 0
+      allRegistrations.length === 0
         ? []
         : await context.prisma.guildMember.findMany({
             where: {
               guildId: context.guildId,
               userId: {
-                in: todaysRegistrations.map((registration) => registration.userId),
+                in: allRegistrations.map((registration) => registration.userId),
               },
             },
             select: { userId: true, joinedAt: true },
@@ -523,33 +647,63 @@ export async function runBirthdayRoleCycle(
       storedMembers.map((member) => [member.userId, member.joinedAt]),
     );
     const celebrationByUserId = new Map<string, BirthdayAnnouncementContext>();
-    for (const registration of todaysRegistrations) {
-      const joinedAt = joinedAtByUserId.get(registration.userId) ?? null;
-      const joinedLocal = joinedAt ? getLocalDateParts(joinedAt, timeZone) : null;
-      // API recipients carry the age itself (no birth year), so
-      // it wins when present; legacy rows derive it as before.
-      const age = registration.age ?? calculateBirthdayAge(registration.birthYear, today.year);
-      const serverBirthdayNumber = countServerBirthdaysSinceJoin(
-        joinedLocal,
-        registration,
-        today.year,
-        effectiveConfig.leapDayPolicy,
-      );
-      celebrationByUserId.set(registration.userId, {
-        age,
-        serverBirthdayNumber,
-      });
-      await upsertBirthdayCelebration(context.prisma, {
-        guildId: context.guildId,
-        userId: registration.userId,
-        localDate,
-        birthYear: registration.birthYear,
-        age,
-        serverBirthdayNumber,
-      });
+    for (const pass of passes) {
+      const passLocalDate = formatLocalDate(pass.dateParts);
+      for (const registration of pass.registrations) {
+        const joinedAt = joinedAtByUserId.get(registration.userId) ?? null;
+        const joinedLocal = joinedAt ? getLocalDateParts(joinedAt, timeZone) : null;
+        // API recipients carry the age itself (no birth year), so
+        // it wins when present; legacy rows derive it as before.
+        const age =
+          registration.age ?? calculateBirthdayAge(registration.birthYear, pass.dateParts.year);
+        const serverBirthdayNumber = countServerBirthdaysSinceJoin(
+          joinedLocal,
+          registration,
+          pass.dateParts.year,
+          effectiveConfig.leapDayPolicy,
+        );
+        celebrationByUserId.set(registration.userId, {
+          age,
+          serverBirthdayNumber,
+        });
+        await upsertBirthdayCelebration(context.prisma, {
+          guildId: context.guildId,
+          userId: registration.userId,
+          localDate: passLocalDate,
+          birthYear: registration.birthYear,
+          age,
+          serverBirthdayNumber,
+        });
+      }
     }
 
-    await cleanupPreviousBirthdayRoles(context, guild, localDate, todaysUsers);
+    // The cleanup protects today's recipients (as before), the
+    // catch-up recipients, and anyone whose role for an earlier
+    // date was only granted today: a late grant is recorded
+    // under its original localDate, so without protection the
+    // next cycle today would already strip it again, while a
+    // grant completed on its own date is removed today exactly
+    // as before. Members whose yesterday delivery completed on
+    // time are in none of these sets, so their roles are
+    // removed today as usual.
+    const pendingAssignments = await listPendingBirthdayRoleAssignments(
+      context.prisma,
+      context.guildId,
+      localDate,
+    );
+    const grantedTodayUserIds = pendingAssignments
+      .filter(
+        (assignment) =>
+          assignment.completedAt !== null &&
+          formatLocalDate(getLocalDateParts(assignment.completedAt, timeZone)) === localDate,
+      )
+      .map((assignment) => assignment.userId);
+    const protectedUsers = new Set([
+      ...todaysUsers,
+      ...catchUpRegistrations.map((registration) => registration.userId),
+      ...grantedTodayUserIds,
+    ]);
+    await cleanupPreviousBirthdayRoles(context, guild, localDate, protectedUsers);
 
     if (effectiveConfig.assignRole && effectiveConfig.birthdayRoleId) {
       const role = await validateBirthdayRole(guild, effectiveConfig.birthdayRoleId);
@@ -559,20 +713,23 @@ export async function runBirthdayRoleCycle(
           'Birthday RoleをBotから安全に編集できません',
         );
       } else {
-        for (const registration of todaysRegistrations) {
-          await processDelivery(
-            context,
-            {
-              userId: registration.userId,
-              localDate,
-              kind: `${ROLE_ASSIGNED_PREFIX}${role.id}`,
-            },
-            async () => {
-              const member = await guild.members.fetch(registration.userId);
-              if (!member.roles.cache.has(role.id)) await member.roles.add(role.id);
-              return null;
-            },
-          );
+        for (const pass of passes) {
+          const passLocalDate = formatLocalDate(pass.dateParts);
+          for (const registration of pass.registrations) {
+            await processDelivery(
+              context,
+              {
+                userId: registration.userId,
+                localDate: passLocalDate,
+                kind: `${ROLE_ASSIGNED_PREFIX}${role.id}`,
+              },
+              async () => {
+                const member = await guild.members.fetch(registration.userId);
+                if (!member.roles.cache.has(role.id)) await member.roles.add(role.id);
+                return null;
+              },
+            );
+          }
         }
       }
     }
@@ -598,7 +755,7 @@ export async function runBirthdayRoleCycle(
         // cycle; any failure falls back to the stored resolution
         // below with a warning, never to a failed delivery.
         let remoteBackground: Buffer | null = null;
-        if (config.birthdayCardEnabled && ivrmBackgroundUrl && todaysRegistrations.length > 0) {
+        if (config.birthdayCardEnabled && ivrmBackgroundUrl && allRegistrations.length > 0) {
           remoteBackground = await fetchBirthdayCardBackgroundImage(ivrmBackgroundUrl);
           if (!remoteBackground) {
             context.logger.warn(
@@ -622,7 +779,7 @@ export async function runBirthdayRoleCycle(
           config.birthdayCardEnabled &&
           !remoteBackground &&
           ivrmPresetDefinition &&
-          todaysRegistrations.length > 0
+          allRegistrations.length > 0
         ) {
           definitionBackground = await fetchBirthdayCardBackgroundImage(
             ivrmPresetDefinition.backgroundUrl,
@@ -639,7 +796,7 @@ export async function runBirthdayRoleCycle(
           !definitionBackground &&
           config.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
-          todaysRegistrations.length > 0
+          allRegistrations.length > 0
             ? await getBirthdayCardRuntimeBackground(context.prisma, context.guildId, config).catch(
                 (error) => {
                   context.logger.warn(
@@ -658,7 +815,7 @@ export async function runBirthdayRoleCycle(
           !definitionBackground &&
           effectiveConfig.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
-          todaysRegistrations.length > 0 &&
+          allRegistrations.length > 0 &&
           !customBackground
         ) {
           context.logger.warn(
@@ -667,71 +824,74 @@ export async function runBirthdayRoleCycle(
           );
         }
 
-        for (const registration of todaysRegistrations) {
-          await processDelivery(
-            context,
-            { userId: registration.userId, localDate, kind: 'announcement' },
-            async () => {
-              const celebration = celebrationByUserId.get(registration.userId) ?? {
-                age: null,
-                serverBirthdayNumber: null,
-              };
-              const content = truncate(
-                renderBirthdayAnnouncement(
-                  effectiveConfig.announcementMessage,
-                  registration,
-                  celebration,
-                ),
-                MAX_RESPONSE_LENGTH,
-              );
-              let files: Array<{ attachment: Buffer; name: string }> | undefined;
-              if (effectiveConfig.birthdayCardEnabled) {
-                try {
-                  const member = await guild.members.fetch(registration.userId);
-                  const card = await renderBirthdayCard({
-                    config: effectiveConfig,
-                    displayName:
-                      member.displayName ||
-                      registration.displayName ||
-                      `Member ${registration.userId.slice(-4)}`,
-                    avatarUrl:
-                      member.displayAvatarURL?.({
-                        extension: 'png',
-                        size: 512,
-                      }) ?? null,
-                    month: registration.month,
-                    day: registration.day,
-                    age: celebration.age,
-                    customBackground: customBackground?.content ?? null,
-                    remoteBackground,
-                    presetDefinition: ivrmPresetDefinition,
-                    definitionBackground,
-                  });
-                  files = [
-                    {
-                      attachment: card,
-                      name: `birthday-${registration.userId}.png`,
-                    },
-                  ];
-                } catch (error) {
-                  context.logger.warn(
-                    {
-                      guildId: context.guildId,
-                      userId: registration.userId,
-                      errorName: error instanceof Error ? error.name : 'UnknownError',
-                    },
-                    'Birthday Cardの生成に失敗したためテキストのみで投稿します',
-                  );
+        for (const pass of passes) {
+          const passLocalDate = formatLocalDate(pass.dateParts);
+          for (const registration of pass.registrations) {
+            await processDelivery(
+              context,
+              { userId: registration.userId, localDate: passLocalDate, kind: 'announcement' },
+              async () => {
+                const celebration = celebrationByUserId.get(registration.userId) ?? {
+                  age: null,
+                  serverBirthdayNumber: null,
+                };
+                const content = truncate(
+                  renderBirthdayAnnouncement(
+                    effectiveConfig.announcementMessage,
+                    registration,
+                    celebration,
+                  ),
+                  MAX_RESPONSE_LENGTH,
+                );
+                let files: Array<{ attachment: Buffer; name: string }> | undefined;
+                if (effectiveConfig.birthdayCardEnabled) {
+                  try {
+                    const member = await guild.members.fetch(registration.userId);
+                    const card = await renderBirthdayCard({
+                      config: effectiveConfig,
+                      displayName:
+                        member.displayName ||
+                        registration.displayName ||
+                        `Member ${registration.userId.slice(-4)}`,
+                      avatarUrl:
+                        member.displayAvatarURL?.({
+                          extension: 'png',
+                          size: 512,
+                        }) ?? null,
+                      month: registration.month,
+                      day: registration.day,
+                      age: celebration.age,
+                      customBackground: customBackground?.content ?? null,
+                      remoteBackground,
+                      presetDefinition: ivrmPresetDefinition,
+                      definitionBackground,
+                    });
+                    files = [
+                      {
+                        attachment: card,
+                        name: `birthday-${registration.userId}.png`,
+                      },
+                    ];
+                  } catch (error) {
+                    context.logger.warn(
+                      {
+                        guildId: context.guildId,
+                        userId: registration.userId,
+                        errorName: error instanceof Error ? error.name : 'UnknownError',
+                      },
+                      'Birthday Cardの生成に失敗したためテキストのみで投稿します',
+                    );
+                  }
                 }
-              }
-              const message = await channel.send({
-                content,
-                allowedMentions: { parse: [], users: [registration.userId] },
-                ...(files ? { files } : {}),
-              });
-              return message.id;
-            },
-          );
+                const message = await channel.send({
+                  content,
+                  allowedMentions: { parse: [], users: [registration.userId] },
+                  ...(files ? { files } : {}),
+                });
+                return message.id;
+              },
+            );
+          }
         }
       }
     }

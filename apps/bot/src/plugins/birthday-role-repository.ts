@@ -18,6 +18,7 @@ export interface BirthdayRoleAssignmentRecord {
   userId: string;
   localDate: string;
   kind: string;
+  completedAt: Date | null;
 }
 
 export async function upsertBirthdayRegistration(
@@ -132,7 +133,8 @@ export async function listPendingBirthdayRoleAssignments(
       "id",
       "user_id" AS "userId",
       "local_date" AS "localDate",
-      "kind"
+      "kind",
+      "completed_at" AS "completedAt"
     FROM "birthday_deliveries"
     WHERE "guild_id" = ${guildId}
       AND "status" = 'completed'
@@ -141,6 +143,30 @@ export async function listPendingBirthdayRoleAssignments(
       AND "local_date" < ${currentLocalDate}
     ORDER BY "local_date" ASC
   `;
+}
+
+/**
+ * The users who already have at least one completed delivery
+ * for the given local date, whatever the kind. The worker's
+ * previous-date catch-up (#1027) treats anyone without a
+ * completed delivery as still owed that date's celebration:
+ * processDelivery's per-kind idempotency then redoes only the
+ * kinds that never completed, so a partially delivered day is
+ * repaired without ever double-delivering.
+ */
+export async function listDeliveredBirthdayUserIds(
+  prisma: PrismaClient,
+  guildId: string,
+  localDate: string,
+): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ userId: string }>>`
+    SELECT DISTINCT "user_id" AS "userId"
+    FROM "birthday_deliveries"
+    WHERE "guild_id" = ${guildId}
+      AND "local_date" = ${localDate}
+      AND "status" = 'completed'
+  `;
+  return rows.map((row) => row.userId);
 }
 
 export async function markBirthdayRoleAssignmentReconciled(
