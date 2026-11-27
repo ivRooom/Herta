@@ -52,6 +52,8 @@ import {
   setValorantSessionMessageId,
   toggleValorantSessionTrollOff,
   attachValorantSessionTrollResult,
+  findOpenValorantAutoJoinSessions,
+  autoJoinValorantSession,
   VALORANT_SESSION_PREFIX,
   type ValorantCandidate,
   type ValorantAssignment,
@@ -218,7 +220,14 @@ function buildValorantSessionMessage(
     'マップ：' + japaneseValorantMap(session.mapId),
     '募集作成者：<@' + session.creatorId + '>',
     '対象VC：' +
-      (session.voiceChannelId ? '<#' + session.voiceChannelId + '>' : '未設定（手動参加のみ）'),
+      (session.voiceChannelId
+        ? '<#' + session.voiceChannelId + '>'
+        : session.vcAutoJoin
+          ? '未設定（VCを固定すると自動参加が有効になります）'
+          : '未設定（手動参加のみ）'),
+    ...(session.status === 'OPEN' && session.vcAutoJoin
+      ? ['VC自動参加：ON（対象VCに入ると自動で参加登録されます。退出しても参加は維持されます）']
+      : []),
     '参加者：' +
       members.length +
       ' / ' +
@@ -511,6 +520,8 @@ async function handleRandom(
       return;
     }
     const map = interaction.options.getString('map');
+    // VC自動参加 (#1048) は募集型のみの opt-in。@指定の即時抽選には影響しない。
+    const vcAutoJoin = interaction.options.getBoolean('vc_auto_join') === true;
     if (map !== null && !VALORANT_MAPS.some(([id]) => id === map)) {
       await interaction.editReply('未対応のマップです。');
       return;
@@ -594,16 +605,44 @@ async function handleRandom(
       voiceChannelId:
         (await interaction.guild?.members.fetch(interaction.user.id).catch(() => null))?.voice
           .channelId ?? null,
+      vcAutoJoin,
       maxParticipants: config.maxParticipants,
       expiresAt,
       rulesVersion,
     });
-    await interaction.editReply('参加募集を作成しました。参加ボタンを押した人だけが抽選対象です。');
+    await interaction.editReply(
+      vcAutoJoin
+        ? '参加募集を作成しました。対象VCに入室した人は自動で参加登録されます（参加ボタンでも参加できます）。'
+        : '参加募集を作成しました。参加ボタンを押した人だけが抽選対象です。',
+    );
     const message = await interaction.followUp({
       ...buildValorantSessionMessage(session, { trollGachaEnabled: config.trollGacha.enabled }),
       flags: [],
     });
     await setValorantSessionMessageId(prisma, interaction.guildId, session.id, message.id);
+    if (vcAutoJoin) {
+      // A member who enters the pinned VC between session creation and the
+      // message ID being stored is auto-registered, but that registration
+      // cannot refresh the post (messageId was still null) and this handler
+      // has just posted its pre-registration snapshot. Reload the session
+      // and refresh the initial post when a registration landed in that
+      // window; a later re-entry reports changed=false and would never
+      // repair the display. Fail-soft: the DB stays the source of truth.
+      let reloaded: ValorantSessionSnapshot | null = null;
+      try {
+        reloaded = await getValorantSession(prisma, interaction.guildId, session.id);
+      } catch {
+        reloaded = null;
+      }
+      if (
+        reloaded &&
+        reloaded.participants.some(
+          ({ userId }) => !session.participants.some((entry) => entry.userId === userId),
+        )
+      ) {
+        await syncValorantRecruitmentFromClient(interaction.client, prisma, logger, reloaded);
+      }
+    }
   } catch (error) {
     logger.error(
       {
@@ -720,6 +759,144 @@ async function loadValorantTrollGachaEnabled(
     return Boolean(plugin?.enabled && normalizeValorantConfig(plugin?.config).trollGacha.enabled);
   } catch {
     return false;
+  }
+}
+
+/** Minimal structural view of a discord.js VoiceState for the auto-join handler. */
+interface ValorantVoiceStateLike {
+  channelId?: string | null;
+  member?: { user?: { id?: string; bot?: boolean } | null } | null;
+}
+
+interface ValorantRecruitmentClientLike {
+  guilds?: {
+    fetch?: (guildId: string) => Promise<{
+      channels: {
+        fetch: (channelId: string) => Promise<{
+          isTextBased: () => boolean;
+          messages: {
+            fetch: (messageId: string) => Promise<{ edit: (options: unknown) => Promise<unknown> }>;
+          };
+        } | null>;
+      };
+    } | null>;
+  };
+}
+
+/**
+ * Event-driven variant of updatePublicValorantRecruitment (#1048): a
+ * VoiceStateUpdate carries no interaction, so the recruitment message is
+ * reached through the client. Failures only log — the DB stays the source
+ * of truth and the next interaction-driven rebuild catches the display up.
+ */
+async function syncValorantRecruitmentFromClient(
+  client: unknown,
+  prisma: PrismaClient,
+  logger: Logger,
+  session: ValorantSessionSnapshot,
+): Promise<boolean> {
+  try {
+    if (!session.messageId) return false;
+    const candidate = client as ValorantRecruitmentClientLike | null;
+    if (typeof candidate?.guilds?.fetch !== 'function') return false;
+    const guild = await candidate.guilds.fetch(session.guildId);
+    if (!guild) return false;
+    const channel = await guild.channels.fetch(session.channelId);
+    if (!channel || !channel.isTextBased() || !channel.messages) return false;
+    const message = await channel.messages.fetch(session.messageId);
+    const trollGachaEnabled = await loadValorantTrollGachaEnabled(prisma, session.guildId);
+    await message.edit({
+      ...buildValorantSessionMessage(session, { trollGachaEnabled }),
+      attachments: [],
+    });
+    return true;
+  } catch (error) {
+    logger.warn(
+      {
+        guildId: session.guildId,
+        sessionId: session.id,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
+      'VALORANT自動参加後の募集表示更新に失敗',
+    );
+    return false;
+  }
+}
+
+/**
+ * Live VC auto-join (#1048). bot.ts already drops bot users before
+ * dispatching plugin events; the bot check below is repeated defensively.
+ * Leaving a VC never removes a participant (existing policy) — only an
+ * explicit leave does, which records an opt-out that the repository
+ * mutation honors without ever clearing it. Most voice events are dropped
+ * in memory before any DB access.
+ */
+async function handleValorantVoiceStateUpdate(
+  context: {
+    client: unknown;
+    prisma: PrismaClient;
+    logger: Logger;
+    guildId: string;
+    config: unknown;
+  },
+  oldState: ValorantVoiceStateLike | undefined,
+  newState: ValorantVoiceStateLike | undefined,
+): Promise<void> {
+  try {
+    if (!normalizeValorantConfig(context.config).enabled) return;
+    const channelId = newState?.channelId ?? null;
+    if (!channelId) return;
+    if (oldState?.channelId === channelId) return;
+    const user = newState?.member?.user;
+    if (!user?.id || user.bot) return;
+    const sessions = await findOpenValorantAutoJoinSessions(
+      context.prisma,
+      context.guildId,
+      channelId,
+    );
+    for (const session of sessions) {
+      try {
+        const result = await autoJoinValorantSession(context.prisma, {
+          guildId: context.guildId,
+          id: session.id,
+          userId: user.id,
+          voiceChannelId: channelId,
+        });
+        if (result.status !== 'ok' || !result.changed) continue;
+        context.logger.info(
+          {
+            guildId: context.guildId,
+            sessionId: session.id,
+            userId: user.id,
+            becameFull: result.becameFull,
+          },
+          'VALORANT VC自動参加で参加者を登録',
+        );
+        await syncValorantRecruitmentFromClient(
+          context.client,
+          context.prisma,
+          context.logger,
+          result.session,
+        );
+      } catch (error) {
+        context.logger.warn(
+          {
+            guildId: context.guildId,
+            sessionId: session.id,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          },
+          'VALORANT VC自動参加の登録に失敗',
+        );
+      }
+    }
+  } catch (error) {
+    context.logger.warn(
+      {
+        guildId: context.guildId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
+      'VALORANT VC自動参加の処理に失敗',
+    );
   }
 }
 
@@ -1678,6 +1855,16 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
           ) {
             await handleValorantManagement(candidate, context.prisma, context.logger);
           }
+        },
+      },
+      {
+        event: 'voiceStateUpdate',
+        async handler(_context, ...args) {
+          await handleValorantVoiceStateUpdate(
+            context,
+            args[0] as ValorantVoiceStateLike | undefined,
+            args[1] as ValorantVoiceStateLike | undefined,
+          );
         },
       },
     ] as PluginEventHandler<ValorantPluginConfig>[];

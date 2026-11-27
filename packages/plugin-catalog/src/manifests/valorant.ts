@@ -276,6 +276,11 @@ export const valorantManifest: PluginManifest = {
                 { name: 'SUMMIT', value: 'Summit' },
               ],
             },
+            {
+              name: 'vc_auto_join',
+              description: '募集型のみ：対象VCへの入室者を自動で参加登録する',
+              type: 'boolean',
+            },
             ...Array.from({ length: 5 }, (_, index) => ({
               name: `member${index + 1}`,
               description:
