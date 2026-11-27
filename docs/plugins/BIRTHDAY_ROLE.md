@@ -219,6 +219,16 @@ Adminの設定プレビューで「実際に配信されるカードそのもの
 - 描画対象は固定サンプル（名前 `Herta Member`、11月22日、アバターはパッケージ内で生成するサンプル画像）で、実在メンバーの情報は使いません。`showAge` がONのときは固定のサンプル年齢（25歳）を描きます。プレビューは副作用なしで、`birthday_deliveries` への記録もしません。
 - レスポンスは PNG バイナリ（1672×941）です。Studio と bot は同一の本番イメージ（`font-noto-cjk` 入り）で動くため、フォント条件は一致します。
 
+## 手動配信（#1062）
+
+障害・遅延時の復旧手段として、ivrm-web Admin から指定メンバー・指定日の配信を即時実行できます。経路は Admin → ivrm-web API → Studio の署名付き窓口 `POST /api/ivrm/birthday-deliveries/manual`（purpose `herta-birthday-manual-delivery-v1`、契約は `contracts/ivrm/herta-birthday-manual-delivery.v1.json`）→ bot 内部 API `POST /internal/guilds/:guildId/birthday/manual-delivery`（`BOT_INTERNAL_API_SECRET` 認証、MBTIロール再同期と同じパターン）→ プラグインの単発実行 `runManualBirthdayDelivery` です。新しい環境変数・秘密は不要です。
+
+- 実行は通常サイクルと同じ部品（サイクルロック・供給API取得・設定適用・celebration記録・kindごとの冪等キー）を共有します。配信済みメンバーへの再実行は冪等キーにより no-op（`already_delivered`）になり、二重配信にはなりません。失敗した kind だけが再実行で再試行されます。
+- 対象日は **JST 当日＋過去7日まで**（未来日不可）。Web側と bot側の両方で検証します（bot側は `date_out_of_range`）。
+- 配信時刻ゲートは手動実行には適用されません（復旧が目的なので即時実行します。時刻後にサイクルが回っても冪等キーで no-op です）。ロール削除（cleanup）も手動では実行しません（他メンバーへの副作用回避。回収は翌日以降の通常サイクルが行います）。
+- 設定は実行時点で有効なものを使います。手動配信は ivrm 連携経路専用で、`useIvrmApiSource` がOFFのGuildは `ivrm_source_disabled` で拒否します。
+- 結果は kind ごとに `delivered` / `already_delivered` / `failed` / `not_configured` / `in_progress` を返し、失敗時は理由コード（`role_not_editable` / `channel_unavailable` / `member_not_in_guild`）または失敗した処理のエラー名（クラス名のみ）を含みます。実行前の拒否は理由コード（`plugin_not_enabled` / `supply_unavailable` / `delivery_disabled` / `not_a_recipient` 等）で返します。ポイント付与は対象外です（Web側 runner が後追いします）。
+
 ## Database migration
 
 `20260819095000_birthday_card_v2`で次を追加します。
