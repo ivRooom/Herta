@@ -50,12 +50,24 @@ import {
   mutateValorantSession,
   parseValorantSessionAction,
   setValorantSessionMessageId,
+  toggleValorantSessionTrollOff,
+  attachValorantSessionTrollResult,
   VALORANT_SESSION_PREFIX,
   type ValorantCandidate,
   type ValorantAssignment,
   type ValorantSessionSnapshot,
   type ValorantSessionAction,
 } from './valorant-session-repository.js';
+import {
+  drawValorantTrolls,
+  formatValorantTrollCardText,
+  formatValorantTrollEmbedText,
+  mergeValorantTrollsIntoResult,
+  normalizeValorantTrollConfig,
+  readValorantTrollFromEntry,
+  resolveValorantTrollApiConfig,
+  type ValorantTrollConfig,
+} from './valorant-troll-gacha.js';
 import {
   japaneseValorantMap,
   tacticalMapPlan,
@@ -69,6 +81,8 @@ export interface ValorantPluginConfig {
   enabledAgents: string[];
   maxParticipants: number;
   sessionDurationMinutes: number;
+  /** トロールガチャ (縛り) 合流の設定 (#1047)。既定は無効 */
+  trollGacha: ValorantTrollConfig;
 }
 
 export function normalizeValorantConfig(value: unknown): ValorantPluginConfig {
@@ -85,6 +99,7 @@ export function normalizeValorantConfig(value: unknown): ValorantPluginConfig {
       Number.isInteger(source.sessionDurationMinutes)
         ? Math.max(5, Math.min(180, source.sessionDurationMinutes))
         : 30,
+    trollGacha: normalizeValorantTrollConfig(source),
   };
 }
 
@@ -166,7 +181,10 @@ async function handleMyId(
   );
 }
 
-function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
+function buildValorantSessionMessage(
+  session: ValorantSessionSnapshot,
+  options: { trollGachaEnabled?: boolean } = {},
+) {
   const expiryMs = session.expiresAt.getTime();
   // A corrupt or missing timestamp must not create a malformed Discord tag
   // or leave participant/reroll buttons enabled.
@@ -187,9 +205,13 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
   );
   const lines =
     session.status === 'COMPLETED' && assignments.length > 0
-      ? assignments.map(
-          (item) => '<@' + item.userId + '> — **' + escapeMarkdown(item.displayName) + '**',
-        )
+      ? assignments.map((item) => {
+          const base = '<@' + item.userId + '> — **' + escapeMarkdown(item.displayName) + '**';
+          const troll = readValorantTrollFromEntry(item);
+          return troll
+            ? base + '\n　└ ' + escapeMarkdown(formatValorantTrollEmbedText(troll))
+            : base;
+        })
       : members.map((id) => '👤 <@' + id + '>');
   const description = [
     'モード：' + (session.mode === 'TACTICAL' ? '実戦向け構成' : '完全ランダム'),
@@ -202,6 +224,13 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
       ' / ' +
       session.maxParticipants +
       (members.length === session.maxParticipants ? '（満員）' : ''),
+    ...(session.status === 'OPEN' && (session.trollOffUserIds ?? []).length > 0
+      ? [
+          '縛りオフ：' +
+            (session.trollOffUserIds ?? []).map((id) => '<@' + id + '>').join('、') +
+            '（縛りの対象外）',
+        ]
+      : []),
     ...(expiryUnix !== null && session.status === 'OPEN'
       ? ['募集期限：<t:' + expiryUnix + ':R>']
       : expiryUnix !== null && session.status === 'COMPLETED' && !expired
@@ -272,6 +301,9 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
             new ActionRowBuilder<ButtonBuilder>().addComponents(
               button('vc', '🔊 VC全員参加', ButtonStyle.Secondary, closed),
               button('manage', '👥 参加者管理', ButtonStyle.Secondary, closed),
+              ...(options.trollGachaEnabled
+                ? [button('troll-off', '🎭 縛りオフ切替', ButtonStyle.Secondary, closed)]
+                : []),
             ),
           ]
         : [];
@@ -286,8 +318,9 @@ async function buildValorantRichMessage(
   session: ValorantSessionSnapshot,
   logger: Logger,
   displayName?: (userId: string) => string | undefined,
+  options: { trollGachaEnabled?: boolean } = {},
 ) {
-  const basic = buildValorantSessionMessage(session);
+  const basic = buildValorantSessionMessage(session, options);
   if (session.status !== 'COMPLETED' || !Array.isArray(session.result)) return basic;
   const assignments = session.result.filter(
     (item): item is { userId: string; agentName: string; displayName: string } =>
@@ -305,11 +338,15 @@ async function buildValorantRichMessage(
       mode: session.mode === 'TACTICAL' ? 'TACTICAL' : 'RANDOM',
       mapName: japaneseValorantMap(session.mapId),
       planLabel: session.mode === 'TACTICAL' && map ? tacticalMapPlan(map).label : null,
-      entries: assignments.map((entry, index) => ({
-        agentName: entry.agentName,
-        displayName: entry.displayName,
-        playerLabel: displayName?.(entry.userId) ?? `PLAYER ${index + 1}`,
-      })),
+      entries: assignments.map((entry, index) => {
+        const troll = readValorantTrollFromEntry(entry);
+        return {
+          agentName: entry.agentName,
+          displayName: entry.displayName,
+          playerLabel: displayName?.(entry.userId) ?? `PLAYER ${index + 1}`,
+          trollText: troll ? formatValorantTrollCardText(troll) : null,
+        };
+      }),
     });
     basic.embeds[0]!.setImage('attachment://valorant-pick.png');
     return {
@@ -323,6 +360,78 @@ async function buildValorantRichMessage(
     );
     return basic;
   }
+}
+
+/**
+ * 抽選確定直後に縛り (トロール) を合流させる (#1047)。
+ *
+ * Guild 設定で無効、または Bot API の env (IVRM_WEB_API_BASE_URL /
+ * HERTA_TROLL_BOT_SECRET) が未設定なら何もしない。API が失敗しても
+ * 例外を投げず、縛りなしのセッションをそのまま返す (fail-soft)。
+ * 成功時は result JSON へ合流して DB へ保存し、後からの表示再構築
+ * でも同じ縛りが見えるようにする。判定は ivrm-web 側 (S1) のみで、
+ * ここでは二重抽選しない。
+ */
+async function applyValorantTrollsToSession(
+  prisma: PrismaClient,
+  logger: Logger,
+  session: ValorantSessionSnapshot,
+  input: {
+    operatorId: string;
+    config: ValorantPluginConfig;
+    displayName?: (userId: string) => string | undefined;
+  },
+): Promise<ValorantSessionSnapshot> {
+  if (!input.config.trollGacha.enabled) return session;
+  if (session.status !== 'COMPLETED' || !Array.isArray(session.result)) return session;
+  const api = resolveValorantTrollApiConfig(process.env);
+  if (!api) return session;
+  const entries = session.result.filter(
+    (item): item is { userId: string } =>
+      typeof item === 'object' &&
+      item !== null &&
+      !Array.isArray(item) &&
+      typeof (item as { userId?: unknown }).userId === 'string',
+  );
+  if (entries.length === 0 || entries.length > 5) return session;
+  const participantIds = new Set(entries.map((entry) => entry.userId));
+  const drawn = await drawValorantTrolls(api, {
+    operatorDiscordUserId: input.operatorId,
+    guildId: session.guildId,
+    sessionId: session.id,
+    participants: entries.map((entry, index) => ({
+      discordUserId: entry.userId,
+      name: input.displayName?.(entry.userId) ?? `参加者${index + 1}`,
+    })),
+    trollOffDiscordUserIds: (session.trollOffUserIds ?? []).filter((id) => participantIds.has(id)),
+    config: input.config.trollGacha,
+  });
+  if (drawn.status !== 'ok') {
+    logger.warn(
+      {
+        guildId: session.guildId,
+        sessionId: session.id,
+        httpStatus: drawn.httpStatus,
+        code: drawn.code,
+      },
+      'VALORANT縛り抽選に失敗、縛りなしで抽選結果を表示',
+    );
+    return session;
+  }
+  const merged = mergeValorantTrollsIntoResult(session.result, drawn.trollByUserId);
+  if (!merged) return session;
+  const persisted = await attachValorantSessionTrollResult(prisma, {
+    guildId: session.guildId,
+    id: session.id,
+    result: merged,
+  }).catch(() => false);
+  if (!persisted) {
+    logger.warn(
+      { guildId: session.guildId, sessionId: session.id },
+      'VALORANT縛り結果の保存に失敗、表示のみ合流',
+    );
+  }
+  return { ...session, result: merged } as ValorantSessionSnapshot;
 }
 
 function pickValorantAssignments(
@@ -456,14 +565,20 @@ async function handleRandom(
         candidates,
         assignments,
       });
+      const displaySession = await applyValorantTrollsToSession(prisma, logger, session, {
+        operatorId: interaction.user.id,
+        config,
+        displayName: (id) => interaction.guild?.members.cache.get(id)?.displayName,
+      });
       await interaction.editReply(
         '指定メンバーの抽選が完了しました。結果の「再抽選」ボタンで引き直せます。',
       );
       const message = await interaction.followUp({
         ...(await buildValorantRichMessage(
-          session,
+          displaySession,
           logger,
           (id) => interaction.guild?.members.cache.get(id)?.displayName,
+          { trollGachaEnabled: config.trollGacha.enabled },
         )),
         flags: [],
       });
@@ -485,7 +600,7 @@ async function handleRandom(
     });
     await interaction.editReply('参加募集を作成しました。参加ボタンを押した人だけが抽選対象です。');
     const message = await interaction.followUp({
-      ...buildValorantSessionMessage(session),
+      ...buildValorantSessionMessage(session, { trollGachaEnabled: config.trollGacha.enabled }),
       flags: [],
     });
     await setValorantSessionMessageId(prisma, interaction.guildId, session.id, message.id);
@@ -577,14 +692,32 @@ function voiceCandidateSnapshot(session: ValorantSessionSnapshot, voiceIds: stri
 async function updatePublicValorantRecruitment(
   interaction: ValorantManagedInteraction,
   session: ValorantSessionSnapshot,
+  trollGachaEnabled = false,
 ): Promise<boolean> {
   try {
     if (!interaction.guild || !session.messageId) return false;
     const channel = await interaction.guild.channels.fetch(session.channelId);
     if (!channel?.isTextBased() || !('messages' in channel)) return false;
     const message = await channel.messages.fetch(session.messageId);
-    await message.edit({ ...buildValorantSessionMessage(session), attachments: [] });
+    await message.edit({
+      ...buildValorantSessionMessage(session, { trollGachaEnabled }),
+      attachments: [],
+    });
     return true;
+  } catch {
+    return false;
+  }
+}
+
+async function loadValorantTrollGachaEnabled(
+  prisma: PrismaClient,
+  guildId: string,
+): Promise<boolean> {
+  try {
+    const plugin = await prisma.guildPlugin.findUnique({
+      where: { guildId_pluginId: { guildId, pluginId: 'valorant' } },
+    });
+    return Boolean(plugin?.enabled && normalizeValorantConfig(plugin?.config).trollGacha.enabled);
   } catch {
     return false;
   }
@@ -772,6 +905,7 @@ async function handleValorantManagement(
       await interaction.editReply('募集は終了済み、または期限切れのため編集できません。');
       return;
     }
+    const trollGachaEnabled = await loadValorantTrollGachaEnabled(prisma, guildId);
     const action = parsed.action;
     if (action === 'close') {
       await interaction.editReply({
@@ -844,7 +978,8 @@ async function handleValorantManagement(
         return;
       }
       const synced =
-        !updated.changed || (await updatePublicValorantRecruitment(interaction, updated.session));
+        !updated.changed ||
+        (await updatePublicValorantRecruitment(interaction, updated.session, trollGachaEnabled));
       await interaction.editReply({
         content: synced
           ? '対象VCを固定しました。VC全員参加ボタンから候補を確認できます。'
@@ -1051,7 +1186,8 @@ async function handleValorantManagement(
       return;
     }
     const synced =
-      !mutation.changed || (await updatePublicValorantRecruitment(interaction, mutation.session));
+      !mutation.changed ||
+      (await updatePublicValorantRecruitment(interaction, mutation.session, trollGachaEnabled));
     await interaction.editReply({
       content: synced
         ? mutation.changed
@@ -1096,13 +1232,15 @@ async function handleValorantButton(
       await interaction.editReply('対象の募集が見つかりません。');
       return;
     }
+    // Config is loaded for every action so the troll-gacha display flag
+    // stays consistent across message rebuilds; only draw/reroll are
+    // gated on the plugin being enabled, as before.
+    const plugin = await prisma.guildPlugin.findUnique({
+      where: { guildId_pluginId: { guildId, pluginId: 'valorant' } },
+    });
+    const config = normalizeValorantConfig(plugin?.config);
     let candidates: ValorantCandidate[] = [];
-    let config: ValorantPluginConfig | null = null;
     if (parsed.action === 'draw' || parsed.action === 'reroll') {
-      const plugin = await prisma.guildPlugin.findUnique({
-        where: { guildId_pluginId: { guildId, pluginId: 'valorant' } },
-      });
-      config = normalizeValorantConfig(plugin?.config);
       if (!plugin?.enabled || !config.enabled) {
         await interaction.editReply('VALORANT Pluginは現在無効です。');
         return;
@@ -1113,6 +1251,48 @@ async function handleValorantButton(
       interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
       interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild),
     );
+    if (parsed.action === 'troll-off') {
+      if (!config.trollGacha.enabled) {
+        await interaction.editReply('縛り（トロールガチャ）合流は現在無効です。');
+        return;
+      }
+      const toggled = await toggleValorantSessionTrollOff(prisma, {
+        guildId,
+        id: parsed.id,
+        userId: interaction.user.id,
+      });
+      if (toggled.status !== 'ok') {
+        await interaction.editReply(
+          toggled.status === 'not_joined'
+            ? '参加者だけが縛りオフを切り替えられます。先に参加してください。'
+            : toggled.status === 'closed'
+              ? '募集は終了済み、または期限切れのため切り替えできません。'
+              : '対象の募集が見つかりません。',
+        );
+        return;
+      }
+      try {
+        await interaction.message.edit({
+          ...buildValorantSessionMessage(toggled.session, { trollGachaEnabled: true }),
+          attachments: [],
+        });
+      } catch (error) {
+        logger.warn(
+          { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+          'VALORANT縛りオフ表示の更新に失敗',
+        );
+        await interaction.editReply(
+          '縛りオフはDBへ保存済みですが、Discordの表示更新に失敗しました。',
+        );
+        return;
+      }
+      await interaction.editReply(
+        toggled.session.trollOffUserIds.includes(interaction.user.id)
+          ? '縛りオフにしました。この募集の抽選では、あなたに縛りは付きません。'
+          : '縛りオフを解除しました。この募集の抽選では、あなたも縛りの対象です。',
+      );
+      return;
+    }
     const mutation =
       parsed.action === 'reroll'
         ? await rerollValorantSession(prisma, {
@@ -1122,7 +1302,7 @@ async function handleValorantButton(
             userId: interaction.user.id,
             isAdmin,
             candidates,
-            sessionDurationMinutes: config!.sessionDurationMinutes,
+            sessionDurationMinutes: config.sessionDurationMinutes,
             rulesVersion:
               session.mode === 'TACTICAL' ? VALORANT_COMPOSITION_VERSION : 'fisher-yates-v1',
             pick: pickValorantAssignments,
@@ -1157,19 +1337,33 @@ async function handleValorantButton(
             : await getValorantSession(prisma, guildId, parsed.id);
         if (latest?.guildId === guildId)
           await interaction.message
-            .edit({ ...(await buildValorantRichMessage(latest, logger)), attachments: [] })
+            .edit({
+              ...(await buildValorantRichMessage(latest, logger, undefined, {
+                trollGachaEnabled: config.trollGacha.enabled,
+              })),
+              attachments: [],
+            })
             .catch(() => undefined);
       }
       await interaction.editReply(messages[mutation.status] ?? '操作できませんでした。');
       return;
     }
+    let displaySession = mutation.session;
+    if (mutation.changed && (parsed.action === 'draw' || parsed.action === 'reroll')) {
+      displaySession = await applyValorantTrollsToSession(prisma, logger, mutation.session, {
+        operatorId: interaction.user.id,
+        config,
+        displayName: (id) => interaction.guild?.members.cache.get(id)?.displayName,
+      });
+    }
     if (mutation.changed) {
       try {
         await interaction.message.edit({
           ...(await buildValorantRichMessage(
-            mutation.session,
+            displaySession,
             logger,
             (id) => interaction.guild?.members.cache.get(id)?.displayName,
+            { trollGachaEnabled: config.trollGacha.enabled },
           )),
           attachments: [],
         });
@@ -1473,7 +1667,7 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
           if (!parsed) return;
           if (
             candidate.isButton() &&
-            ['join', 'leave', 'draw', 'cancel', 'reroll'].includes(parsed.action)
+            ['join', 'leave', 'draw', 'cancel', 'reroll', 'troll-off'].includes(parsed.action)
           ) {
             await handleValorantButton(candidate, context.prisma, context.logger);
           } else if (
