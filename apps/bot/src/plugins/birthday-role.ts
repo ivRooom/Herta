@@ -186,13 +186,24 @@ type BirthdayRuntimeContext = PluginRuntimeContext<
 
 const workerTimers = new Map<string, NodeJS.Timeout>();
 const guildCycleLocks = new Map<string, Promise<void>>();
+/**
+ * Live plugin contexts by guild, for entry points that arrive
+ * outside the plugin lifecycle (the manual-delivery internal
+ * API, #1062). Registered on enable and dropped on disable,
+ * alongside the worker timers: a guild with no entry here has
+ * no running plugin instance, which the manual path reports
+ * as `plugin_not_enabled`.
+ */
+const runtimeContexts = new Map<string, BirthdayRuntimeContext>();
 
 export const birthdayRolePlugin = definePlugin<BirthdayRoleConfig, BirthdayClient, PrismaClient>({
   manifest: birthdayRoleManifest,
   async onEnable(context) {
+    runtimeContexts.set(context.guildId, context);
     startBirthdayWorker(context);
   },
   async onDisable(context) {
+    runtimeContexts.delete(context.guildId);
     stopBirthdayWorker(context.guildId);
   },
   provideCommands(context) {
@@ -1009,6 +1020,397 @@ export async function runBirthdayRoleCycle(
   });
 }
 
+/**
+ * Manual delivery (#1062): the reason codes a caller (ivrm-web
+ * Admin, via the Studio window and the bot internal API) can
+ * branch on. Pre-checks produce these before any delivery is
+ * attempted (`status: 'rejected'`); per-kind failures either
+ * carry one of the pre-check codes (`role_not_editable`,
+ * `channel_unavailable`, `member_not_in_guild`) or the error
+ * class name of the failed task, never a raw message.
+ */
+export type ManualBirthdayDeliveryReason =
+  | 'plugin_not_enabled'
+  | 'ivrm_source_disabled'
+  | 'date_out_of_range'
+  | 'supply_unavailable'
+  | 'delivery_disabled'
+  | 'not_a_recipient'
+  | 'member_not_in_guild'
+  | 'role_not_editable'
+  | 'channel_unavailable';
+
+export interface ManualBirthdayDeliveryInput {
+  discordUserId: string;
+  localDate: string;
+}
+
+export interface ManualBirthdayDeliveryKindResult {
+  category: 'card' | 'role_assign';
+  outcome: 'delivered' | 'already_delivered' | 'failed' | 'not_configured' | 'in_progress';
+  /** Failure detail: a reason code or an error class name. Null unless failed. */
+  reason: string | null;
+}
+
+export interface ManualBirthdayDeliveryResult {
+  status: 'ok' | 'rejected';
+  reason: ManualBirthdayDeliveryReason | string | null;
+  deliveries: ManualBirthdayDeliveryKindResult[];
+}
+
+/** How far back (in JST days before today) a manual delivery may target. */
+export const MANUAL_BIRTHDAY_DELIVERY_PAST_DAYS = 7;
+
+const LOCAL_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export function parseBirthdayLocalDate(localDate: string): LocalDateParts | null {
+  const match = LOCAL_DATE_PATTERN.exec(localDate);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (utc.getUTCFullYear() !== year || utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day)
+    return null;
+  return { year, month, day };
+}
+
+/**
+ * The manual-delivery date guard (design §3, double defence):
+ * JST today plus the past {@link MANUAL_BIRTHDAY_DELIVERY_PAST_DAYS}
+ * days; future dates and anything older are refused. The Web
+ * side validates the same window; the bot re-validates so a
+ * direct internal caller cannot reach outside it either.
+ */
+export function isManualBirthdayDeliveryDateInRange(localDate: string, now = new Date()): boolean {
+  const target = parseBirthdayLocalDate(localDate);
+  if (!target) return false;
+  const today = getLocalDateParts(now, 'Asia/Tokyo');
+  const diffDays =
+    (Date.UTC(today.year, today.month - 1, today.day) -
+      Date.UTC(target.year, target.month - 1, target.day)) /
+    86_400_000;
+  return diffDays >= 0 && diffDays <= MANUAL_BIRTHDAY_DELIVERY_PAST_DAYS;
+}
+
+function manualDeliveryRejected(
+  reason: ManualBirthdayDeliveryReason,
+): ManualBirthdayDeliveryResult {
+  return { status: 'rejected', reason, deliveries: [] };
+}
+
+function toManualKindResult(
+  category: ManualBirthdayDeliveryKindResult['category'],
+  outcome: BirthdayDeliveryOutcome,
+): ManualBirthdayDeliveryKindResult {
+  switch (outcome.outcome) {
+    case 'completed':
+      return { category, outcome: 'delivered', reason: null };
+    case 'already_completed':
+      return { category, outcome: 'already_delivered', reason: null };
+    case 'in_progress':
+      return { category, outcome: 'in_progress', reason: null };
+    case 'failed':
+      return { category, outcome: 'failed', reason: outcome.errorName };
+  }
+}
+
+/**
+ * Runs one member's birthday delivery for one JST date,
+ * immediately, on an admin's explicit request (#1062). It
+ * shares the cycle's moving parts — the guild cycle lock, the
+ * ivrm supply fetch for the requested date, the settings
+ * application, the celebration row and the per-kind
+ * idempotency keys — so a manual run and the hourly cycle can
+ * never double-deliver, and a member the cycle already served
+ * comes back `already_delivered`. Two cycle behaviours are
+ * deliberately NOT shared: the delivery-time gate (a manual
+ * run is the recovery path for a late delivery, so it fires
+ * at once; the gated cycle later no-ops on the same keys) and
+ * the stale-role cleanup (a manual run must not touch other
+ * members' roles; the next cycle reconciles as usual, and the
+ * late-grant protection from #1027 keeps a role granted late
+ * for a past date from being stripped the same day).
+ */
+export async function runManualBirthdayDelivery(
+  context: BirthdayRuntimeContext,
+  input: ManualBirthdayDeliveryInput,
+  now = new Date(),
+): Promise<ManualBirthdayDeliveryResult> {
+  return withGuildCycleLock(context.guildId, async () => {
+    const config = normalizeBirthdayRoleConfig(context.config);
+    if (!config.enabled) return manualDeliveryRejected('plugin_not_enabled');
+    if (!config.useIvrmApiSource) return manualDeliveryRejected('ivrm_source_disabled');
+    if (!isManualBirthdayDeliveryDateInRange(input.localDate, now))
+      return manualDeliveryRejected('date_out_of_range');
+
+    const supply = await callIvrmBirthday(context.guildId, input.localDate);
+    if (supply.status !== 'ok') return manualDeliveryRejected('supply_unavailable');
+    if (!supply.enabled) return manualDeliveryRejected('delivery_disabled');
+    const recipient = supply.recipients.find(
+      (entry) => entry.discordUserId === input.discordUserId,
+    );
+    if (!recipient) return manualDeliveryRejected('not_a_recipient');
+
+    const effectiveConfig = applyIvrmBirthdaySettings(config, supply.settings);
+    const registration = toBirthdayRegistrationLike(recipient);
+    const dateParts = parseBirthdayLocalDate(input.localDate)!;
+    const guild = await context.client.guilds.fetch(context.guildId);
+
+    // Celebration bookkeeping for this one member, exactly as
+    // one cycle pass records it (the supply API judged the
+    // date, leap-day policy included, so the recipient's
+    // month/day is the celebration's).
+    const storedMembers = await context.prisma.guildMember.findMany({
+      where: { guildId: context.guildId, userId: { in: [registration.userId] } },
+      select: { userId: true, joinedAt: true },
+    });
+    const joinedAt = storedMembers[0]?.joinedAt ?? null;
+    const joinedLocal = joinedAt ? getLocalDateParts(joinedAt, 'Asia/Tokyo') : null;
+    const age = registration.age ?? calculateBirthdayAge(registration.birthYear, dateParts.year);
+    const serverBirthdayNumber = countServerBirthdaysSinceJoin(
+      joinedLocal,
+      registration,
+      dateParts.year,
+      effectiveConfig.leapDayPolicy,
+    );
+    const celebration: BirthdayAnnouncementContext = { age, serverBirthdayNumber };
+    await upsertBirthdayCelebration(context.prisma, {
+      guildId: context.guildId,
+      userId: registration.userId,
+      localDate: input.localDate,
+      birthYear: registration.birthYear,
+      age,
+      serverBirthdayNumber,
+    });
+
+    const deliveries: ManualBirthdayDeliveryKindResult[] = [];
+
+    // Role assignment. The cycle silently skips an unusable
+    // role; the manual path must say why, so validation and
+    // member presence are pre-checked into reason codes.
+    if (!effectiveConfig.assignRole || !effectiveConfig.birthdayRoleId) {
+      deliveries.push({ category: 'role_assign', outcome: 'not_configured', reason: null });
+    } else {
+      const role = await validateBirthdayRole(guild, effectiveConfig.birthdayRoleId);
+      if (!role) {
+        deliveries.push({
+          category: 'role_assign',
+          outcome: 'failed',
+          reason: 'role_not_editable',
+        });
+      } else {
+        let member: BirthdayMember | null = null;
+        try {
+          member = await guild.members.fetch(registration.userId);
+        } catch {
+          member = null;
+        }
+        if (!member) {
+          deliveries.push({
+            category: 'role_assign',
+            outcome: 'failed',
+            reason: 'member_not_in_guild',
+          });
+        } else {
+          const fetchedMember = member;
+          const outcome = await processDeliveryWithOutcome(
+            context,
+            {
+              userId: registration.userId,
+              localDate: input.localDate,
+              kind: `${ROLE_ASSIGNED_PREFIX}${role.id}`,
+            },
+            async () => {
+              if (!fetchedMember.roles.cache.has(role.id)) await fetchedMember.roles.add(role.id);
+              return null;
+            },
+          );
+          deliveries.push(toManualKindResult('role_assign', outcome));
+        }
+      }
+    }
+
+    // Announcement (card + message). Background resolution
+    // follows the cycle's priority for this one recipient:
+    // the member's own preset pick outranks the API
+    // backgroundUrl, which outranks the preset definition's
+    // background, which outranks the Studio-stored background,
+    // which outranks the bundled preset.
+    if (!effectiveConfig.sendAnnouncement || !effectiveConfig.announcementChannelId) {
+      deliveries.push({ category: 'card', outcome: 'not_configured', reason: null });
+    } else {
+      const channel = await guild.channels
+        .fetch(effectiveConfig.announcementChannelId)
+        .catch(() => null);
+      if (!channel?.isTextBased()) {
+        deliveries.push({ category: 'card', outcome: 'failed', reason: 'channel_unavailable' });
+      } else {
+        const ivrmBackgroundUrl = supply.settings.card.backgroundUrl;
+        const ivrmPresetDefinition = supply.settings.card.presetDefinition;
+        let remoteBackground: Buffer | null = null;
+        if (effectiveConfig.birthdayCardEnabled && ivrmBackgroundUrl) {
+          remoteBackground = await fetchBirthdayCardBackgroundImage(ivrmBackgroundUrl);
+          if (!remoteBackground) {
+            context.logger.warn(
+              { guildId: context.guildId },
+              'ivrm-webのカード背景URLを取得できないため従来の背景解決へfallbackします',
+            );
+          }
+        }
+        let definitionBackground: Buffer | null = null;
+        if (effectiveConfig.birthdayCardEnabled && !remoteBackground && ivrmPresetDefinition) {
+          definitionBackground = await fetchBirthdayCardBackgroundImage(
+            ivrmPresetDefinition.backgroundUrl,
+          );
+          if (!definitionBackground) {
+            context.logger.warn(
+              { guildId: context.guildId },
+              'ivrm-webのプリセット定義の背景URLを取得できないため従来の背景解決へfallbackします',
+            );
+          }
+        }
+        const memberPreset = resolveMemberBirthdayCardPreset(
+          registration,
+          supply.presetDefinitions,
+        );
+        let memberDefinitionBackground: Buffer | null = null;
+        if (effectiveConfig.birthdayCardEnabled && memberPreset?.definition) {
+          memberDefinitionBackground = await fetchBirthdayCardBackgroundImage(
+            memberPreset.definition.backgroundUrl,
+          );
+          if (!memberDefinitionBackground) {
+            context.logger.warn(
+              { guildId: context.guildId },
+              'メンバー個別プリセットの背景URLを取得できないため従来の背景解決へfallbackします',
+            );
+          }
+        }
+        const usesStoredBirthdayCardBackground =
+          effectiveConfig.birthdayCardBackgroundSource === 'custom' ||
+          effectiveConfig.birthdayCardBackgroundSource === 'asset';
+        const customBackground =
+          !remoteBackground &&
+          !definitionBackground &&
+          effectiveConfig.birthdayCardEnabled &&
+          usesStoredBirthdayCardBackground
+            ? await getBirthdayCardRuntimeBackground(
+                context.prisma,
+                context.guildId,
+                effectiveConfig,
+              ).catch((error) => {
+                context.logger.warn(
+                  {
+                    guildId: context.guildId,
+                    errorName: error instanceof Error ? error.name : 'UnknownError',
+                  },
+                  'Birthday Card背景を取得できないためプリセットへfallbackします',
+                );
+                return null;
+              })
+            : null;
+
+        const outcome = await processDeliveryWithOutcome(
+          context,
+          { userId: registration.userId, localDate: input.localDate, kind: 'announcement' },
+          async () => {
+            const content = truncate(
+              renderBirthdayAnnouncement(
+                effectiveConfig.announcementMessage,
+                registration,
+                celebration,
+              ),
+              MAX_RESPONSE_LENGTH,
+            );
+            let files: Array<{ attachment: Buffer; name: string }> | undefined;
+            if (effectiveConfig.birthdayCardEnabled) {
+              try {
+                const member = await guild.members.fetch(registration.userId);
+                const card = await renderBirthdayCard({
+                  config: memberPreset?.preset
+                    ? { ...effectiveConfig, birthdayCardPreset: memberPreset.preset }
+                    : effectiveConfig,
+                  displayName:
+                    member.displayName ||
+                    registration.displayName ||
+                    `Member ${registration.userId.slice(-4)}`,
+                  avatarUrl:
+                    member.displayAvatarURL?.({
+                      extension: 'png',
+                      size: 512,
+                    }) ?? null,
+                  month: registration.month,
+                  day: registration.day,
+                  age: celebration.age,
+                  customBackground: memberPreset ? null : (customBackground?.content ?? null),
+                  remoteBackground: memberPreset ? null : remoteBackground,
+                  presetDefinition: memberPreset ? memberPreset.definition : ivrmPresetDefinition,
+                  definitionBackground: memberPreset
+                    ? memberPreset.definition
+                      ? memberDefinitionBackground
+                      : null
+                    : definitionBackground,
+                });
+                files = [
+                  {
+                    attachment: card,
+                    name: `birthday-${registration.userId}.png`,
+                  },
+                ];
+              } catch (error) {
+                context.logger.warn(
+                  {
+                    guildId: context.guildId,
+                    userId: registration.userId,
+                    errorName: error instanceof Error ? error.name : 'UnknownError',
+                  },
+                  'Birthday Cardの生成に失敗したためテキストのみで投稿します',
+                );
+              }
+            }
+            const message = await channel.send({
+              content,
+              allowedMentions: { parse: [], users: [registration.userId] },
+              ...(files ? { files } : {}),
+            });
+            return message.id;
+          },
+        );
+        deliveries.push(toManualKindResult('card', outcome));
+      }
+    }
+
+    context.logger.info(
+      {
+        guildId: context.guildId,
+        userId: registration.userId,
+        localDate: input.localDate,
+        deliveries: deliveries.map((entry) => `${entry.category}:${entry.outcome}`),
+      },
+      '誕生日手動配信を実行しました',
+    );
+    return { status: 'ok', reason: null, deliveries };
+  });
+}
+
+/**
+ * Guild-level entry for the manual-delivery internal API
+ * (#1062): resolves the live plugin context registered at
+ * enable time. No registered context means the plugin is not
+ * running for the guild, reported as `plugin_not_enabled`
+ * inside the result (not as a transport error) so the caller
+ * maps every refusal through one shape.
+ */
+export async function runManualBirthdayDeliveryForGuild(
+  guildId: string,
+  input: ManualBirthdayDeliveryInput,
+  now = new Date(),
+): Promise<ManualBirthdayDeliveryResult> {
+  const context = runtimeContexts.get(guildId);
+  if (!context) return manualDeliveryRejected('plugin_not_enabled');
+  return runManualBirthdayDelivery(context, input, now);
+}
+
 async function executeBirthdayCommand(
   context: BirthdayRuntimeContext,
   interaction: BirthdayCommandInteraction,
@@ -1194,11 +1596,28 @@ async function validateBirthdayRole(
   return role;
 }
 
-async function processDelivery(
+/**
+ * The structured result of one idempotent delivery attempt
+ * (#1062). The cycle only needs "did this kind end up
+ * delivered", which the boolean `processDelivery` wrapper
+ * below keeps providing with exactly the historical semantics;
+ * the manual-delivery path needs to tell a fresh delivery from
+ * an already-completed one, from a claim held by a concurrent
+ * run, and from a failure (with the error class name only —
+ * raw messages never leave the process, matching the
+ * deliveries-read discipline).
+ */
+export type BirthdayDeliveryOutcome =
+  | { outcome: 'completed' }
+  | { outcome: 'already_completed' }
+  | { outcome: 'in_progress' }
+  | { outcome: 'failed'; errorName: string };
+
+async function processDeliveryWithOutcome(
   context: BirthdayRuntimeContext,
   input: { userId: string; localDate: string; kind: string },
   task: () => Promise<string | null>,
-): Promise<boolean> {
+): Promise<BirthdayDeliveryOutcome> {
   const idempotencyKey = [
     'birthday',
     context.guildId,
@@ -1215,15 +1634,15 @@ async function processDelivery(
     kind: input.kind,
     idempotencyKey,
   });
-  if (delivery.status === 'completed') return true;
+  if (delivery.status === 'completed') return { outcome: 'already_completed' };
 
   const claimed = await claimBirthdayDelivery(context.prisma, delivery.id);
-  if (!claimed) return false;
+  if (!claimed) return { outcome: 'in_progress' };
 
   try {
     const messageId = await task();
     await completeBirthdayDelivery(context.prisma, delivery.id, messageId);
-    return true;
+    return { outcome: 'completed' };
   } catch (error) {
     const errorName = error instanceof Error && error.name ? error.name : 'UnknownError';
     await failBirthdayDelivery(context.prisma, delivery.id, errorName);
@@ -1231,8 +1650,17 @@ async function processDelivery(
       { err: error, guildId: context.guildId, userId: input.userId, kind: input.kind },
       'Birthday Role deliveryの処理に失敗しました',
     );
-    return false;
+    return { outcome: 'failed', errorName };
   }
+}
+
+async function processDelivery(
+  context: BirthdayRuntimeContext,
+  input: { userId: string; localDate: string; kind: string },
+  task: () => Promise<string | null>,
+): Promise<boolean> {
+  const result = await processDeliveryWithOutcome(context, input, task);
+  return result.outcome === 'completed' || result.outcome === 'already_completed';
 }
 
 function startBirthdayWorker(context: BirthdayRuntimeContext): void {

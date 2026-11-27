@@ -21,7 +21,9 @@ import {
   parseGuildRoleCreateInput,
 } from './guild-role-mutations.js';
 import { isAuthorizedInternalApiRequest, isConfiguredInternalApiSecret } from './internal-auth.js';
+import { parseManualBirthdayDeliveryInput } from './manual-birthday-delivery-input.js';
 import { parseMbtiRoleReconciliationInput } from './mbti-role-reconciliation-input.js';
+import type { ManualBirthdayDeliveryResult } from '../plugins/birthday-role.js';
 import type { MbtiRoleReconciliationResult } from '../plugins/mbti-roles.js';
 import {
   GuildMessageStudioSendError,
@@ -56,6 +58,10 @@ export interface HealthHttpServerOptions {
     guildId: string,
     input: { discordUserId: string; resultType: string },
   ) => Promise<MbtiRoleReconciliationResult | null>;
+  runManualBirthdayDelivery?: (
+    guildId: string,
+    input: { discordUserId: string; localDate: string },
+  ) => Promise<ManualBirthdayDeliveryResult>;
   internalApiSecret?: string;
   releaseNotifyEnabled?: boolean;
   releaseNotifySecret?: string;
@@ -256,6 +262,18 @@ export class HealthHttpServer {
         response,
         method,
         mbtiRoleReconciliationMatch[1]!,
+      );
+      return;
+    }
+
+    const manualBirthdayDeliveryMatch =
+      /^\/internal\/guilds\/(\d+)\/birthday\/manual-delivery$/u.exec(pathname);
+    if (manualBirthdayDeliveryMatch) {
+      await this.handleManualBirthdayDeliveryRequest(
+        request,
+        response,
+        method,
+        manualBirthdayDeliveryMatch[1]!,
       );
       return;
     }
@@ -824,6 +842,62 @@ export class HealthHttpServer {
         { err: error, guildId },
         'MBTI Web診断のRole付与(内部API)に失敗しました',
       );
+      this.sendJson(response, 503, { status: 'unavailable' });
+    }
+  }
+
+  private async handleManualBirthdayDeliveryRequest(
+    request: IncomingMessage,
+    response: import('node:http').ServerResponse,
+    method: string,
+    guildId: string,
+  ): Promise<void> {
+    const internalApiSecret = this.options.internalApiSecret;
+    if (!isConfiguredInternalApiSecret(internalApiSecret)) {
+      this.sendJson(response, 503, { status: 'internal_api_not_configured' });
+      return;
+    }
+    if (!isAuthorizedInternalApiRequest(request.headers.authorization, internalApiSecret)) {
+      this.sendJson(response, 401, { status: 'unauthorized' });
+      return;
+    }
+    if (method !== 'POST') {
+      response.setHeader('Allow', 'POST');
+      this.sendJson(response, 405, { status: 'method_not_allowed' });
+      return;
+    }
+    if (!this.options.runManualBirthdayDelivery) {
+      this.sendJson(response, 404, { status: 'not_found' });
+      return;
+    }
+
+    let rawBody: unknown;
+    try {
+      rawBody = await readJsonBody(request, MAX_INTERNAL_JSON_BODY_BYTES);
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        this.sendJson(response, 413, { status: 'payload_too_large' });
+        return;
+      }
+      this.sendJson(response, 400, { status: 'invalid_json' });
+      return;
+    }
+
+    const input = parseManualBirthdayDeliveryInput(rawBody);
+    if (!input) {
+      this.sendJson(response, 400, { status: 'invalid_manual_delivery_input' });
+      return;
+    }
+
+    try {
+      // Every refusal the plugin can produce (not enabled, out
+      // of range, not a recipient, …) rides inside the result
+      // as a reason code, so the caller maps one shape; only a
+      // thrown failure becomes a transport-level 503.
+      const result = await this.options.runManualBirthdayDelivery(guildId, input);
+      this.sendJson(response, 200, { result });
+    } catch (error) {
+      this.options.logger.warn({ err: error, guildId }, '誕生日手動配信(内部API)に失敗しました');
       this.sendJson(response, 503, { status: 'unavailable' });
     }
   }

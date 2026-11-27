@@ -93,6 +93,7 @@ const healthServer = healthConfig.enabled
       updateGuildBotProfile: (guildId, input) => bot.updateGuildBotProfile(guildId, input),
       reconcileMbtiRole: (guildId, input) =>
         bot.reconcileMbtiRoleForWebQuiz(guildId, input.discordUserId, input.resultType),
+      runManualBirthdayDelivery: (guildId, input) => bot.runManualBirthdayDelivery(guildId, input),
       internalApiSecret: process.env['BOT_INTERNAL_API_SECRET']?.trim(),
       releaseNotifyEnabled:
         process.env['HERTA_RELEASE_NOTIFY_ENABLED']?.trim().toLowerCase() === 'true',
