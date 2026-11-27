@@ -12,7 +12,7 @@ import {
   type ModalSubmitInteraction,
   type Client,
 } from 'discord.js';
-import { dailyServiceFetch } from './daily-bonus-wallet.js';
+import { DailyServiceFailureError, dailyServiceFetch } from './daily-bonus-wallet.js';
 import {
   createDailyQuizSession,
   getDailyQuizSession,
@@ -375,7 +375,18 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
   let review: YesterdayReview;
   try {
     review = await yesterdayReview(ctx.guildId, interaction.user.id);
-  } catch {
+  } catch (error) {
+    // Keep why the review call failed (#1065): the retry reply alone
+    // leaves no trace, same as the claim/answer flow did before.
+    ctx.logger.warn(
+      {
+        guildId: ctx.guildId,
+        userId: interaction.user.id,
+        failure: error instanceof DailyServiceFailureError ? error.failure : null,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
+      'Daily participation yesterday review unavailable',
+    );
     await interaction.editReply({
       content: '昨日の問題を取得できませんでした。時間をおいて再試行してください。',
       allowedMentions: { parse: [] },
@@ -768,6 +779,38 @@ export async function handleDailyParticipation(
     await showParticipationQuestions(ctx, interaction, state, messageId);
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
+    // Keep why a service call failed (#1065): without this log the
+    // generic member reply is the only trace of the failure. Known
+    // rejections (expired, invalid input, disabled, setup states) are
+    // normal flow and stay unlogged.
+    if (error instanceof DailyServiceFailureError)
+      ctx.logger.warn(
+        {
+          guildId: ctx.guildId,
+          userId: interaction.user.id,
+          action: supportRef.kind,
+          failure: error.failure,
+        },
+        'Daily participation service request failed',
+      );
+    else if (
+      ![
+        'expired',
+        'invalid_answer',
+        'disabled',
+        'profile_required',
+        'account_initialization_required',
+      ].includes(code)
+    )
+      ctx.logger.warn(
+        {
+          guildId: ctx.guildId,
+          userId: interaction.user.id,
+          action: supportRef.kind,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        },
+        'Daily participation request failed unexpectedly',
+      );
     const content =
       code === 'expired'
         ? '対象ロール・当日の通知・回答期限を確認してください。'
