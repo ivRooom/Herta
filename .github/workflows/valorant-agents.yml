@@ -76,7 +76,7 @@ jobs:
           node --input-type=module -e '
             import fs from "node:fs";
             let schema = fs.readFileSync("packages/db/prisma/schema.prisma", "utf8");
-            for (const name of ["ValorantAgent", "ValorantRoster", "ValorantPickSession", "ValorantPickParticipant", "ValorantMatchResult"]) {
+            for (const name of ["ValorantAgent", "ValorantRoster", "ValorantPickSession", "ValorantPickParticipant", "ValorantMatchResult", "ValorantWerewolfGame", "ValorantWerewolfSecret", "ValorantWerewolfVote"]) {
               const pattern = new RegExp("model " + name + " \\{[\\s\\S]*?\\n\\}", "g");
               if ([...schema.matchAll(pattern)].length !== 1) throw new Error("Expected model " + name);
               schema = schema.replace(pattern, "");
