@@ -22,7 +22,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ gui
   }
   try {
     const draws = await prisma.valorantPickSession.findMany({
-      where: { guildId, status: 'COMPLETED' },
+      // 人狼セッション (#1049) は通常の抽選統計へ混ぜない
+      where: { guildId, status: 'COMPLETED', mode: { not: 'WEREWOLF' } },
       orderBy: { completedAt: 'desc' },
       take: 5001,
       select: {

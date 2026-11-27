@@ -71,6 +71,24 @@ import {
   type ValorantTrollConfig,
 } from './valorant-troll-gacha.js';
 import {
+  abortValorantWerewolfGame,
+  castValorantWerewolfVote,
+  getValorantWerewolfRevealed,
+  getValorantWerewolfSecretForUser,
+  getValorantWerewolfState,
+  getValorantWerewolfVoteProgress,
+  markValorantWerewolfSecretViewed,
+  openValorantWerewolfVote,
+  parseWerewolfRoster,
+  type WerewolfGameRow,
+} from './valorant-werewolf-repository.js';
+import {
+  closeValorantWerewolfRoundAndSettle,
+  retryValorantWerewolfPunishment,
+  startValorantWerewolf,
+} from './valorant-werewolf-service.js';
+import { buildWerewolfPublicView, type WerewolfRevealedLike } from './valorant-werewolf-api.js';
+import {
   japaneseValorantMap,
   tacticalMapPlan,
   pickTacticalAgents,
@@ -85,6 +103,8 @@ export interface ValorantPluginConfig {
   sessionDurationMinutes: number;
   /** トロールガチャ (縛り) 合流の設定 (#1047)。既定は無効 */
   trollGacha: ValorantTrollConfig;
+  /** 人狼モード (#1049) の有効化。通常合流とは独立。既定は無効 */
+  werewolfEnabled: boolean;
 }
 
 export function normalizeValorantConfig(value: unknown): ValorantPluginConfig {
@@ -102,6 +122,7 @@ export function normalizeValorantConfig(value: unknown): ValorantPluginConfig {
         ? Math.max(5, Math.min(180, source.sessionDurationMinutes))
         : 30,
     trollGacha: normalizeValorantTrollConfig(source),
+    werewolfEnabled: source['trollWerewolfEnabled'] === true,
   };
 }
 
@@ -187,6 +208,9 @@ function buildValorantSessionMessage(
   session: ValorantSessionSnapshot,
   options: { trollGachaEnabled?: boolean } = {},
 ) {
+  // 人狼部屋 (#1049) は専用ビルダーへ委譲する。game を持たない呼び出し
+  // (募集同期・管理フロー) では募集中/終了の殻だけを描く。
+  if (session.mode === 'WEREWOLF') return buildValorantWerewolfMessage(session, null);
   const expiryMs = session.expiresAt.getTime();
   // A corrupt or missing timestamp must not create a malformed Discord tag
   // or leave participant/reroll buttons enabled.
@@ -321,6 +345,243 @@ function buildValorantSessionMessage(
     components,
     allowedMentions: { parse: [] as [] },
   };
+}
+
+/**
+ * 人狼部屋 (#1049) の公開メッセージ。
+ *
+ * 秘匿の境界: RESOLVED より前は秘密テーブル由来の情報を一切含めない
+ * (人狼 ID は roster の一員として並ぶだけで、役割は示さない)。
+ * revealed は結果確定後に呼び出し側が渡したときだけ描く。
+ * game が null のときは pick session の殻だけから描く (募集中・中止)。
+ */
+function buildValorantWerewolfMessage(
+  session: ValorantSessionSnapshot,
+  game: WerewolfGameRow | null,
+  options: { votedCount?: number; revealed?: WerewolfRevealedLike | null } = {},
+) {
+  const button = (action: string, label: string, style: ButtonStyle, disabled = false) =>
+    new ButtonBuilder()
+      .setCustomId(VALORANT_SESSION_PREFIX + session.id + ':' + action)
+      .setLabel(label)
+      .setStyle(style)
+      .setDisabled(disabled);
+  const roster = game
+    ? parseWerewolfRoster(game.rosterSnapshot)
+    : session.participants.map((participant, index) => ({
+        userId: participant.userId,
+        displayName: `参加者${index + 1}`,
+      }));
+  const memberLines = roster.length
+    ? roster.map((entry) => '👤 <@' + entry.userId + '>').join('\n')
+    : '参加者はいません';
+  const base = [
+    'モード：人狼（秘密の縛り＋投票）',
+    '募集作成者：<@' + session.creatorId + '>',
+    '対象VC：' +
+      (session.voiceChannelId
+        ? '<#' + session.voiceChannelId + '>'
+        : session.vcAutoJoin
+          ? '未設定（VCを固定すると自動参加が有効になります）'
+          : '未設定（手動参加のみ）'),
+  ];
+  const embed = new EmbedBuilder().setColor(0x5865f2).setTitle('🐺 VALORANT 人狼モード');
+  let components: ActionRowBuilder<ButtonBuilder>[] = [];
+
+  if (!game) {
+    const expired = session.expiresAt.getTime() <= Date.now();
+    const open = session.status === 'OPEN' && !expired;
+    const expiryUnix = Math.floor(session.expiresAt.getTime() / 1000);
+    embed.setDescription(
+      [
+        ...base,
+        ...(session.status === 'OPEN' && session.vcAutoJoin
+          ? ['VC自動参加：ON（対象VCに入ると自動で参加登録されます。退出しても参加は維持されます）']
+          : []),
+        '参加者：' +
+          roster.length +
+          ' / ' +
+          session.maxParticipants +
+          (roster.length >= session.maxParticipants ? '（満員）' : ''),
+        ...(session.status === 'OPEN' ? ['募集期限：<t:' + expiryUnix + ':R>'] : []),
+        '',
+        memberLines,
+        '',
+        '状態：' +
+          (session.status === 'CANCELLED'
+            ? '中止（秘密は公開されません）'
+            : session.status === 'COMPLETED'
+              ? '終了'
+              : open
+                ? '参加募集中（開始には3人以上が必要です）'
+                : '期限切れ'),
+      ].join('\n'),
+    );
+    if (open) {
+      components = [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          button('join', '参加', ButtonStyle.Success, roster.length >= session.maxParticipants),
+          button('leave', '参加取消', ButtonStyle.Secondary),
+          button('wolf-start', '🐺 開始', ButtonStyle.Primary, roster.length < 3),
+          button('wolf-cancel', '中止', ButtonStyle.Danger),
+        ),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          button('vc', '🔊 VC全員参加', ButtonStyle.Secondary),
+          button('manage', '👥 参加者管理', ButtonStyle.Secondary),
+        ),
+      ];
+    }
+    return { embeds: [embed], components, allowedMentions: { parse: [] as [] } };
+  }
+
+  const view = buildWerewolfPublicView(session, game, {
+    votedCount: options.votedCount ?? 0,
+    revealed: options.revealed ?? null,
+  });
+  const phase = game.phase;
+  if (phase === 'ASSIGNING') {
+    embed.setDescription(
+      [
+        ...base,
+        '',
+        memberLines,
+        '',
+        game.assignmentStatus === 'READY'
+          ? '状態：開始処理中'
+          : '状態：開始処理中（縛りの抽選が完了していません。「開始リトライ」で再開できます）',
+      ].join('\n'),
+    );
+    components = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        button('wolf-start', '開始リトライ', ButtonStyle.Primary),
+        button('wolf-cancel', '中止', ButtonStyle.Danger),
+      ),
+    ];
+  } else if (phase === 'PLAYING') {
+    embed.setDescription(
+      [
+        ...base,
+        '',
+        memberLines,
+        '',
+        '参加者のうち1人だけが秘密の縛りを持っています。',
+        '自分の縛りは「自分の縛りを確認」ボタンで本人だけが確認できます。',
+        '状態：試合中',
+      ].join('\n'),
+    );
+    components = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        button('wolf-secret', '🎭 自分の縛りを確認', ButtonStyle.Secondary),
+        button('wolf-vote-open', '🗳 投票へ進む', ButtonStyle.Primary),
+        button('wolf-cancel', '中止', ButtonStyle.Danger),
+      ),
+    ];
+  } else if (phase === 'VOTING' || phase === 'RUNOFF') {
+    const candidates =
+      phase === 'RUNOFF'
+        ? roster.filter((entry) => game.currentCandidateUserIds.includes(entry.userId))
+        : roster;
+    const endsUnix = game.voteEndsAt ? Math.floor(game.voteEndsAt.getTime() / 1000) : null;
+    embed.setDescription(
+      [
+        ...base,
+        '',
+        phase === 'RUNOFF' ? '決選投票の候補者：' : '参加者：',
+        candidates.map((entry) => '👤 <@' + entry.userId + '>').join('\n'),
+        '',
+        '投票済み：' + (options.votedCount ?? 0) + ' / ' + roster.length,
+        ...(endsUnix !== null ? ['締切目安：<t:' + endsUnix + ':R>'] : []),
+        '状態：' +
+          (phase === 'RUNOFF' ? '決選投票中' : '投票中') +
+          '（票数は締切まで公開されません）',
+      ].join('\n'),
+    );
+    components = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        button('wolf-vote', '🗳 投票する', ButtonStyle.Primary),
+        button('wolf-close', '締切', ButtonStyle.Secondary),
+        button('wolf-cancel', '中止', ButtonStyle.Danger),
+      ),
+    ];
+  } else if (phase === 'RESOLVING') {
+    embed.setDescription([...base, '', memberLines, '', '状態：結果を集計しています'].join('\n'));
+  } else if (phase === 'RESOLVED' && view.result) {
+    const result = view.result;
+    const nameOf = (userId: string | null) => (userId ? '<@' + userId + '>' : '（指名なし）');
+    const roundLines = result.rounds.map((round) => {
+      const tallyText = Object.entries(round.tally)
+        .map(([userId, count]) => '<@' + userId + '>：' + count + '票')
+        .join('、');
+      return (round.round === 1 ? '本投票' : '決選投票') + ' — ' + (tallyText || '投票なし');
+    });
+    embed.setDescription(
+      [
+        ...base,
+        '',
+        result.outcome === 'CITIZENS_WIN' ? '🎉 **市民の勝利**' : '🐺 **人狼の勝利**',
+        '指名者：' + nameOf(result.accusedUserId),
+        '人狼：' + nameOf(result.werewolfUserId),
+        result.revealedTroll
+          ? '秘密の縛り：' + formatValorantTrollEmbedText(result.revealedTroll)
+          : '秘密の縛り：（記録なし）',
+        '',
+        ...roundLines,
+        '',
+        result.punishment
+          ? '罰ゲーム：' +
+            nameOf(result.punishment.userId) +
+            ' — ' +
+            formatValorantTrollEmbedText(result.punishment.troll)
+          : result.punishmentStatus === 'UNAVAILABLE'
+            ? '罰ゲーム：抽選できませんでした（対象者への再試行が可能です）'
+            : '罰ゲーム：なし',
+        '',
+        '状態：結果確定',
+      ].join('\n'),
+    );
+    if (result.punishmentStatus === 'UNAVAILABLE' && game.punishmentUserId) {
+      components = [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          button('wolf-punishment-retry', '罰ゲームを引き直す', ButtonStyle.Secondary),
+        ),
+      ];
+    }
+  } else if (phase === 'ABORTED') {
+    embed.setDescription(
+      [
+        ...base,
+        '',
+        memberLines,
+        '',
+        game.outcomeReason === 'NO_VOTES'
+          ? '状態：投票がなかったため中止しました（秘密は公開されません）'
+          : '状態：中止しました（秘密は公開されません）',
+      ].join('\n'),
+    );
+  } else {
+    embed.setDescription([...base, '', memberLines, '', '状態：' + phase].join('\n'));
+  }
+  embed.setTimestamp(session.completedAt ?? session.createdAt);
+  return { embeds: [embed], components, allowedMentions: { parse: [] as [] } };
+}
+
+/** DB 正本から人狼部屋の公開メッセージ payload を組み立てる */
+async function buildWerewolfMessageForState(
+  prisma: PrismaClient,
+  session: ValorantSessionSnapshot,
+): Promise<ReturnType<typeof buildValorantWerewolfMessage>> {
+  const state = await getValorantWerewolfState(prisma, session.guildId, session.id);
+  const game = state?.game ?? null;
+  let votedCount = 0;
+  if (game && (game.phase === 'VOTING' || game.phase === 'RUNOFF')) {
+    const progress = await getValorantWerewolfVoteProgress(prisma, session.guildId, session.id);
+    votedCount = progress?.votedCount ?? 0;
+  }
+  const revealed =
+    game && game.phase === 'RESOLVED'
+      ? await getValorantWerewolfRevealed(prisma, session.guildId, session.id)
+      : null;
+  return buildValorantWerewolfMessage(session, game, { votedCount, revealed });
 }
 
 async function buildValorantRichMessage(
@@ -653,6 +914,105 @@ async function handleRandom(
     );
     await interaction
       .editReply('募集の作成に失敗しました。DiscordまたはDBを確認してください。')
+      .catch(() => undefined);
+  }
+}
+
+/**
+ * 人狼モード (#1049) の部屋作成。通常抽選と lifecycle が異なるため
+ * サブコマンドを分ける。募集・参加者・VC自動参加は既存基盤をそのまま
+ * 使い、開始時に mode='WEREWOLF' のまま IN_PROGRESS へ進む。
+ */
+async function handleWerewolf(
+  interaction: ChatInputCommandInteraction,
+  prisma: PrismaClient,
+  logger: Logger,
+): Promise<void> {
+  if (!interaction.guildId || !interaction.channelId) {
+    await replyEphemeral(interaction, 'サーバー内のテキストチャンネルで実行してください。');
+    return;
+  }
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
+  try {
+    const plugin = await prisma.guildPlugin.findUnique({
+      where: { guildId_pluginId: { guildId: interaction.guildId!, pluginId: 'valorant' } },
+    });
+    const config = normalizeValorantConfig(plugin?.config);
+    if (!plugin?.enabled || !config.enabled) {
+      await interaction.editReply('VALORANT Pluginは現在無効です。');
+      return;
+    }
+    if (!config.werewolfEnabled) {
+      await interaction.editReply('人狼モードは現在無効です。');
+      return;
+    }
+    if (
+      interaction.appPermissions &&
+      !interaction.appPermissions.has([
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+      ])
+    ) {
+      await interaction.editReply('Botに閲覧・送信・埋め込みリンク権限を付与してください。');
+      return;
+    }
+    const vcAutoJoin = interaction.options.getBoolean('vc_auto_join') === true;
+    const expiresAt = new Date(Date.now() + config.sessionDurationMinutes * 60_000);
+    const session = await createValorantSession(prisma, {
+      guildId: interaction.guildId,
+      channelId: interaction.channelId,
+      creatorId: interaction.user.id,
+      mode: 'WEREWOLF',
+      mapId: null,
+      voiceChannelId:
+        (await interaction.guild?.members.fetch(interaction.user.id).catch(() => null))?.voice
+          .channelId ?? null,
+      vcAutoJoin,
+      maxParticipants: config.maxParticipants,
+      expiresAt,
+      rulesVersion: 'werewolf-v1',
+    });
+    await interaction.editReply(
+      vcAutoJoin
+        ? '人狼モードの部屋を作成しました。対象VCに入室した人は自動で参加登録されます（参加ボタンでも参加できます）。開始には3人以上が必要です。'
+        : '人狼モードの部屋を作成しました。開始には3人以上が必要です。',
+    );
+    const message = await interaction.followUp({
+      ...buildValorantSessionMessage(session),
+      flags: [],
+    });
+    await setValorantSessionMessageId(prisma, interaction.guildId, session.id, message.id);
+    if (vcAutoJoin) {
+      // handleRandom と同じ競合対策: messageId 保存前に自動登録された
+      // メンバーがいたら初期投稿を最新化する (fail-soft)。
+      let reloaded: ValorantSessionSnapshot | null = null;
+      try {
+        reloaded = await getValorantSession(prisma, interaction.guildId, session.id);
+      } catch {
+        reloaded = null;
+      }
+      if (
+        reloaded &&
+        reloaded.participants.some(
+          ({ userId }) => !session.participants.some((entry) => entry.userId === userId),
+        )
+      ) {
+        await syncValorantRecruitmentFromClient(interaction.client, prisma, logger, reloaded);
+      }
+    }
+  } catch (error) {
+    logger.error(
+      {
+        guildId: interaction.guildId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
+      'VALORANT人狼部屋の作成に失敗',
+    );
+    await interaction
+      .editReply('部屋の作成に失敗しました。DiscordまたはDBを確認してください。')
       .catch(() => undefined);
   }
 }
@@ -1386,8 +1746,440 @@ async function handleValorantManagement(
   }
 }
 
+/** 人狼部屋の公開メッセージを DB 正本から再構築する (ephemeral 経由でも効くよう channel から辿る) */
+async function syncWerewolfPublicMessage(
+  interaction: ValorantManagedInteraction,
+  prisma: PrismaClient,
+  session: ValorantSessionSnapshot,
+): Promise<boolean> {
+  try {
+    if (!interaction.guild || !session.messageId) return false;
+    const channel = await interaction.guild.channels.fetch(session.channelId);
+    if (!channel?.isTextBased() || !('messages' in channel)) return false;
+    const message = await channel.messages.fetch(session.messageId);
+    await message.edit({
+      ...(await buildWerewolfMessageForState(prisma, session)),
+      attachments: [],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 投票期限を過ぎていたら、その interaction を契機に遅延締切する
+ * (scheduler は入れない)。締め切ったら true。
+ */
+async function lazyCloseWerewolfIfExpired(
+  interaction: ValorantManagedInteraction,
+  prisma: PrismaClient,
+  logger: Logger,
+  session: ValorantSessionSnapshot,
+): Promise<boolean> {
+  const progress = await getValorantWerewolfVoteProgress(prisma, session.guildId, session.id);
+  const game = progress?.game;
+  if (!game || (game.phase !== 'VOTING' && game.phase !== 'RUNOFF')) return false;
+  if (!game.voteEndsAt || game.voteEndsAt.getTime() > Date.now()) return false;
+  const settled = await closeValorantWerewolfRoundAndSettle(
+    prisma,
+    {
+      guildId: session.guildId,
+      sessionId: session.id,
+      userId: session.creatorId,
+      isAdmin: true,
+      reason: 'expired',
+      apiConfig: resolveValorantTrollApiConfig(process.env),
+    },
+    { logger },
+  );
+  if (settled.status !== 'ok') return false;
+  await syncWerewolfPublicMessage(interaction, prisma, settled.session);
+  return true;
+}
+
+/**
+ * 人狼部屋のボタン / 投票セレクトの処理 (#1049)。
+ * 呼び出し側で ephemeral に deferReply 済み。公開メッセージの更新は
+ * DB 正本から再構築する。秘密は wolf-secret の ephemeral 応答でのみ
+ * 本人へ返し、公開側・ログへは出さない。
+ */
+async function handleValorantWerewolfInteraction(
+  interaction: ButtonInteraction | StringSelectMenuInteraction,
+  prisma: PrismaClient,
+  logger: Logger,
+  session: ValorantSessionSnapshot,
+  parsed: { id: string; action: string },
+  config: ValorantPluginConfig,
+): Promise<void> {
+  const guildId = session.guildId;
+  const isAdmin = Boolean(
+    interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+    interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild),
+  );
+  const action = parsed.action;
+  const reply = async (content: string) => {
+    await interaction.editReply(content);
+  };
+
+  if (action === 'draw' || action === 'reroll' || action === 'troll-off') {
+    await reply('人狼モードでは使えません。');
+    return;
+  }
+
+  if (action === 'join' || action === 'leave') {
+    const mutation = await mutateValorantSession(prisma, {
+      guildId,
+      id: parsed.id,
+      userId: interaction.user.id,
+      action,
+      isAdmin,
+    });
+    if (mutation.status !== 'ok') {
+      const messages: Record<string, string> = {
+        missing: '募集が見つかりません。',
+        closed: '募集は終了済み、または期限切れです。',
+        full: 'この部屋は定員です。',
+        not_joined: 'まだ参加していません。',
+      };
+      await reply(messages[mutation.status] ?? '操作できませんでした。');
+      return;
+    }
+    if (mutation.changed) {
+      await syncWerewolfPublicMessage(interaction, prisma, mutation.session);
+    }
+    await reply(
+      action === 'join'
+        ? mutation.changed
+          ? '参加しました。'
+          : 'すでに参加済みです。'
+        : '参加を取り消しました。',
+    );
+    return;
+  }
+
+  if (action === 'wolf-start') {
+    const displayNames = new Map<string, string>();
+    for (const [index, participant] of session.participants.entries()) {
+      const member =
+        interaction.guild?.members.cache.get(participant.userId) ??
+        (await interaction.guild?.members.fetch(participant.userId).catch(() => null));
+      displayNames.set(participant.userId, member?.displayName ?? `参加者${index + 1}`);
+    }
+    const result = await startValorantWerewolf(
+      prisma,
+      {
+        guildId,
+        sessionId: session.id,
+        userId: interaction.user.id,
+        isAdmin,
+        displayNames,
+        apiConfig: resolveValorantTrollApiConfig(process.env),
+        rarityFilter: config.trollGacha.rarityFilter,
+      },
+      { logger },
+    );
+    if (result.status === 'ok') {
+      await syncWerewolfPublicMessage(interaction, prisma, result.session);
+      await reply(
+        '人狼を決定し、秘密の縛りを配りました。「自分の縛りを確認」ボタンで本人だけが確認できます。',
+      );
+      return;
+    }
+    if (result.status === 'assignment_failed') {
+      await syncWerewolfPublicMessage(interaction, prisma, result.session);
+      await reply(
+        '縛りの抽選に失敗したため開始を保留しています。参加者は固定済みです。復旧後に「開始リトライ」を押してください。',
+      );
+      return;
+    }
+    const messages: Record<string, string> = {
+      missing: '部屋が見つかりません。',
+      closed: 'すでに開始済み、または終了しています。',
+      forbidden: '開始は作成者または管理者のみ可能です。',
+      insufficient: '開始には3人以上の参加者が必要です。',
+      not_werewolf: '人狼モードの部屋ではありません。',
+      invalid: '開始できませんでした。',
+    };
+    await reply(messages[result.status] ?? '開始できませんでした。');
+    return;
+  }
+
+  if (action === 'wolf-secret') {
+    const secret = await getValorantWerewolfSecretForUser(
+      prisma,
+      guildId,
+      session.id,
+      interaction.user.id,
+    );
+    if (secret.kind === 'werewolf') {
+      await markValorantWerewolfSecretViewed(prisma, guildId, session.id).catch(() => undefined);
+      await reply('🎭 あなたの秘密の縛り：\n' + formatValorantTrollEmbedText(secret.troll));
+    } else if (secret.kind === 'citizen') {
+      await reply('あなたに秘密の縛りはありません。');
+    } else if (secret.kind === 'werewolf_not_ready') {
+      await reply('秘密の縛りはまだ配られていません。開始処理の完了をお待ちください。');
+    } else if (secret.kind === 'not_participant') {
+      await reply('この部屋の参加者ではありません。');
+    } else if (secret.kind === 'not_started') {
+      await reply('まだ開始していません。');
+    } else {
+      await reply('部屋が見つかりません。');
+    }
+    return;
+  }
+
+  if (action === 'wolf-vote-open') {
+    const opened = await openValorantWerewolfVote(prisma, {
+      guildId,
+      id: session.id,
+      userId: interaction.user.id,
+      isAdmin,
+    });
+    if (opened.status !== 'ok') {
+      const messages: Record<string, string> = {
+        missing: '部屋が見つかりません。',
+        closed: 'この部屋は進行中ではありません。',
+        forbidden: '投票開始は作成者または管理者のみ可能です。',
+        wrong_phase: '現在の状態では投票を開始できません。',
+      };
+      await reply(messages[opened.status] ?? '投票を開始できませんでした。');
+      return;
+    }
+    await syncWerewolfPublicMessage(interaction, prisma, opened.session);
+    await reply('投票を開始しました。参加者は「投票する」ボタンから投票できます。');
+    return;
+  }
+
+  if (action === 'wolf-vote') {
+    if (await lazyCloseWerewolfIfExpired(interaction, prisma, logger, session)) {
+      await reply('投票期限を過ぎたため締め切りました。');
+      return;
+    }
+    const state = await getValorantWerewolfState(prisma, guildId, session.id);
+    const game = state?.game;
+    if (!game || (game.phase !== 'VOTING' && game.phase !== 'RUNOFF')) {
+      await reply('現在は投票を受け付けていません。');
+      return;
+    }
+    const roster = parseWerewolfRoster(game.rosterSnapshot);
+    if (!roster.some((entry) => entry.userId === interaction.user.id)) {
+      await reply('参加者だけが投票できます。');
+      return;
+    }
+    const candidates = roster.filter((entry) =>
+      game.currentCandidateUserIds.includes(entry.userId),
+    );
+    await interaction.editReply({
+      content:
+        (game.phase === 'RUNOFF' ? '決選投票：' : '投票：') +
+        '投票先を1人選んでください。自分には投票できません。締切までは変更できます。',
+      components: [
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(sessionCustomId(session.id, 'wolf-vote-cast-' + game.currentRound))
+            .setPlaceholder('投票先を選択')
+            .addOptions(
+              candidates.map((entry) => ({
+                label: entry.displayName.slice(0, 100),
+                value: entry.userId,
+              })),
+            ),
+        ),
+      ],
+    });
+    return;
+  }
+
+  if (action.startsWith('wolf-vote-cast-')) {
+    if (!interaction.isStringSelectMenu()) {
+      await reply('操作形式が不正です。');
+      return;
+    }
+    const round = Number.parseInt(action.slice('wolf-vote-cast-'.length), 10);
+    const targetUserId = interaction.values[0];
+    if (!targetUserId) {
+      await reply('投票先を確認できません。');
+      return;
+    }
+    if (await lazyCloseWerewolfIfExpired(interaction, prisma, logger, session)) {
+      await reply('投票期限を過ぎたため締め切りました。あなたの投票は反映されませんでした。');
+      return;
+    }
+    const cast = await castValorantWerewolfVote(prisma, {
+      guildId,
+      id: session.id,
+      voterUserId: interaction.user.id,
+      targetUserId,
+      round,
+    });
+    if (cast.status !== 'ok') {
+      const messages: Record<string, string> = {
+        missing: '部屋が見つかりません。',
+        not_voting: '現在は投票を受け付けていません。',
+        stale_round: 'この投票はすでに締め切られています。',
+        not_participant: '参加者だけが投票できます。',
+        not_candidate: 'そのメンバーは現在の候補者ではありません。',
+        self_vote: '自分には投票できません。',
+      };
+      await reply(messages[cast.status] ?? '投票できませんでした。');
+      return;
+    }
+    if (cast.allVoted) {
+      const settled = await closeValorantWerewolfRoundAndSettle(
+        prisma,
+        {
+          guildId,
+          sessionId: session.id,
+          userId: interaction.user.id,
+          isAdmin,
+          reason: 'all_voted',
+          apiConfig: resolveValorantTrollApiConfig(process.env),
+        },
+        { logger },
+      );
+      if (settled.status === 'ok') {
+        await syncWerewolfPublicMessage(interaction, prisma, settled.session);
+        await reply(
+          settled.kind === 'runoff'
+            ? '投票しました。全員の投票が揃い、同票のため決選投票に進みます。'
+            : '投票しました。全員の投票が揃ったため締め切り、結果が確定しました。',
+        );
+        return;
+      }
+    }
+    const latest = await getValorantSession(prisma, guildId, session.id);
+    if (latest) await syncWerewolfPublicMessage(interaction, prisma, latest);
+    await reply('投票しました。締切までは「投票する」ボタンから変更できます。');
+    return;
+  }
+
+  if (action === 'wolf-close') {
+    const state = await getValorantWerewolfState(prisma, guildId, session.id);
+    const game = state?.game;
+    if (!game || (game.phase !== 'VOTING' && game.phase !== 'RUNOFF')) {
+      await reply('現在は締め切れる投票がありません。');
+      return;
+    }
+    await interaction.editReply({
+      content: '投票を締め切りますか？未投票者は棄権として扱います。',
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(sessionCustomId(session.id, 'wolf-close-confirm-' + game.currentRound))
+            .setLabel('締切を確定')
+            .setStyle(ButtonStyle.Danger),
+        ),
+      ],
+    });
+    return;
+  }
+
+  if (action.startsWith('wolf-close-confirm-')) {
+    const round = Number.parseInt(action.slice('wolf-close-confirm-'.length), 10);
+    const progress = await getValorantWerewolfVoteProgress(prisma, guildId, session.id);
+    if (
+      !progress ||
+      (progress.game.phase !== 'VOTING' && progress.game.phase !== 'RUNOFF') ||
+      progress.game.currentRound !== round
+    ) {
+      await reply('ラウンドが進んでいるため、この確認は無効です。');
+      return;
+    }
+    if (await lazyCloseWerewolfIfExpired(interaction, prisma, logger, session)) {
+      await reply('投票期限を過ぎていたため、期限切れとして締め切りました。');
+      return;
+    }
+    const settled = await closeValorantWerewolfRoundAndSettle(
+      prisma,
+      {
+        guildId,
+        sessionId: session.id,
+        userId: interaction.user.id,
+        isAdmin,
+        reason: 'manual',
+        apiConfig: resolveValorantTrollApiConfig(process.env),
+      },
+      { logger },
+    );
+    if (settled.status !== 'ok') {
+      const messages: Record<string, string> = {
+        missing: '部屋が見つかりません。',
+        forbidden: '締切は作成者または管理者のみ可能です。',
+        wrong_phase: '現在は締め切れません。',
+        closed: 'すでに終了しています。',
+      };
+      await reply(messages[settled.status] ?? '締め切れませんでした。');
+      return;
+    }
+    await syncWerewolfPublicMessage(interaction, prisma, settled.session);
+    await reply(
+      settled.kind === 'runoff'
+        ? '同票のため決選投票に進みます。'
+        : settled.kind === 'no_votes'
+          ? '投票がなかったため、この部屋は中止しました。'
+          : '結果が確定しました。',
+    );
+    return;
+  }
+
+  if (action === 'wolf-cancel' || action === 'cancel') {
+    const aborted = await abortValorantWerewolfGame(prisma, {
+      guildId,
+      id: session.id,
+      userId: interaction.user.id,
+      isAdmin,
+    });
+    if (aborted.status !== 'ok') {
+      const messages: Record<string, string> = {
+        missing: '部屋が見つかりません。',
+        closed: 'すでに終了しています。',
+        forbidden: '中止は作成者または管理者のみ可能です。',
+        not_werewolf: '人狼モードの部屋ではありません。',
+      };
+      await reply(messages[aborted.status] ?? '中止できませんでした。');
+      return;
+    }
+    if (aborted.changed) {
+      await syncWerewolfPublicMessage(interaction, prisma, aborted.session);
+    }
+    await reply('部屋を中止しました。秘密は公開されません。');
+    return;
+  }
+
+  if (action === 'wolf-punishment-retry') {
+    const retried = await retryValorantWerewolfPunishment(
+      prisma,
+      {
+        guildId,
+        sessionId: session.id,
+        userId: interaction.user.id,
+        isAdmin,
+        apiConfig: resolveValorantTrollApiConfig(process.env),
+      },
+      { logger },
+    );
+    if (retried.status !== 'ok') {
+      const messages: Record<string, string> = {
+        missing: '部屋が見つかりません。',
+        forbidden: '罰ゲームの引き直しは作成者または管理者のみ可能です。',
+        wrong_phase: '今は引き直せません。',
+        closed: 'すでに終了しています。',
+        not_pending: '今は引き直せません。',
+      };
+      await reply(messages[retried.status] ?? '引き直せませんでした。');
+      return;
+    }
+    await syncWerewolfPublicMessage(interaction, prisma, retried.session);
+    await reply('罰ゲームを確定しました。');
+    return;
+  }
+
+  await reply('未対応の人狼操作です。');
+}
+
 async function handleValorantButton(
-  interaction: ButtonInteraction,
+  interaction: ButtonInteraction | StringSelectMenuInteraction,
   prisma: PrismaClient,
   logger: Logger,
 ): Promise<void> {
@@ -1401,9 +2193,14 @@ async function handleValorantButton(
   }
   try {
     const session = await getValorantSession(prisma, guildId, parsed.id);
+    // 人狼の投票セレクトは ephemeral メッセージから届くため、その場合だけ
+    // 公開メッセージ ID との一致を求めない (チャンネル一致は維持する)
+    const isWerewolfVoteSelect = parsed.action.startsWith('wolf-vote-cast-');
     if (
       !session ||
-      (session.messageId && session.messageId !== interaction.message.id) ||
+      (session.messageId &&
+        session.messageId !== interaction.message.id &&
+        !isWerewolfVoteSelect) ||
       session.channelId !== interaction.channelId
     ) {
       await interaction.editReply('対象の募集が見つかりません。');
@@ -1416,6 +2213,11 @@ async function handleValorantButton(
       where: { guildId_pluginId: { guildId, pluginId: 'valorant' } },
     });
     const config = normalizeValorantConfig(plugin?.config);
+    // 人狼部屋 (#1049) と人狼アクションは専用ハンドラへ委譲する
+    if (session.mode === 'WEREWOLF' || parsed.action.startsWith('wolf-')) {
+      await handleValorantWerewolfInteraction(interaction, prisma, logger, session, parsed, config);
+      return;
+    }
     let candidates: ValorantCandidate[] = [];
     if (parsed.action === 'draw' || parsed.action === 'reroll') {
       if (!plugin?.enabled || !config.enabled) {
@@ -1826,6 +2628,8 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
             await handlePickStatistics(interaction, context.prisma, context.logger);
           } else if (subcommand === 'random') {
             await handleRandom(interaction, context.prisma, context.logger);
+          } else if (subcommand === 'werewolf') {
+            await handleWerewolf(interaction, context.prisma, context.logger);
           } else {
             await replyEphemeral(interaction, '未対応のサブコマンドです。');
           }
@@ -1843,10 +2647,17 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
           const parsed = parseValorantSessionAction(candidate.customId);
           if (!parsed) return;
           if (
-            candidate.isButton() &&
-            ['join', 'leave', 'draw', 'cancel', 'reroll', 'troll-off'].includes(parsed.action)
+            (candidate.isButton() &&
+              ['join', 'leave', 'draw', 'cancel', 'reroll', 'troll-off'].includes(parsed.action)) ||
+            // 人狼ボタンと投票セレクト (#1049) も同じ入口で処理する
+            (candidate.isButton() && parsed.action.startsWith('wolf-')) ||
+            (candidate.isStringSelectMenu() && parsed.action.startsWith('wolf-vote-cast-'))
           ) {
-            await handleValorantButton(candidate, context.prisma, context.logger);
+            await handleValorantButton(
+              candidate as ButtonInteraction | StringSelectMenuInteraction,
+              context.prisma,
+              context.logger,
+            );
           } else if (
             candidate.isButton() ||
             candidate.isUserSelectMenu() ||
