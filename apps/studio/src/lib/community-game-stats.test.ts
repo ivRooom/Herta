@@ -7,6 +7,7 @@ import {
   buildCommunityMatrix,
   buildCommunityMomentum,
   buildCommunityWeekdaySeconds,
+  COMMUNITY_CHANNEL_BREAKDOWN_LIMIT,
   COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT,
   COMMUNITY_GAME_STATS_PATH,
   COMMUNITY_GAME_STATS_PURPOSE,
@@ -14,7 +15,13 @@ import {
   projectCommunityActivityMessageRankingRow,
   projectCommunityActivityTotals,
   projectCommunityActivityUserTotals,
+  projectCommunityActivityUserTotalsV4,
   projectCommunityActivityVoiceRankingRow,
+  projectCommunityChannelMessageRow,
+  projectCommunityChannelName,
+  projectCommunityChannelVoiceRow,
+  projectCommunityCharUnitsRankingRow,
+  projectCommunityCharUnitsTotalsRow,
   projectCommunityGameDailyPointRow,
   projectCommunityGameDetailRow,
   projectCommunityGamePlayerRow,
@@ -89,7 +96,6 @@ test('authenticates exact service body, binds Guild and defaults to overview', a
     { ...input, mode: 'user', discordUserId: 'not-a-snowflake' },
     { ...input, discordUserId: '100000000000000002' },
     { ...input, gameName: 'VALORANT' },
-    { ...input, version: 4 },
     { ...input, version: 0 },
     { ...input, version: '2' },
     { ...input, version: 1.5 },
@@ -211,7 +217,7 @@ test('read route casts every range bound to date (PG 42883 regression)', () => {
   );
   const placeholders = route.match(/\$\{input\.(?:from|to)\}/g) ?? [];
   const casted = route.match(/\$\{input\.(?:from|to)\}::date/g) ?? [];
-  assert.equal(placeholders.length, 61);
+  assert.equal(placeholders.length, 73);
   assert.equal(casted.length, placeholders.length);
 });
 test('read route casts every SUM(value) aggregate to bigint (PG numeric regression)', () => {
@@ -229,9 +235,12 @@ test('read route casts every SUM(value) aggregate to bigint (PG numeric regressi
     new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
     'utf8',
   );
-  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 11);
-  assert.equal((route.match(/SUM\(value\)::bigint AS total/g) ?? []).length, 3);
-  assert.equal((route.match(/SUM\(value\)::bigint AS "totalCount"/g) ?? []).length, 1);
+  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 12);
+  assert.equal((route.match(/SUM\(value\)::bigint AS total/g) ?? []).length, 4);
+  assert.equal((route.match(/SUM\(value\)::bigint AS "totalCount"/g) ?? []).length, 2);
+  // v4 additions follow the same rule: the char-units totals
+  // and ranking select through the totalUnits alias.
+  assert.equal((route.match(/SUM\(value\)::bigint AS "totalUnits"/g) ?? []).length, 2);
   assert.equal((route.match(/SUM\((?:inner_rows\.)?value\) AS/g) ?? []).length, 0);
   // v3 additions follow the same rule: the matrix cells read
   // through the daily alias, and the momentum window coalesces
@@ -388,7 +397,7 @@ test('v2 contract JSON extends v1 without changing the v1 shapes', () => {
     'voiceRanking',
   ]);
 });
-test('read route scopes activity queries to the three contract metrics', () => {
+test('read route scopes activity queries to the contract metrics', () => {
   const route = readFileSync(
     new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
     'utf8',
@@ -397,8 +406,21 @@ test('read route scopes activity queries to the three contract metrics', () => {
     (route.match(/metric IN \('voice_seconds', 'messages', 'online_seconds'\)/g) ?? []).length,
     2,
   );
-  assert.equal((route.match(/metric = 'voice_seconds'/g) ?? []).length, 2);
-  assert.equal((route.match(/metric = 'messages'/g) ?? []).length, 2);
+  // v4 widens only the user read to message_char_units; the
+  // channel breakdowns scope to one metric each, and the
+  // char-units totals / ranking / count name the metric
+  // directly.
+  assert.equal(
+    (
+      route.match(
+        /metric IN \('voice_seconds', 'messages', 'online_seconds', 'message_char_units'\)/g,
+      ) ?? []
+    ).length,
+    1,
+  );
+  assert.equal((route.match(/metric = 'voice_seconds'/g) ?? []).length, 3);
+  assert.equal((route.match(/metric = 'messages'/g) ?? []).length, 3);
+  assert.equal((route.match(/metric = 'message_char_units'/g) ?? []).length, 3);
   assert.ok(!route.includes('reactions'));
 });
 test('version 3 negotiates like v2 and unlocks the game mode', async () => {
@@ -686,4 +708,197 @@ test('read route pins the v3 query shapes (top-15 CTEs, ISODOW casts)', () => {
   // The viewer rank compares inside SQL (HAVING), never by
   // selecting an uncast aggregate.
   assert.ok(route.includes('HAVING SUM(value) >'));
+});
+test('version 4 negotiates like v3 and keeps the game mode', async () => {
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(signed({ ...input, version: 4 }), environment),
+    { ...input, mode: 'overview', discordUserId: null, gameName: null, version: 4 },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({ ...input, mode: 'user', discordUserId: '100000000000000002', version: 4 }),
+      environment,
+    ),
+    { ...input, mode: 'user', discordUserId: '100000000000000002', gameName: null, version: 4 },
+  );
+  // The game mode shape is unchanged in v4, so it unlocks
+  // at version 3 and stays available at version 4.
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({ ...input, mode: 'game', gameName: 'VALORANT', version: 4 }),
+      environment,
+    ),
+    { ...input, mode: 'game', discordUserId: null, gameName: 'VALORANT', version: 4 },
+  );
+  for (const value of [
+    { ...input, version: 5 },
+    { ...input, version: 0 },
+    { ...input, mode: 'game', gameName: 'VALORANT', version: 2 },
+  ]) {
+    const response = await authorizeCommunityGameStatsRead(signed(value), environment);
+    assert.ok(response instanceof Response);
+    assert.equal(response.status, 422);
+  }
+});
+test('channels projections emit exactly the contract fields', () => {
+  const voice = projectCommunityChannelVoiceRow({
+    channelId: '100000000000000010',
+    totalSeconds: 7200n,
+    memberCount: 3,
+  });
+  assert.deepEqual(voice, {
+    channelId: '100000000000000010',
+    totalSeconds: 7200,
+    memberCount: 3,
+  });
+  assert.deepEqual(Object.keys(voice).sort(), ['channelId', 'memberCount', 'totalSeconds']);
+  const message = projectCommunityChannelMessageRow({
+    channelId: '100000000000000011',
+    totalCount: '45',
+    memberCount: 2,
+  });
+  assert.deepEqual(message, {
+    channelId: '100000000000000011',
+    totalCount: 45,
+    memberCount: 2,
+  });
+  assert.throws(() =>
+    projectCommunityChannelVoiceRow({ channelId: '123', totalSeconds: 1, memberCount: 1 }),
+  );
+  assert.throws(() =>
+    projectCommunityChannelMessageRow({
+      channelId: '100000000000000011',
+      totalCount: 1,
+      memberCount: -1,
+    }),
+  );
+  // A Decimal-shaped aggregate must throw, not pass through (#1004).
+  assert.throws(() =>
+    projectCommunityChannelVoiceRow({
+      channelId: '100000000000000010',
+      totalSeconds: { toString: () => '7200' },
+      memberCount: 1,
+    }),
+  );
+  const charRow = projectCommunityCharUnitsRankingRow({
+    discordUserId: '100000000000000002',
+    totalUnits: 19542n,
+  });
+  assert.deepEqual(charRow, { discordUserId: '100000000000000002', totalUnits: 19542 });
+  assert.deepEqual(Object.keys(charRow).sort(), ['discordUserId', 'totalUnits']);
+  assert.deepEqual(projectCommunityCharUnitsTotalsRow({ totalUnits: '19542', memberCount: 14 }), {
+    totalUnits: 19542,
+    memberCount: 14,
+  });
+  assert.throws(() => projectCommunityCharUnitsRankingRow({ discordUserId: '123', totalUnits: 1 }));
+});
+test('channel name projection keeps plausible names and degrades the rest to null', () => {
+  assert.equal(projectCommunityChannelName('general-vc'), 'general-vc');
+  assert.equal(projectCommunityChannelName('  雑談  '), '雑談');
+  assert.equal(projectCommunityChannelName(undefined), null);
+  assert.equal(projectCommunityChannelName(null), null);
+  assert.equal(projectCommunityChannelName(''), null);
+  assert.equal(projectCommunityChannelName('   '), null);
+  assert.equal(projectCommunityChannelName('x'.repeat(101)), null);
+  assert.equal(projectCommunityChannelName(42), null);
+});
+test('user totals v4 projection adds messageCharUnits and rejects unknown metrics', () => {
+  assert.deepEqual(
+    projectCommunityActivityUserTotalsV4([
+      { metric: 'message_char_units', total: 120n },
+      { metric: 'voice_seconds', total: 60 },
+    ]),
+    { voiceSeconds: 60, messageCount: 0, onlineSeconds: 0, messageCharUnits: 120 },
+  );
+  assert.deepEqual(projectCommunityActivityUserTotalsV4([]), {
+    voiceSeconds: 0,
+    messageCount: 0,
+    onlineSeconds: 0,
+    messageCharUnits: 0,
+  });
+  // The v2 projection stays strict: a char-units row there
+  // is a bug, not data to forward.
+  assert.throws(() =>
+    projectCommunityActivityUserTotals([{ metric: 'message_char_units', total: 1n }]),
+  );
+  assert.throws(() => projectCommunityActivityUserTotalsV4([{ metric: 'commands', total: 1n }]));
+  assert.throws(() =>
+    projectCommunityActivityUserTotalsV4([
+      { metric: 'message_char_units', total: 1n },
+      { metric: 'message_char_units', total: 2n },
+    ]),
+  );
+});
+test('v4 contract JSON extends v3 without changing the v1/v2/v3 shapes', () => {
+  const read = (name: string) =>
+    JSON.parse(
+      readFileSync(new URL(`../../../../contracts/ivrm/${name}`, import.meta.url), 'utf8'),
+    ) as {
+      $id: string;
+      description: string;
+      $defs: Record<string, { required?: string[]; properties?: Record<string, unknown> }>;
+    };
+  const v3 = read('herta-community-game-stats-read.v3.json');
+  const v4 = read('herta-community-game-stats-read.v4.json');
+  assert.equal(v4.$id, 'https://ivrm.jp/contracts/herta-community-game-stats-read/v4');
+  assert.ok(v4.description.includes(COMMUNITY_GAME_STATS_PATH));
+  assert.ok(v4.description.includes(COMMUNITY_GAME_STATS_PURPOSE));
+  // Every v3 definition except the request is carried over
+  // unchanged in structure.
+  for (const name of Object.keys(v3.$defs).filter((key) => key !== 'request'))
+    assert.deepEqual(v4.$defs[name], v3.$defs[name]);
+  // The request only widens the version enum.
+  assert.deepEqual(
+    Object.keys(v4.$defs.request.properties ?? {}).sort(),
+    Object.keys(v3.$defs.request.properties ?? {}).sort(),
+  );
+  assert.deepEqual(v4.$defs.request.required, v3.$defs.request.required);
+  // V4 overview requires channels on top of the v3 shape.
+  assert.deepEqual(
+    [...(v4.$defs.overviewResponseV4.required ?? [])].sort(),
+    [...(v3.$defs.overviewResponseV3.required ?? []), 'channels'].sort(),
+  );
+  assert.deepEqual(
+    Object.keys(v4.$defs.overviewResponseV4.properties ?? {})
+      .filter((key) => key !== 'channels')
+      .sort(),
+    Object.keys(v3.$defs.overviewResponseV3.properties ?? {}).sort(),
+  );
+  // V4 user keeps the v3 keys; only the activity payload
+  // widens (activityUserV4 adds messageCharUnits).
+  assert.deepEqual(
+    [...(v4.$defs.userResponseV4.required ?? [])].sort(),
+    [...(v3.$defs.userResponseV3.required ?? [])].sort(),
+  );
+  assert.deepEqual(
+    Object.keys(v4.$defs.userResponseV4.properties ?? {}).sort(),
+    Object.keys(v3.$defs.userResponseV3.properties ?? {}).sort(),
+  );
+  assert.deepEqual(
+    [...(v4.$defs.activityUserV4.required ?? [])].sort(),
+    [...(v3.$defs.activityUser.required ?? []), 'messageCharUnits'].sort(),
+  );
+  assert.deepEqual(Object.keys(v4.$defs.channelsOverview.properties ?? {}).sort(), [
+    'charUnits',
+    'messageChannels',
+    'recordedFrom',
+    'voiceChannels',
+  ]);
+});
+test('read route pins the v4 query shapes (channel table, breakdown cap, name lookup)', () => {
+  const route = readFileSync(
+    new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
+    'utf8',
+  );
+  // Both channel breakdowns read the channel daily table;
+  // recordedFrom is its guild-wide MIN, not range-limited.
+  assert.equal((route.match(/FROM community_activity_channel_daily/g) ?? []).length, 3);
+  assert.ok(route.includes('MIN(activity_date) AS "recordedFrom"'));
+  // The breakdown cap is the shared constant in both lists.
+  assert.equal((route.match(/\$\{COMMUNITY_CHANNEL_BREAKDOWN_LIMIT\}/g) ?? []).length, 2);
+  assert.equal(COMMUNITY_CHANNEL_BREAKDOWN_LIMIT, 25);
+  // Channel names resolve through the cached guild options,
+  // never from a database column (none exists).
+  assert.ok(route.includes('getGuildConfigurationOptionsCached'));
+  assert.ok(route.includes("console.error('community_channels_read_failed', error)"));
 });

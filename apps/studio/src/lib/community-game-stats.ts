@@ -15,11 +15,15 @@ export type CommunityGameStatsMode = 'overview' | 'user' | 'game';
  * 1 (or absent) returns exactly the v1 response; 2 adds the
  * `activity` section built from community_activity_daily;
  * 3 adds the `insights` sections and the `game` mode, all
- * built from community_game_activity_daily. Signing is
- * unchanged across versions (the v1 purpose string stays
- * the key-derivation domain separator).
+ * built from community_game_activity_daily; 4 adds the
+ * overview `channels` section (per-channel breakdowns from
+ * community_activity_channel_daily plus the
+ * message_char_units view) and `messageCharUnits` on the
+ * user activity. Signing is unchanged across versions (the
+ * v1 purpose string stays the key-derivation domain
+ * separator).
  */
-export type CommunityGameStatsVersion = 1 | 2 | 3;
+export type CommunityGameStatsVersion = 1 | 2 | 3 | 4;
 export interface CommunityGameStatsInput {
   guildId: string;
   from: string;
@@ -246,6 +250,169 @@ export function projectCommunityActivityUserTotals(
     voiceSeconds: totals.voice_seconds,
     messageCount: totals.messages,
     onlineSeconds: totals.online_seconds,
+  };
+}
+/**
+ * v4 channels shapes (S6, #1054). The per-channel breakdowns
+ * come from community_activity_channel_daily, which only
+ * holds rows for channels where activity actually happened
+ * and only since the guild's channel recording started
+ * (recordedFrom) — so channel totals never add up to the
+ * activity totals, which reach further back. The lists are
+ * capped like the games list (and like
+ * getCommunityChannelBreakdown in @herta/db): the guild has
+ * a handful of active channels, so 25 is headroom, not a
+ * paging surface.
+ *
+ * `message_char_units` is the bot's character-points metric:
+ * one unit per half-width (ASCII) character and two per
+ * full-width character, excluding URLs, emoji and
+ * whitespace; points are units / 2. The wire carries raw
+ * integer units only — the points conversion is a display
+ * concern, exactly like seconds.
+ */
+export const COMMUNITY_CHANNEL_BREAKDOWN_LIMIT = 25;
+export interface CommunityChannelVoiceItem {
+  channelId: string;
+  name: string | null;
+  totalSeconds: number;
+  memberCount: number;
+}
+export interface CommunityChannelMessageItem {
+  channelId: string;
+  name: string | null;
+  totalCount: number;
+  memberCount: number;
+}
+export interface CommunityCharUnitsRankingItem {
+  discordUserId: string;
+  totalUnits: number;
+}
+export interface CommunityCharUnits {
+  totalUnits: number;
+  memberCount: number;
+  ranking: {
+    items: CommunityCharUnitsRankingItem[];
+    pagination: { limit: number; offset: number; total: number; hasNext: boolean };
+  };
+}
+export interface CommunityChannelsOverview {
+  recordedFrom: string | null;
+  voiceChannels: CommunityChannelVoiceItem[];
+  messageChannels: CommunityChannelMessageItem[];
+  charUnits: CommunityCharUnits;
+}
+export interface CommunityActivityUserTotalsV4 extends CommunityActivityUserTotals {
+  messageCharUnits: number;
+}
+function channelId(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{17,20}$/.test(value))
+    throw new Error('InvalidCommunityChannelId');
+  return value;
+}
+function channelMemberCount(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)
+    throw new Error('InvalidCommunityChannelMemberCount');
+  return value;
+}
+/**
+ * Channel projections follow the same rule as the game and
+ * activity ones: only the selected columns, re-validated
+ * field by field, aggregates through toCommunityGameSeconds
+ * so an uncast SUM throws here (#1004). The name is NOT part
+ * of the SQL projection — channel names live only in
+ * Discord, are resolved separately by the route, and attach
+ * through projectCommunityChannelName.
+ */
+export function projectCommunityChannelVoiceRow(row: {
+  channelId: unknown;
+  totalSeconds: unknown;
+  memberCount: unknown;
+}): Omit<CommunityChannelVoiceItem, 'name'> {
+  return {
+    channelId: channelId(row.channelId),
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+    memberCount: channelMemberCount(row.memberCount),
+  };
+}
+export function projectCommunityChannelMessageRow(row: {
+  channelId: unknown;
+  totalCount: unknown;
+  memberCount: unknown;
+}): Omit<CommunityChannelMessageItem, 'name'> {
+  return {
+    channelId: channelId(row.channelId),
+    totalCount: toCommunityGameSeconds(row.totalCount),
+    memberCount: channelMemberCount(row.memberCount),
+  };
+}
+/**
+ * A resolved channel name, attached after the guild-options
+ * lookup. Anything that is not a plausible current name
+ * (missing channel, empty or over-long value) degrades to
+ * null instead of failing the section: the display falls
+ * back to an id-derived label, and a name is never invented.
+ */
+export function projectCommunityChannelName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed.length > 100) return null;
+  return trimmed;
+}
+export function projectCommunityCharUnitsRankingRow(row: {
+  discordUserId: unknown;
+  totalUnits: unknown;
+}): CommunityCharUnitsRankingItem {
+  return {
+    discordUserId: activityUserId(row.discordUserId),
+    totalUnits: toCommunityGameSeconds(row.totalUnits),
+  };
+}
+export function projectCommunityCharUnitsTotalsRow(row: {
+  totalUnits: unknown;
+  memberCount: unknown;
+}): { totalUnits: number; memberCount: number } {
+  return {
+    totalUnits: toCommunityGameSeconds(row.totalUnits),
+    memberCount: channelMemberCount(row.memberCount),
+  };
+}
+const COMMUNITY_ACTIVITY_USER_METRICS_V4 = [
+  ...COMMUNITY_ACTIVITY_METRICS,
+  'message_char_units',
+] as const;
+/**
+ * The v4 user activity adds message_char_units to the three
+ * v2 metrics. It is a separate projection (not a widened
+ * v2 one) so the v2/v3 shape stays pinned: a char-units row
+ * in a v2 read, or an unknown metric in a v4 read, throws.
+ */
+export function projectCommunityActivityUserTotalsV4(
+  rows: Array<{ metric: unknown; total: unknown }>,
+): CommunityActivityUserTotalsV4 {
+  const totals: Record<(typeof COMMUNITY_ACTIVITY_USER_METRICS_V4)[number], number> = {
+    voice_seconds: 0,
+    messages: 0,
+    online_seconds: 0,
+    message_char_units: 0,
+  };
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (
+      typeof row.metric !== 'string' ||
+      !(COMMUNITY_ACTIVITY_USER_METRICS_V4 as readonly string[]).includes(row.metric)
+    )
+      throw new Error('InvalidCommunityActivityMetric');
+    const metric = row.metric as (typeof COMMUNITY_ACTIVITY_USER_METRICS_V4)[number];
+    if (seen.has(metric)) throw new Error('InvalidCommunityActivityMetric');
+    seen.add(metric);
+    totals[metric] = toCommunityGameSeconds(row.total);
+  }
+  return {
+    voiceSeconds: totals.voice_seconds,
+    messageCount: totals.messages,
+    onlineSeconds: totals.online_seconds,
+    messageCharUnits: totals.message_char_units,
   };
 }
 /**
@@ -606,7 +773,8 @@ export async function authorizeCommunityGameStatsRead(
   )
     return fail(422, 'invalid_request');
   const version = value.version === undefined ? 1 : value.version;
-  if (version !== 1 && version !== 2 && version !== 3) return fail(422, 'invalid_request');
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4)
+    return fail(422, 'invalid_request');
   const mode = value.mode === undefined ? 'overview' : value.mode;
   if (mode !== 'overview' && mode !== 'user' && mode !== 'game')
     return fail(422, 'invalid_request');
@@ -616,10 +784,11 @@ export async function authorizeCommunityGameStatsRead(
     return fail(422, 'invalid_request');
   const gameName = value.gameName === undefined ? null : value.gameName;
   if (mode === 'game') {
-    // The game mode exists only in contract v3, names the one
-    // game to detail, and takes discordUserId as an optional
-    // viewer whose rank is reported alongside the players.
-    if (version !== 3) return fail(422, 'invalid_request');
+    // The game mode exists only in contract v3 and later
+    // (its shape is unchanged in v4), names the one game to
+    // detail, and takes discordUserId as an optional viewer
+    // whose rank is reported alongside the players.
+    if (version !== 3 && version !== 4) return fail(422, 'invalid_request');
     if (
       typeof gameName !== 'string' ||
       gameName.trim() === '' ||
