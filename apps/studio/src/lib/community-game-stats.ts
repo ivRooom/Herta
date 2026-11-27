@@ -19,11 +19,16 @@ export type CommunityGameStatsMode = 'overview' | 'user' | 'game';
  * overview `channels` section (per-channel breakdowns from
  * community_activity_channel_daily plus the
  * message_char_units view) and `messageCharUnits` on the
- * user activity. Signing is unchanged across versions (the
+ * user activity; 5 unifies games across localized /
+ * client-specific activity names (S7): game-bearing
+ * sections carry a unified `key` and `applicationId`
+ * alongside the display name, and the game mode also
+ * accepts `gameApplicationId` / `gameKey` selectors.
+ * Signing is unchanged across versions (the
  * v1 purpose string stays the key-derivation domain
  * separator).
  */
-export type CommunityGameStatsVersion = 1 | 2 | 3 | 4;
+export type CommunityGameStatsVersion = 1 | 2 | 3 | 4 | 5;
 export interface CommunityGameStatsInput {
   guildId: string;
   from: string;
@@ -33,6 +38,8 @@ export interface CommunityGameStatsInput {
   mode: CommunityGameStatsMode;
   discordUserId: string | null;
   gameName: string | null;
+  gameApplicationId: string | null;
+  gameKey: string | null;
   version: CommunityGameStatsVersion;
 }
 /**
@@ -701,6 +708,465 @@ export function formatCommunityGameEarliestDate(value: unknown): string | null {
   if (date(value)) return value;
   throw new Error('InvalidCommunityGameEarliestDate');
 }
+/**
+ * v5 game identity (S7b, #1060). Since S7a the daily rows
+ * carry the Discord application_id next to the activity
+ * name ('' when the presence had none — which covers every
+ * row recorded before S7a). The same game still appears
+ * under several names (localized clients, Rich Presence
+ * variants), so v5 unifies rows into game groups at read
+ * time:
+ *
+ *   1. a row whose application_id is listed in a mapping
+ *      belongs to that mapping's canonical game;
+ *   2. any other row with an application_id groups by id;
+ *   3. a row without an id whose name is listed in a
+ *      mapping (as an alias or as the canonical name
+ *      itself) belongs to that canonical game — this is
+ *      what unifies the pre-S7a history;
+ *   4. anything else groups by its recorded name.
+ *
+ * A group's key is `app:<applicationId>` when the group
+ * has an id (for a mapped game, the mapping's first id)
+ * and `name:<activityName>` otherwise. The display name
+ * is the mapping's canonical name when mapped, else the
+ * name under which the group accumulated the most seconds
+ * in the period (W7; ties break to the smaller name so
+ * the choice is deterministic). Mappings live in the
+ * guild's Activity Rules config (W3) and are applied
+ * only here, on the supply side (W2); stored rows are
+ * never rewritten (W5).
+ */
+export interface CommunityGameIdentityMapping {
+  canonicalName: string;
+  applicationIds: string[];
+  activityNames: string[];
+}
+export interface CommunityGameIdentity {
+  key: string;
+  name: string;
+  applicationId: string | null;
+}
+export interface CommunityGameStatItemV5 extends CommunityGameIdentity {
+  totalSeconds: number;
+  playerCount: number;
+}
+export interface CommunityGameRankingItemV5 {
+  discordUserId: string;
+  totalSeconds: number;
+  topGameName: string;
+  topGameKey: string;
+}
+export interface CommunityUserGameItemV5 extends CommunityGameIdentity {
+  totalSeconds: number;
+}
+export interface CommunityGameMomentumItemV5 extends CommunityGameIdentity {
+  recentSeconds: number;
+  newPlayerCount: number;
+}
+export interface CommunityInsightsOverviewV5 {
+  totals: CommunityInsightsOverviewTotals;
+  matrix: { games: CommunityGameIdentity[]; members: CommunityMatrixMember[] };
+  weekdaySeconds: number[];
+  momentum: CommunityGameMomentumItemV5[];
+}
+export interface CommunityGameDetailV5 extends CommunityGameIdentity {
+  totalSeconds: number;
+  playerCount: number;
+  firstPlayDate: string | null;
+  lastPlayDate: string | null;
+}
+export interface CommunityGameResolution {
+  key: string;
+  canonicalName: string | null;
+  applicationId: string | null;
+}
+function communityGameMappingKey(mapping: CommunityGameIdentityMapping): string {
+  return mapping.applicationIds.length > 0
+    ? `app:${mapping.applicationIds[0]}`
+    : `name:${mapping.canonicalName}`;
+}
+export function findCommunityGameMappingByApplicationId(
+  mappings: readonly CommunityGameIdentityMapping[],
+  applicationId: string,
+): CommunityGameIdentityMapping | null {
+  return mappings.find((mapping) => mapping.applicationIds.includes(applicationId)) ?? null;
+}
+export function findCommunityGameMappingByName(
+  mappings: readonly CommunityGameIdentityMapping[],
+  name: string,
+): CommunityGameIdentityMapping | null {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return null;
+  return (
+    mappings.find(
+      (mapping) =>
+        mapping.canonicalName.trim().toLowerCase() === normalized ||
+        mapping.activityNames.some((alias) => alias.trim().toLowerCase() === normalized),
+    ) ?? null
+  );
+}
+/**
+ * Resolves one recorded (name, applicationId) pair to its
+ * unified game, following the decision order documented
+ * above. Name matching follows the exclusion-list rule
+ * (trimmed, case-insensitive exact match).
+ */
+export function resolveCommunityGame(
+  name: string,
+  applicationId: string | null,
+  mappings: readonly CommunityGameIdentityMapping[],
+): CommunityGameResolution {
+  if (applicationId) {
+    const byId = findCommunityGameMappingByApplicationId(mappings, applicationId);
+    if (byId)
+      return {
+        key: communityGameMappingKey(byId),
+        canonicalName: byId.canonicalName,
+        applicationId: byId.applicationIds[0] ?? applicationId,
+      };
+    return { key: `app:${applicationId}`, canonicalName: null, applicationId };
+  }
+  const byName = findCommunityGameMappingByName(mappings, name);
+  if (byName)
+    return {
+      key: communityGameMappingKey(byName),
+      canonicalName: byName.canonicalName,
+      applicationId: byName.applicationIds[0] ?? null,
+    };
+  return { key: `name:${name}`, canonicalName: null, applicationId: null };
+}
+/**
+ * A unified game key as carried on the wire: `app:` plus a
+ * snowflake, or `name:` plus the recorded activity name
+ * (1–128 chars, not blank). Keys are produced by
+ * resolveCommunityGame; this only validates the shape of
+ * a key handed back in a game-mode request.
+ */
+export function isCommunityGameKey(value: string): boolean {
+  if (value.startsWith('app:')) return /^\d{17,20}$/.test(value.slice(4));
+  if (value.startsWith('name:')) {
+    const name = value.slice(5);
+    return name.trim() !== '' && name.length <= 128;
+  }
+  return false;
+}
+/**
+ * One (name, application_id) aggregate row of the daily
+ * table. The id column is TEXT NOT NULL with '' as the
+ * unknown sentinel (the PK cannot hold NULL), so '' — and
+ * only '' — projects to null; any other non-snowflake
+ * value is a bug, not data to forward.
+ */
+export interface CommunityGameSourceRow {
+  name: string;
+  applicationId: string | null;
+  totalSeconds: number;
+}
+function gameApplicationId(value: unknown): string | null {
+  if (typeof value !== 'string') throw new Error('InvalidCommunityGameApplicationId');
+  if (value === '') return null;
+  if (!/^\d+$/.test(value)) throw new Error('InvalidCommunityGameApplicationId');
+  return value;
+}
+export function projectCommunityGameSourceRow(row: {
+  name: unknown;
+  applicationId: unknown;
+  totalSeconds: unknown;
+}): CommunityGameSourceRow {
+  return {
+    name: gameName(row.name),
+    applicationId: gameApplicationId(row.applicationId),
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+  };
+}
+export interface CommunityGameUserSourceRow extends CommunityGameSourceRow {
+  discordUserId: string;
+}
+export function projectCommunityGameUserSourceRow(row: {
+  discordUserId: unknown;
+  name: unknown;
+  applicationId: unknown;
+  totalSeconds: unknown;
+}): CommunityGameUserSourceRow {
+  if (typeof row.discordUserId !== 'string' || !/^\d{17,20}$/.test(row.discordUserId))
+    throw new Error('InvalidCommunityGameUser');
+  return { discordUserId: row.discordUserId, ...projectCommunityGameSourceRow(row) };
+}
+export interface CommunityGameGroup {
+  key: string;
+  canonicalName: string | null;
+  applicationId: string | null;
+  totalSeconds: number;
+  secondsByName: Map<string, number>;
+}
+export function communityGameGroupDisplayName(group: CommunityGameGroup): string {
+  if (group.canonicalName) return group.canonicalName;
+  let best: string | null = null;
+  let bestSeconds = -1;
+  for (const [name, seconds] of group.secondsByName) {
+    if (seconds > bestSeconds || (seconds === bestSeconds && best !== null && name < best)) {
+      best = name;
+      bestSeconds = seconds;
+    }
+  }
+  return best ?? group.key;
+}
+export function communityGameGroupIdentity(group: CommunityGameGroup): CommunityGameIdentity {
+  return {
+    key: group.key,
+    name: communityGameGroupDisplayName(group),
+    applicationId: group.applicationId,
+  };
+}
+function compareCommunityGameGroups(a: CommunityGameGroup, b: CommunityGameGroup): number {
+  if (a.totalSeconds !== b.totalSeconds) return b.totalSeconds - a.totalSeconds;
+  const byName = communityGameGroupDisplayName(a).localeCompare(communityGameGroupDisplayName(b));
+  return byName !== 0 ? byName : a.key.localeCompare(b.key);
+}
+/**
+ * Groups (name, applicationId) aggregate rows into unified
+ * games, ordered like the v1–v4 games list (total seconds
+ * descending) with the display name / key as deterministic
+ * tie-breaks.
+ */
+export function groupCommunityGameRows(
+  rows: readonly CommunityGameSourceRow[],
+  mappings: readonly CommunityGameIdentityMapping[],
+): CommunityGameGroup[] {
+  const groups = new Map<string, CommunityGameGroup>();
+  for (const row of rows) {
+    const resolution = resolveCommunityGame(row.name, row.applicationId, mappings);
+    let group = groups.get(resolution.key);
+    if (!group) {
+      group = {
+        key: resolution.key,
+        canonicalName: resolution.canonicalName,
+        applicationId: resolution.applicationId,
+        totalSeconds: 0,
+        secondsByName: new Map(),
+      };
+      groups.set(resolution.key, group);
+    }
+    group.totalSeconds += row.totalSeconds;
+    group.secondsByName.set(row.name, (group.secondsByName.get(row.name) ?? 0) + row.totalSeconds);
+  }
+  return [...groups.values()].sort(compareCommunityGameGroups);
+}
+/**
+ * The v5 overview aggregation over per-user source rows:
+ * the unified games with exact distinct player counts
+ * (merging per-name counts would double-count members who
+ * played under two names), and every user's total with
+ * their top unified game. Users order by total descending
+ * with the id as tie-break, exactly like the v1–v4 SQL.
+ */
+export function aggregateCommunityGamesOverviewV5(
+  rows: readonly CommunityGameUserSourceRow[],
+  mappings: readonly CommunityGameIdentityMapping[],
+): {
+  games: Array<{ identity: CommunityGameIdentity; totalSeconds: number; playerCount: number }>;
+  users: Array<{
+    discordUserId: string;
+    totalSeconds: number;
+    topGame: CommunityGameIdentity;
+  }>;
+} {
+  const groups = groupCommunityGameRows(rows, mappings);
+  const identityByKey = new Map(
+    groups.map((group) => [group.key, communityGameGroupIdentity(group)]),
+  );
+  const playersByKey = new Map<string, Set<string>>();
+  const totalsByUser = new Map<string, number>();
+  const secondsByUserKey = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const { key } = resolveCommunityGame(row.name, row.applicationId, mappings);
+    let players = playersByKey.get(key);
+    if (!players) {
+      players = new Set();
+      playersByKey.set(key, players);
+    }
+    players.add(row.discordUserId);
+    totalsByUser.set(
+      row.discordUserId,
+      (totalsByUser.get(row.discordUserId) ?? 0) + row.totalSeconds,
+    );
+    let byKey = secondsByUserKey.get(row.discordUserId);
+    if (!byKey) {
+      byKey = new Map();
+      secondsByUserKey.set(row.discordUserId, byKey);
+    }
+    byKey.set(key, (byKey.get(key) ?? 0) + row.totalSeconds);
+  }
+  const users = [...totalsByUser.entries()]
+    .map(([discordUserId, totalSeconds]) => {
+      let topKey: string | null = null;
+      let topSeconds = -1;
+      for (const [key, seconds] of secondsByUserKey.get(discordUserId) ?? []) {
+        const identity = identityByKey.get(key);
+        if (!identity) continue;
+        const topIdentity = topKey ? identityByKey.get(topKey) : undefined;
+        if (
+          seconds > topSeconds ||
+          (seconds === topSeconds &&
+            topIdentity &&
+            (identity.name.localeCompare(topIdentity.name) < 0 ||
+              (identity.name === topIdentity.name &&
+                identity.key.localeCompare(topKey as string) < 0)))
+        ) {
+          topKey = key;
+          topSeconds = seconds;
+        }
+      }
+      return {
+        discordUserId,
+        totalSeconds,
+        topGame: identityByKey.get(topKey as string) as CommunityGameIdentity,
+      };
+    })
+    .sort(
+      (a, b) => b.totalSeconds - a.totalSeconds || a.discordUserId.localeCompare(b.discordUserId),
+    );
+  return {
+    games: groups.map((group) => ({
+      identity: communityGameGroupIdentity(group),
+      totalSeconds: group.totalSeconds,
+      playerCount: playersByKey.get(group.key)?.size ?? 0,
+    })),
+    users,
+  };
+}
+/**
+ * The v5 matrix body: members ordered by their period
+ * total (descending, id tie-break — the v3 member order),
+ * with seconds summed across every source row of each
+ * listed game. Rows for games outside the list are dropped,
+ * never widen the shape (the v3 builder's rule).
+ */
+export function buildCommunityMatrixV5(
+  games: readonly CommunityGameIdentity[],
+  rows: readonly CommunityGameUserSourceRow[],
+  mappings: readonly CommunityGameIdentityMapping[],
+): CommunityMatrixMember[] {
+  const gameIndex = new Map(games.map((game, index) => [game.key, index]));
+  const totalsByUser = new Map<string, number>();
+  const cellsByUser = new Map<string, number[]>();
+  for (const row of rows) {
+    totalsByUser.set(
+      row.discordUserId,
+      (totalsByUser.get(row.discordUserId) ?? 0) + row.totalSeconds,
+    );
+    const { key } = resolveCommunityGame(row.name, row.applicationId, mappings);
+    const index = gameIndex.get(key);
+    if (index === undefined) continue;
+    let cells = cellsByUser.get(row.discordUserId);
+    if (!cells) {
+      cells = new Array<number>(games.length).fill(0);
+      cellsByUser.set(row.discordUserId, cells);
+    }
+    cells[index] = (cells[index] ?? 0) + row.totalSeconds;
+  }
+  return [...totalsByUser.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([discordUserId]) => ({
+      discordUserId,
+      secondsByGame: cellsByUser.get(discordUserId) ?? new Array<number>(games.length).fill(0),
+    }));
+}
+export interface CommunityGameFirstPlayRow {
+  discordUserId: string;
+  name: string;
+  applicationId: string | null;
+  firstDate: string;
+}
+export function projectCommunityGameFirstPlayRow(row: {
+  discordUserId: unknown;
+  name: unknown;
+  applicationId: unknown;
+  firstDate: unknown;
+}): CommunityGameFirstPlayRow {
+  if (typeof row.discordUserId !== 'string' || !/^\d{17,20}$/.test(row.discordUserId))
+    throw new Error('InvalidCommunityGameUser');
+  return {
+    discordUserId: row.discordUserId,
+    name: gameName(row.name),
+    applicationId: gameApplicationId(row.applicationId),
+    firstDate: toCommunityGameDateString(row.firstDate),
+  };
+}
+/**
+ * The v5 momentum merge: trailing-window seconds per
+ * unified game, plus the members whose first observed
+ * play of the game (over the whole history up to the
+ * range end, resolved through the same unification) falls
+ * inside the period. Aligned to the top-games order and
+ * zero-filled, like the v3 merge.
+ */
+export function buildCommunityMomentumV5(
+  games: readonly CommunityGameIdentity[],
+  recentRows: readonly CommunityGameSourceRow[],
+  firstPlays: readonly CommunityGameFirstPlayRow[],
+  mappings: readonly CommunityGameIdentityMapping[],
+  range: { from: string; to: string },
+): CommunityGameMomentumItemV5[] {
+  const recentByKey = new Map<string, number>();
+  for (const group of groupCommunityGameRows(recentRows, mappings))
+    recentByKey.set(group.key, group.totalSeconds);
+  const firstByUserKey = new Map<string, Map<string, string>>();
+  for (const row of firstPlays) {
+    const { key } = resolveCommunityGame(row.name, row.applicationId, mappings);
+    let byKey = firstByUserKey.get(row.discordUserId);
+    if (!byKey) {
+      byKey = new Map();
+      firstByUserKey.set(row.discordUserId, byKey);
+    }
+    const known = byKey.get(key);
+    if (known === undefined || row.firstDate < known) byKey.set(key, row.firstDate);
+  }
+  const newPlayersByKey = new Map<string, number>();
+  for (const byKey of firstByUserKey.values()) {
+    for (const [key, firstDate] of byKey) {
+      if (firstDate < range.from || firstDate > range.to) continue;
+      newPlayersByKey.set(key, (newPlayersByKey.get(key) ?? 0) + 1);
+    }
+  }
+  return games.map((game) => ({
+    ...game,
+    recentSeconds: recentByKey.get(game.key) ?? 0,
+    newPlayerCount: newPlayersByKey.get(game.key) ?? 0,
+  }));
+}
+export interface CommunityGameDetailSourceRow extends CommunityGameUserSourceRow {
+  firstPlayDate: string;
+  lastPlayDate: string;
+}
+export function projectCommunityGameDetailSourceRow(row: {
+  discordUserId: unknown;
+  name: unknown;
+  applicationId: unknown;
+  totalSeconds: unknown;
+  firstPlayDate: unknown;
+  lastPlayDate: unknown;
+}): CommunityGameDetailSourceRow {
+  return {
+    ...projectCommunityGameUserSourceRow(row),
+    firstPlayDate: toCommunityGameDateString(row.firstPlayDate),
+    lastPlayDate: toCommunityGameDateString(row.lastPlayDate),
+  };
+}
+/**
+ * The v5 user games list: the member's own rows unified
+ * and ordered like the overview games list.
+ */
+export function buildCommunityUserGamesV5(
+  rows: readonly CommunityGameSourceRow[],
+  mappings: readonly CommunityGameIdentityMapping[],
+): CommunityUserGameItemV5[] {
+  return groupCommunityGameRows(rows, mappings).map((group) => ({
+    ...communityGameGroupIdentity(group),
+    totalSeconds: group.totalSeconds,
+  }));
+}
 export async function authorizeCommunityGameStatsRead(
   request: Request,
   environment: Record<string, string | undefined> = process.env,
@@ -759,6 +1225,8 @@ export async function authorizeCommunityGameStatsRead(
   const allowed = [
     'discordUserId',
     'from',
+    'gameApplicationId',
+    'gameKey',
     'gameName',
     'guildId',
     'limit',
@@ -773,7 +1241,7 @@ export async function authorizeCommunityGameStatsRead(
   )
     return fail(422, 'invalid_request');
   const version = value.version === undefined ? 1 : value.version;
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4)
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5)
     return fail(422, 'invalid_request');
   const mode = value.mode === undefined ? 'overview' : value.mode;
   if (mode !== 'overview' && mode !== 'user' && mode !== 'game')
@@ -783,21 +1251,43 @@ export async function authorizeCommunityGameStatsRead(
   if (mode === 'user' && (typeof discordUserId !== 'string' || !/^\d{17,20}$/.test(discordUserId)))
     return fail(422, 'invalid_request');
   const gameName = value.gameName === undefined ? null : value.gameName;
+  const gameApplicationId = value.gameApplicationId === undefined ? null : value.gameApplicationId;
+  const gameKey = value.gameKey === undefined ? null : value.gameKey;
   if (mode === 'game') {
-    // The game mode exists only in contract v3 and later
-    // (its shape is unchanged in v4), names the one game to
-    // detail, and takes discordUserId as an optional viewer
-    // whose rank is reported alongside the players.
-    if (version !== 3 && version !== 4) return fail(422, 'invalid_request');
+    // The game mode exists only in contract v3 and later,
+    // names the one game to detail, and takes discordUserId
+    // as an optional viewer whose rank is reported alongside
+    // the players. v3/v4 select by exact gameName only; v5
+    // adds the gameApplicationId / gameKey selectors for the
+    // unified identity (S7b), and exactly one of the three
+    // selectors must be present.
+    if (version !== 3 && version !== 4 && version !== 5) return fail(422, 'invalid_request');
     if (
-      typeof gameName !== 'string' ||
-      gameName.trim() === '' ||
-      gameName.length > 128 ||
-      (discordUserId !== null &&
-        (typeof discordUserId !== 'string' || !/^\d{17,20}$/.test(discordUserId)))
+      discordUserId !== null &&
+      (typeof discordUserId !== 'string' || !/^\d{17,20}$/.test(discordUserId))
     )
       return fail(422, 'invalid_request');
-  } else if (gameName !== null) return fail(422, 'invalid_request');
+    const selectors = [gameName, gameApplicationId, gameKey].filter((entry) => entry !== null);
+    if (selectors.length !== 1) return fail(422, 'invalid_request');
+    if (
+      gameName !== null &&
+      (typeof gameName !== 'string' || gameName.trim() === '' || gameName.length > 128)
+    )
+      return fail(422, 'invalid_request');
+    if (
+      gameApplicationId !== null &&
+      (version !== 5 ||
+        typeof gameApplicationId !== 'string' ||
+        !/^\d{17,20}$/.test(gameApplicationId))
+    )
+      return fail(422, 'invalid_request');
+    if (
+      gameKey !== null &&
+      (version !== 5 || typeof gameKey !== 'string' || !isCommunityGameKey(gameKey))
+    )
+      return fail(422, 'invalid_request');
+  } else if (gameName !== null || gameApplicationId !== null || gameKey !== null)
+    return fail(422, 'invalid_request');
   if (
     value.guildId !== guild ||
     !date(value.from) ||
@@ -820,6 +1310,8 @@ export async function authorizeCommunityGameStatsRead(
     mode,
     discordUserId: discordUserId as string | null,
     gameName: gameName as string | null,
+    gameApplicationId: gameApplicationId as string | null,
+    gameKey: gameKey as string | null,
     version: version as CommunityGameStatsVersion,
   };
 }

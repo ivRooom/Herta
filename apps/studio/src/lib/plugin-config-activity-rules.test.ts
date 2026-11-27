@@ -71,3 +71,41 @@ test('excludedGameApplicationIdsはrequiredに入っておらず既定は空 (#1
   assert.equal(validate(candidate), true, JSON.stringify(validate.errors));
   assert.deepEqual(candidate.excludedGameApplicationIds, []);
 });
+
+test('gameIdentityMappingsはrequiredに入っておらず既定の対応表が補われる (#1060)', () => {
+  const schema = activityRulesSchema();
+  assert.equal(schema.required?.includes('gameIdentityMappings') ?? false, false);
+  const expected = [
+    {
+      canonicalName: 'Genshin Impact',
+      applicationIds: ['762434991303950386'],
+      activityNames: ['原神'],
+    },
+    {
+      canonicalName: 'Honkai: Star Rail',
+      applicationIds: ['1121201675240210523'],
+      activityNames: ['崩壊：スターレイル'],
+    },
+  ];
+  assert.deepEqual(schema.properties.gameIdentityMappings?.default, expected);
+
+  const ajv = createPluginConfigAjv();
+  const validate = ajv.compile(schema);
+  const candidate: Record<string, unknown> = {};
+  assert.equal(validate(candidate), true, JSON.stringify(validate.errors));
+  assert.deepEqual(candidate.gameIdentityMappings, expected);
+
+  // 対応表の形が崩れた設定は検証で落ちる(供給側の名寄せが静かに壊れない)
+  assert.equal(
+    validate({ gameIdentityMappings: [{ applicationIds: ['762434991303950386'] }] }),
+    false,
+  );
+  assert.equal(
+    validate({
+      gameIdentityMappings: [
+        { canonicalName: 'Genshin Impact', applicationIds: ['not-a-snowflake'] },
+      ],
+    }),
+    false,
+  );
+});

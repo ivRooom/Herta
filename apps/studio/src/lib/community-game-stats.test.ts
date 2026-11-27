@@ -3,15 +3,22 @@ import assert from 'node:assert/strict';
 import { createHmac, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
+  aggregateCommunityGamesOverviewV5,
   authorizeCommunityGameStatsRead,
   buildCommunityMatrix,
+  buildCommunityMatrixV5,
   buildCommunityMomentum,
+  buildCommunityMomentumV5,
+  buildCommunityUserGamesV5,
   buildCommunityWeekdaySeconds,
   COMMUNITY_CHANNEL_BREAKDOWN_LIMIT,
   COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT,
   COMMUNITY_GAME_STATS_PATH,
   COMMUNITY_GAME_STATS_PURPOSE,
   formatCommunityGameEarliestDate,
+  groupCommunityGameRows,
+  communityGameGroupIdentity,
+  isCommunityGameKey,
   projectCommunityActivityMessageRankingRow,
   projectCommunityActivityTotals,
   projectCommunityActivityUserTotals,
@@ -24,9 +31,12 @@ import {
   projectCommunityCharUnitsTotalsRow,
   projectCommunityGameDailyPointRow,
   projectCommunityGameDetailRow,
+  projectCommunityGameFirstPlayRow,
   projectCommunityGamePlayerRow,
   projectCommunityGameRankingRow,
+  projectCommunityGameSourceRow,
   projectCommunityGameStatRow,
+  projectCommunityGameUserSourceRow,
   projectCommunityInsightsTotalsRow,
   projectCommunityMatrixCellRow,
   projectCommunityMomentumNewPlayersRow,
@@ -34,8 +44,10 @@ import {
   projectCommunityTopGameRow,
   projectCommunityUserGameRow,
   projectCommunityWeekdaySecondsRow,
+  resolveCommunityGame,
   summarizeCommunityPlayDates,
   toCommunityGameSeconds,
+  type CommunityGameIdentityMapping,
 } from './community-game-stats.ts';
 const environment = {
   IVRM_INTEGRATION_GUILD_ID: '100000000000000001',
@@ -74,6 +86,8 @@ test('authenticates exact service body, binds Guild and defaults to overview', a
     mode: 'overview',
     discordUserId: null,
     gameName: null,
+    gameApplicationId: null,
+    gameKey: null,
     version: 1,
   });
   assert.deepEqual(
@@ -81,7 +95,15 @@ test('authenticates exact service body, binds Guild and defaults to overview', a
       signed({ ...input, mode: 'user', discordUserId: '100000000000000002' }),
       environment,
     ),
-    { ...input, mode: 'user', discordUserId: '100000000000000002', gameName: null, version: 1 },
+    {
+      ...input,
+      mode: 'user',
+      discordUserId: '100000000000000002',
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      version: 1,
+    },
   );
   for (const value of [
     { ...input, guildId: '100000000000000099' },
@@ -217,7 +239,9 @@ test('read route casts every range bound to date (PG 42883 regression)', () => {
   );
   const placeholders = route.match(/\$\{input\.(?:from|to)\}/g) ?? [];
   const casted = route.match(/\$\{input\.(?:from|to)\}::date/g) ?? [];
-  assert.equal(placeholders.length, 73);
+  // 73 through v4; v5 adds the unified per-user reads, the
+  // v5 insights reads and the game-detail selector reads.
+  assert.equal(placeholders.length, 91);
   assert.equal(casted.length, placeholders.length);
 });
 test('read route casts every SUM(value) aggregate to bigint (PG numeric regression)', () => {
@@ -235,7 +259,10 @@ test('read route casts every SUM(value) aggregate to bigint (PG numeric regressi
     new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
     'utf8',
   );
-  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 12);
+  // 12 through v4; v5 adds eight more through the same
+  // alias (overview / user / insights unified reads, the
+  // momentum window, and the two game-detail selectors).
+  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 20);
   assert.equal((route.match(/SUM\(value\)::bigint AS total/g) ?? []).length, 4);
   assert.equal((route.match(/SUM\(value\)::bigint AS "totalCount"/g) ?? []).length, 2);
   // v4 additions follow the same rule: the char-units totals
@@ -260,6 +287,8 @@ test('version 2 is negotiated by the signed body and defaults to 1', async () =>
       mode: 'overview',
       discordUserId: null,
       gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
       version: 2,
     },
   );
@@ -268,11 +297,27 @@ test('version 2 is negotiated by the signed body and defaults to 1', async () =>
       signed({ ...input, mode: 'user', discordUserId: '100000000000000002', version: 2 }),
       environment,
     ),
-    { ...input, mode: 'user', discordUserId: '100000000000000002', gameName: null, version: 2 },
+    {
+      ...input,
+      mode: 'user',
+      discordUserId: '100000000000000002',
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      version: 2,
+    },
   );
   assert.deepEqual(
     await authorizeCommunityGameStatsRead(signed({ ...input, version: 1 }), environment),
-    { ...input, mode: 'overview', discordUserId: null, gameName: null, version: 1 },
+    {
+      ...input,
+      mode: 'overview',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      version: 1,
+    },
   );
 });
 test('activity row projections emit exactly the contract fields', () => {
@@ -426,14 +471,30 @@ test('read route scopes activity queries to the contract metrics', () => {
 test('version 3 negotiates like v2 and unlocks the game mode', async () => {
   assert.deepEqual(
     await authorizeCommunityGameStatsRead(signed({ ...input, version: 3 }), environment),
-    { ...input, mode: 'overview', discordUserId: null, gameName: null, version: 3 },
+    {
+      ...input,
+      mode: 'overview',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      version: 3,
+    },
   );
   assert.deepEqual(
     await authorizeCommunityGameStatsRead(
       signed({ ...input, mode: 'game', gameName: 'VALORANT', version: 3 }),
       environment,
     ),
-    { ...input, mode: 'game', discordUserId: null, gameName: 'VALORANT', version: 3 },
+    {
+      ...input,
+      mode: 'game',
+      discordUserId: null,
+      gameName: 'VALORANT',
+      gameApplicationId: null,
+      gameKey: null,
+      version: 3,
+    },
   );
   assert.deepEqual(
     await authorizeCommunityGameStatsRead(
@@ -451,6 +512,8 @@ test('version 3 negotiates like v2 and unlocks the game mode', async () => {
       mode: 'game',
       discordUserId: '100000000000000002',
       gameName: '原神',
+      gameApplicationId: null,
+      gameKey: null,
       version: 3,
     },
   );
@@ -469,6 +532,8 @@ test('version 3 negotiates like v2 and unlocks the game mode', async () => {
       mode: 'user',
       discordUserId: '100000000000000002',
       gameName: 'VALORANT',
+      gameApplicationId: null,
+      gameKey: null,
       version: 3,
     },
   ]) {
@@ -703,8 +768,9 @@ test('read route pins the v3 query shapes (top-15 CTEs, ISODOW casts)', () => {
   assert.equal(COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT, 15);
   // EXTRACT returns PG numeric, so the ISODOW casts to ::int
   // keep Prisma from handing back a Decimal the projection
-  // would reject (#1004 class).
-  assert.equal((route.match(/EXTRACT\(ISODOW FROM activity_date\)::int/g) ?? []).length, 2);
+  // would reject (#1004 class). Two through v4 (overview /
+  // user insights); the v5 insights variant adds the third.
+  assert.equal((route.match(/EXTRACT\(ISODOW FROM activity_date\)::int/g) ?? []).length, 3);
   // The viewer rank compares inside SQL (HAVING), never by
   // selecting an uncast aggregate.
   assert.ok(route.includes('HAVING SUM(value) >'));
@@ -712,14 +778,30 @@ test('read route pins the v3 query shapes (top-15 CTEs, ISODOW casts)', () => {
 test('version 4 negotiates like v3 and keeps the game mode', async () => {
   assert.deepEqual(
     await authorizeCommunityGameStatsRead(signed({ ...input, version: 4 }), environment),
-    { ...input, mode: 'overview', discordUserId: null, gameName: null, version: 4 },
+    {
+      ...input,
+      mode: 'overview',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      version: 4,
+    },
   );
   assert.deepEqual(
     await authorizeCommunityGameStatsRead(
       signed({ ...input, mode: 'user', discordUserId: '100000000000000002', version: 4 }),
       environment,
     ),
-    { ...input, mode: 'user', discordUserId: '100000000000000002', gameName: null, version: 4 },
+    {
+      ...input,
+      mode: 'user',
+      discordUserId: '100000000000000002',
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      version: 4,
+    },
   );
   // The game mode shape is unchanged in v4, so it unlocks
   // at version 3 and stays available at version 4.
@@ -728,10 +810,17 @@ test('version 4 negotiates like v3 and keeps the game mode', async () => {
       signed({ ...input, mode: 'game', gameName: 'VALORANT', version: 4 }),
       environment,
     ),
-    { ...input, mode: 'game', discordUserId: null, gameName: 'VALORANT', version: 4 },
+    {
+      ...input,
+      mode: 'game',
+      discordUserId: null,
+      gameName: 'VALORANT',
+      gameApplicationId: null,
+      gameKey: null,
+      version: 4,
+    },
   );
   for (const value of [
-    { ...input, version: 5 },
     { ...input, version: 0 },
     { ...input, mode: 'game', gameName: 'VALORANT', version: 2 },
   ]) {
@@ -901,4 +990,577 @@ test('read route pins the v4 query shapes (channel table, breakdown cap, name lo
   // never from a database column (none exists).
   assert.ok(route.includes('getGuildConfigurationOptionsCached'));
   assert.ok(route.includes("console.error('community_channels_read_failed', error)"));
+});
+const identityMappings: CommunityGameIdentityMapping[] = [
+  {
+    canonicalName: 'Genshin Impact',
+    applicationIds: ['762434991303950386'],
+    activityNames: ['原神'],
+  },
+  {
+    canonicalName: 'Honkai: Star Rail',
+    applicationIds: ['1121201675240210523'],
+    activityNames: ['崩壊：スターレイル'],
+  },
+];
+test('version 5 negotiates like v4 and unlocks the id / key game selectors', async () => {
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(signed({ ...input, version: 5 }), environment),
+    {
+      ...input,
+      mode: 'overview',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      version: 5,
+    },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({ ...input, mode: 'game', gameApplicationId: '762434991303950386', version: 5 }),
+      environment,
+    ),
+    {
+      ...input,
+      mode: 'game',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: '762434991303950386',
+      gameKey: null,
+      version: 5,
+    },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({ ...input, mode: 'game', gameKey: 'name:原神', version: 5 }),
+      environment,
+    ),
+    {
+      ...input,
+      mode: 'game',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: 'name:原神',
+      version: 5,
+    },
+  );
+  // gameName keeps working at v5 (exact-name figures).
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({ ...input, mode: 'game', gameName: 'VALORANT', version: 5 }),
+      environment,
+    ),
+    {
+      ...input,
+      mode: 'game',
+      discordUserId: null,
+      gameName: 'VALORANT',
+      gameApplicationId: null,
+      gameKey: null,
+      version: 5,
+    },
+  );
+  for (const value of [
+    // The new selectors are v5-only.
+    { ...input, mode: 'game', gameApplicationId: '762434991303950386', version: 4 },
+    { ...input, mode: 'game', gameKey: 'app:762434991303950386', version: 3 },
+    // Exactly one selector must be present.
+    { ...input, mode: 'game', version: 5 },
+    { ...input, mode: 'game', gameName: 'VALORANT', gameKey: 'name:VALORANT', version: 5 },
+    {
+      ...input,
+      mode: 'game',
+      gameApplicationId: '762434991303950386',
+      gameKey: 'app:762434991303950386',
+      version: 5,
+    },
+    // Selector shapes are strict.
+    { ...input, mode: 'game', gameApplicationId: '123', version: 5 },
+    { ...input, mode: 'game', gameApplicationId: 'not-a-snowflake!', version: 5 },
+    { ...input, mode: 'game', gameKey: 'app:123', version: 5 },
+    { ...input, mode: 'game', gameKey: 'id:762434991303950386', version: 5 },
+    { ...input, mode: 'game', gameKey: 'name:', version: 5 },
+    { ...input, mode: 'game', gameKey: 'name:   ', version: 5 },
+    // Selectors are meaningless outside the game mode.
+    { ...input, gameApplicationId: '762434991303950386', version: 5 },
+    {
+      ...input,
+      mode: 'user',
+      discordUserId: '100000000000000002',
+      gameKey: 'name:原神',
+      version: 5,
+    },
+  ]) {
+    const response = await authorizeCommunityGameStatsRead(signed(value), environment);
+    assert.ok(response instanceof Response);
+    assert.equal(response.status, 422);
+  }
+});
+test('game key validation accepts only the produced shapes', () => {
+  assert.equal(isCommunityGameKey('app:762434991303950386'), true);
+  assert.equal(isCommunityGameKey('name:原神'), true);
+  assert.equal(isCommunityGameKey('name:VALORANT'), true);
+  assert.equal(isCommunityGameKey('app:123'), false);
+  assert.equal(isCommunityGameKey('app:'), false);
+  assert.equal(isCommunityGameKey('name:'), false);
+  assert.equal(isCommunityGameKey('name:  '), false);
+  assert.equal(isCommunityGameKey('原神'), false);
+  assert.equal(isCommunityGameKey(''), false);
+});
+test('identity resolution follows the mapping decision order', () => {
+  // 1. A mapped application id wins, whatever name the row carried.
+  assert.deepEqual(resolveCommunityGame('原神', '762434991303950386', identityMappings), {
+    key: 'app:762434991303950386',
+    canonicalName: 'Genshin Impact',
+    applicationId: '762434991303950386',
+  });
+  assert.deepEqual(resolveCommunityGame('Genshin Impact', '762434991303950386', identityMappings), {
+    key: 'app:762434991303950386',
+    canonicalName: 'Genshin Impact',
+    applicationId: '762434991303950386',
+  });
+  // 2. An unmapped id groups by id — even when its name is a mapped alias.
+  assert.deepEqual(resolveCommunityGame('原神', '999999999999999999', identityMappings), {
+    key: 'app:999999999999999999',
+    canonicalName: null,
+    applicationId: '999999999999999999',
+  });
+  // 3. Id-less rows resolve by name: aliases and the canonical name itself.
+  assert.deepEqual(resolveCommunityGame('原神', null, identityMappings), {
+    key: 'app:762434991303950386',
+    canonicalName: 'Genshin Impact',
+    applicationId: '762434991303950386',
+  });
+  assert.deepEqual(resolveCommunityGame('Genshin Impact', null, identityMappings), {
+    key: 'app:762434991303950386',
+    canonicalName: 'Genshin Impact',
+    applicationId: '762434991303950386',
+  });
+  assert.deepEqual(resolveCommunityGame('崩壊：スターレイル', null, identityMappings), {
+    key: 'app:1121201675240210523',
+    canonicalName: 'Honkai: Star Rail',
+    applicationId: '1121201675240210523',
+  });
+  // Name matching follows the exclusion rule (trimmed, case-insensitive).
+  assert.deepEqual(resolveCommunityGame(' genshin impact ', null, identityMappings), {
+    key: 'app:762434991303950386',
+    canonicalName: 'Genshin Impact',
+    applicationId: '762434991303950386',
+  });
+  // 4. Anything else groups by its recorded name.
+  assert.deepEqual(resolveCommunityGame('VALORANT', null, identityMappings), {
+    key: 'name:VALORANT',
+    canonicalName: null,
+    applicationId: null,
+  });
+  assert.deepEqual(resolveCommunityGame('VALORANT', null, []), {
+    key: 'name:VALORANT',
+    canonicalName: null,
+    applicationId: null,
+  });
+});
+test('source row projection maps the empty id sentinel to null and rejects bad ids', () => {
+  assert.deepEqual(
+    projectCommunityGameSourceRow({ name: '原神', applicationId: '', totalSeconds: 60n }),
+    { name: '原神', applicationId: null, totalSeconds: 60 },
+  );
+  assert.deepEqual(
+    projectCommunityGameSourceRow({
+      name: 'VALORANT',
+      applicationId: '100000000000000001',
+      totalSeconds: '30',
+    }),
+    { name: 'VALORANT', applicationId: '100000000000000001', totalSeconds: 30 },
+  );
+  assert.throws(() =>
+    projectCommunityGameSourceRow({ name: 'VALORANT', applicationId: 'abc', totalSeconds: 1 }),
+  );
+  assert.throws(() =>
+    projectCommunityGameSourceRow({ name: 'VALORANT', applicationId: 123, totalSeconds: 1 }),
+  );
+  assert.throws(() =>
+    projectCommunityGameSourceRow({ name: 'VALORANT', applicationId: null, totalSeconds: 1 }),
+  );
+  // A Decimal-shaped aggregate must throw, not pass through (#1004).
+  assert.throws(() =>
+    projectCommunityGameSourceRow({
+      name: 'VALORANT',
+      applicationId: '',
+      totalSeconds: { toString: () => '1' },
+    }),
+  );
+  assert.deepEqual(
+    projectCommunityGameUserSourceRow({
+      discordUserId: '100000000000000002',
+      name: '原神',
+      applicationId: '',
+      totalSeconds: 45,
+    }),
+    { discordUserId: '100000000000000002', name: '原神', applicationId: null, totalSeconds: 45 },
+  );
+  assert.throws(() =>
+    projectCommunityGameUserSourceRow({
+      discordUserId: '123',
+      name: '原神',
+      applicationId: '',
+      totalSeconds: 45,
+    }),
+  );
+  assert.deepEqual(
+    projectCommunityGameFirstPlayRow({
+      discordUserId: '100000000000000002',
+      name: '原神',
+      applicationId: '',
+      firstDate: new Date('2026-11-24T00:00:00.000Z'),
+    }),
+    {
+      discordUserId: '100000000000000002',
+      name: '原神',
+      applicationId: null,
+      firstDate: '2026-11-24',
+    },
+  );
+});
+test('grouping unifies localized names and picks the display name by accumulated seconds', () => {
+  const groups = groupCommunityGameRows(
+    [
+      { name: '原神', applicationId: null, totalSeconds: 500 },
+      { name: '原神', applicationId: '762434991303950386', totalSeconds: 300 },
+      { name: 'Genshin Impact', applicationId: '762434991303950386', totalSeconds: 200 },
+      { name: 'VALORANT', applicationId: '100000000000000001', totalSeconds: 900 },
+      { name: 'VALORANT', applicationId: null, totalSeconds: 100 },
+    ],
+    identityMappings,
+  );
+  // The mapped group merges past (id-less) and current rows;
+  // its display name is the canonical name. The id-less
+  // VALORANT rows stay a separate name group from the
+  // id-carrying ones — the id is the stronger identity.
+  assert.deepEqual(
+    groups.map((group) => ({
+      ...communityGameGroupIdentity(group),
+      totalSeconds: group.totalSeconds,
+    })),
+    [
+      {
+        key: 'app:762434991303950386',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+        totalSeconds: 1000,
+      },
+      {
+        key: 'app:100000000000000001',
+        name: 'VALORANT',
+        applicationId: '100000000000000001',
+        totalSeconds: 900,
+      },
+      { key: 'name:VALORANT', name: 'VALORANT', applicationId: null, totalSeconds: 100 },
+    ],
+  );
+  // Without a mapping, an id group's display name is the
+  // name it accumulated the most seconds under (W7).
+  const unmapped = groupCommunityGameRows(
+    [
+      { name: 'Star Rail', applicationId: '100000000000000009', totalSeconds: 100 },
+      { name: 'Honkai: Star Rail', applicationId: '100000000000000009', totalSeconds: 300 },
+    ],
+    [],
+  );
+  assert.equal(unmapped.length, 1);
+  assert.equal(
+    communityGameGroupIdentity(unmapped[0] as (typeof unmapped)[number]).name,
+    'Honkai: Star Rail',
+  );
+});
+test('overview aggregation counts distinct players across names and unifies top games', () => {
+  const aggregated = aggregateCommunityGamesOverviewV5(
+    [
+      {
+        discordUserId: '100000000000000002',
+        name: '原神',
+        applicationId: null,
+        totalSeconds: 500,
+      },
+      {
+        discordUserId: '100000000000000002',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+        totalSeconds: 300,
+      },
+      {
+        discordUserId: '100000000000000003',
+        name: '原神',
+        applicationId: null,
+        totalSeconds: 100,
+      },
+      {
+        discordUserId: '100000000000000003',
+        name: 'VALORANT',
+        applicationId: null,
+        totalSeconds: 50,
+      },
+      {
+        discordUserId: '100000000000000004',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+        totalSeconds: 200,
+      },
+    ],
+    identityMappings,
+  );
+  // Member 002 played the same game under two names but is
+  // one player of the unified game.
+  assert.deepEqual(aggregated.games, [
+    {
+      identity: {
+        key: 'app:762434991303950386',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+      },
+      totalSeconds: 1100,
+      playerCount: 3,
+    },
+    {
+      identity: { key: 'name:VALORANT', name: 'VALORANT', applicationId: null },
+      totalSeconds: 50,
+      playerCount: 1,
+    },
+  ]);
+  assert.deepEqual(aggregated.users, [
+    {
+      discordUserId: '100000000000000002',
+      totalSeconds: 800,
+      topGame: {
+        key: 'app:762434991303950386',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+      },
+    },
+    {
+      discordUserId: '100000000000000004',
+      totalSeconds: 200,
+      topGame: {
+        key: 'app:762434991303950386',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+      },
+    },
+    {
+      discordUserId: '100000000000000003',
+      totalSeconds: 150,
+      topGame: {
+        key: 'app:762434991303950386',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+      },
+    },
+  ]);
+});
+test('user games unify the member history including pre-id rows', () => {
+  assert.deepEqual(
+    buildCommunityUserGamesV5(
+      [
+        { name: '原神', applicationId: null, totalSeconds: 500 },
+        { name: 'Genshin Impact', applicationId: '762434991303950386', totalSeconds: 300 },
+        { name: 'Minecraft', applicationId: null, totalSeconds: 100 },
+      ],
+      identityMappings,
+    ),
+    [
+      {
+        key: 'app:762434991303950386',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+        totalSeconds: 800,
+      },
+      { key: 'name:Minecraft', name: 'Minecraft', applicationId: null, totalSeconds: 100 },
+    ],
+  );
+});
+test('matrix v5 sums cells across the unified names', () => {
+  const games = [
+    {
+      key: 'app:762434991303950386',
+      name: 'Genshin Impact',
+      applicationId: '762434991303950386',
+    },
+    { key: 'name:VALORANT', name: 'VALORANT', applicationId: null },
+  ];
+  const members = buildCommunityMatrixV5(
+    games,
+    [
+      {
+        discordUserId: '100000000000000002',
+        name: '原神',
+        applicationId: null,
+        totalSeconds: 500,
+      },
+      {
+        discordUserId: '100000000000000002',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+        totalSeconds: 300,
+      },
+      {
+        discordUserId: '100000000000000003',
+        name: 'VALORANT',
+        applicationId: null,
+        totalSeconds: 50,
+      },
+    ],
+    identityMappings,
+  );
+  assert.deepEqual(members, [
+    { discordUserId: '100000000000000002', secondsByGame: [800, 0] },
+    { discordUserId: '100000000000000003', secondsByGame: [0, 50] },
+  ]);
+});
+test('momentum v5 counts a new player once across aliases', () => {
+  const games = [
+    {
+      key: 'app:762434991303950386',
+      name: 'Genshin Impact',
+      applicationId: '762434991303950386',
+    },
+    { key: 'name:VALORANT', name: 'VALORANT', applicationId: null },
+  ];
+  const momentum = buildCommunityMomentumV5(
+    games,
+    [
+      { name: '原神', applicationId: null, totalSeconds: 100 },
+      { name: 'Genshin Impact', applicationId: '762434991303950386', totalSeconds: 50 },
+    ],
+    [
+      // The same member first played under both names; the
+      // earlier date is the game's first play for them.
+      {
+        discordUserId: '100000000000000002',
+        name: '原神',
+        applicationId: null,
+        firstDate: '2026-11-25',
+      },
+      {
+        discordUserId: '100000000000000002',
+        name: 'Genshin Impact',
+        applicationId: '762434991303950386',
+        firstDate: '2026-11-24',
+      },
+      {
+        discordUserId: '100000000000000003',
+        name: 'VALORANT',
+        applicationId: null,
+        firstDate: '2026-09-01',
+      },
+    ],
+    identityMappings,
+    { from: '2026-11-20', to: '2026-11-26' },
+  );
+  assert.deepEqual(momentum, [
+    {
+      key: 'app:762434991303950386',
+      name: 'Genshin Impact',
+      applicationId: '762434991303950386',
+      recentSeconds: 150,
+      newPlayerCount: 1,
+    },
+    {
+      key: 'name:VALORANT',
+      name: 'VALORANT',
+      applicationId: null,
+      recentSeconds: 0,
+      newPlayerCount: 0,
+    },
+  ]);
+});
+test('v5 contract JSON extends v4 without changing the v1–v4 shapes', () => {
+  const read = (name: string) =>
+    JSON.parse(
+      readFileSync(new URL(`../../../../contracts/ivrm/${name}`, import.meta.url), 'utf8'),
+    ) as {
+      $id: string;
+      description: string;
+      $defs: Record<string, { required?: string[]; properties?: Record<string, unknown> }>;
+    };
+  const v4 = read('herta-community-game-stats-read.v4.json');
+  const v5 = read('herta-community-game-stats-read.v5.json');
+  assert.equal(v5.$id, 'https://ivrm.jp/contracts/herta-community-game-stats-read/v5');
+  assert.ok(v5.description.includes(COMMUNITY_GAME_STATS_PATH));
+  assert.ok(v5.description.includes(COMMUNITY_GAME_STATS_PURPOSE));
+  // Every v4 definition except the request is carried over
+  // unchanged in structure.
+  for (const name of Object.keys(v4.$defs).filter((key) => key !== 'request'))
+    assert.deepEqual(v5.$defs[name], v4.$defs[name]);
+  // The request only gains the two game selectors and the
+  // widened version enum.
+  assert.deepEqual(
+    Object.keys(v5.$defs.request.properties ?? {}).sort(),
+    [...Object.keys(v4.$defs.request.properties ?? {}), 'gameApplicationId', 'gameKey'].sort(),
+  );
+  assert.deepEqual(v5.$defs.request.required, v4.$defs.request.required);
+  // The V5 responses keep the v4 section sets; only the
+  // game-bearing payloads switch to the unified shapes.
+  assert.deepEqual(
+    Object.keys(v5.$defs.overviewResponseV5.properties ?? {}).sort(),
+    Object.keys(v4.$defs.overviewResponseV4.properties ?? {}).sort(),
+  );
+  assert.deepEqual(
+    Object.keys(v5.$defs.userResponseV5.properties ?? {}).sort(),
+    Object.keys(v4.$defs.userResponseV4.properties ?? {}).sort(),
+  );
+  assert.deepEqual(
+    Object.keys(v5.$defs.gameResponseV5.properties ?? {}).sort(),
+    Object.keys(v4.$defs.gameResponse.properties ?? {}).sort(),
+  );
+  assert.deepEqual(Object.keys(v5.$defs.gameItemV5.properties ?? {}).sort(), [
+    'applicationId',
+    'key',
+    'name',
+    'playerCount',
+    'totalSeconds',
+  ]);
+  assert.deepEqual(Object.keys(v5.$defs.rankingItemV5.properties ?? {}).sort(), [
+    'discordUserId',
+    'topGameKey',
+    'topGameName',
+    'totalSeconds',
+  ]);
+  assert.deepEqual(Object.keys(v5.$defs.gameDetailV5.properties ?? {}).sort(), [
+    'applicationId',
+    'firstPlayDate',
+    'key',
+    'lastPlayDate',
+    'name',
+    'playerCount',
+    'totalSeconds',
+  ]);
+  assert.deepEqual(Object.keys(v5.$defs.insightsOverviewV5.properties ?? {}).sort(), [
+    'matrix',
+    'momentum',
+    'totals',
+    'weekdaySeconds',
+  ]);
+  assert.deepEqual(Object.keys(v5.$defs.insightsMatrixV5.properties ?? {}).sort(), [
+    'games',
+    'members',
+  ]);
+});
+test('read route pins the v5 query shapes (id column, selector reads, mapping load)', () => {
+  const route = readFileSync(
+    new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
+    'utf8',
+  );
+  // The unified reads group by the recorded (name, id)
+  // pair; the game-detail name selector only claims
+  // id-less rows, which is exactly the set a name mapping
+  // may unify.
+  assert.equal((route.match(/GROUP BY user_id, activity_name, application_id/g) ?? []).length, 5);
+  assert.equal((route.match(/GROUP BY activity_name, application_id/g) ?? []).length, 2);
+  assert.ok(route.includes("application_id = '' AND activity_name ="));
+  // The mappings come from the guild's Activity Rules
+  // config through the shared normalization.
+  assert.ok(route.includes("pluginId: 'activity-rules'"));
+  assert.ok(route.includes('normalizeActivityRulesConfig'));
+  assert.ok(route.includes("console.error('community_game_identity_mapping_read_failed', error)"));
 });

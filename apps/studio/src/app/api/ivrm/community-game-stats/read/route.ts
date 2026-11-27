@@ -1,14 +1,23 @@
 import { prisma } from '@/lib/db';
 import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
+import { normalizeActivityRulesConfig } from '@herta/shared';
 import {
+  aggregateCommunityGamesOverviewV5,
   authorizeCommunityGameStatsRead,
   buildCommunityMatrix,
+  buildCommunityMatrixV5,
   buildCommunityMomentum,
+  buildCommunityMomentumV5,
+  buildCommunityUserGamesV5,
   buildCommunityWeekdaySeconds,
+  communityGameGroupIdentity,
   COMMUNITY_CHANNEL_BREAKDOWN_LIMIT,
   COMMUNITY_GAME_STATS_GAMES_LIMIT,
   COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT,
+  findCommunityGameMappingByApplicationId,
+  findCommunityGameMappingByName,
   formatCommunityGameEarliestDate,
+  groupCommunityGameRows,
   projectCommunityActivityMessageRankingRow,
   projectCommunityActivityTotals,
   projectCommunityActivityUserTotals,
@@ -21,9 +30,13 @@ import {
   projectCommunityCharUnitsTotalsRow,
   projectCommunityGameDailyPointRow,
   projectCommunityGameDetailRow,
+  projectCommunityGameDetailSourceRow,
+  projectCommunityGameFirstPlayRow,
   projectCommunityGamePlayerRow,
   projectCommunityGameRankingRow,
+  projectCommunityGameSourceRow,
   projectCommunityGameStatRow,
+  projectCommunityGameUserSourceRow,
   projectCommunityInsightsTotalsRow,
   projectCommunityMatrixCellRow,
   projectCommunityMatrixMemberRow,
@@ -32,6 +45,7 @@ import {
   projectCommunityTopGameRow,
   projectCommunityUserGameRow,
   projectCommunityWeekdaySecondsRow,
+  resolveCommunityGame,
   summarizeCommunityPlayDates,
   toCommunityGameDateString,
   toCommunityGameSeconds,
@@ -42,10 +56,15 @@ import {
   type CommunityActivityVoiceRankingItem,
   type CommunityChannelsOverview,
   type CommunityGameDetail,
+  type CommunityGameDetailV5,
+  type CommunityGameIdentityMapping,
   type CommunityGameStatsInput,
   type CommunityGameViewer,
   type CommunityInsightsOverview,
+  type CommunityInsightsOverviewV5,
   type CommunityInsightsUser,
+  type CommunityUserGameItem,
+  type CommunityUserGameItemV5,
 } from '@/lib/community-game-stats';
 export const dynamic = 'force-dynamic';
 interface ActivityPagination {
@@ -459,6 +478,268 @@ async function readUserInsights(
     return null;
   }
 }
+/**
+ * v5 game identity mappings (S7b, #1060): the guild's
+ * Activity Rules config carries the canonical-name table
+ * (W3), read through the same guild_plugins row and the
+ * same normalization the bot applies, so supply and
+ * collection can never disagree about the config shape.
+ * A config read failure degrades to the code defaults
+ * instead of failing the read: unification is an
+ * enhancement of the game sections, and the id / name
+ * grouping underneath stays correct without it.
+ */
+async function readGameIdentityMappings(guildId: string): Promise<CommunityGameIdentityMapping[]> {
+  const toLibMappings = (
+    config: ReturnType<typeof normalizeActivityRulesConfig>,
+  ): CommunityGameIdentityMapping[] =>
+    config.gameIdentityMappings.map((mapping) => ({
+      canonicalName: mapping.canonicalName,
+      applicationIds: [...mapping.applicationIds],
+      activityNames: [...mapping.activityNames],
+    }));
+  try {
+    const row = await prisma.guildPlugin.findUnique({
+      where: { guildId_pluginId: { guildId, pluginId: 'activity-rules' } },
+      select: { config: true },
+    });
+    return toLibMappings(normalizeActivityRulesConfig(row?.config ?? {}));
+  } catch (error) {
+    console.error('community_game_identity_mapping_read_failed', error);
+    return toLibMappings(normalizeActivityRulesConfig(undefined));
+  }
+}
+/**
+ * v5 overview insights (S7b, #1060): the v3 insights with
+ * the game-bearing parts (matrix games / cells, momentum)
+ * resolved through the unified identity. Totals and the
+ * weekday distribution do not key on games and keep the
+ * v3 queries. The per-user source rows drive both the
+ * top-15 selection and the matrix cells, so the two can
+ * never disagree about a game's membership or order.
+ * Same fail-soft and casting rules as the other sections.
+ */
+async function readOverviewInsightsV5(
+  input: CommunityGameStatsInput,
+  mappings: CommunityGameIdentityMapping[],
+): Promise<CommunityInsightsOverviewV5 | null> {
+  try {
+    const totalsRows = await prisma.$queryRaw<
+      Array<{ totalSeconds: bigint; playerCount: number }>
+    >`SELECT SUM(value)::bigint AS "totalSeconds",
+        COUNT(DISTINCT user_id)::int AS "playerCount"
+      FROM community_game_activity_daily
+      WHERE guild_id = ${input.guildId}
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date`;
+    const userRows = await prisma.$queryRaw<
+      Array<{
+        discordUserId: string;
+        name: string;
+        applicationId: string;
+        totalSeconds: bigint;
+      }>
+    >`SELECT user_id AS "discordUserId", activity_name AS name,
+        application_id AS "applicationId", SUM(value)::bigint AS "totalSeconds"
+      FROM community_game_activity_daily
+      WHERE guild_id = ${input.guildId}
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY user_id, activity_name, application_id`;
+    const sourceRows = userRows.map((row) => projectCommunityGameUserSourceRow(row));
+    const topGames = groupCommunityGameRows(sourceRows, mappings)
+      .slice(0, COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT)
+      .map((group) => communityGameGroupIdentity(group));
+    const weekdayRows = await prisma.$queryRaw<
+      Array<{ isoDow: number; totalSeconds: bigint }>
+    >`SELECT EXTRACT(ISODOW FROM activity_date)::int AS "isoDow",
+        SUM(value)::bigint AS "totalSeconds"
+      FROM community_game_activity_daily
+      WHERE guild_id = ${input.guildId}
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY EXTRACT(ISODOW FROM activity_date)`;
+    const recentRows = await prisma.$queryRaw<
+      Array<{ name: string; applicationId: string; totalSeconds: bigint }>
+    >`SELECT activity_name AS name, application_id AS "applicationId",
+        SUM(value)::bigint AS "totalSeconds"
+      FROM community_game_activity_daily
+      WHERE guild_id = ${input.guildId}
+        AND activity_date >= ${input.from}::date
+        AND activity_date >= ${input.to}::date - 6
+        AND activity_date <= ${input.to}::date
+      GROUP BY activity_name, application_id`;
+    const firstPlayRows = await prisma.$queryRaw<
+      Array<{
+        discordUserId: string;
+        name: string;
+        applicationId: string;
+        firstDate: Date | string;
+      }>
+    >`SELECT user_id AS "discordUserId", activity_name AS name,
+        application_id AS "applicationId", MIN(activity_date) AS "firstDate"
+      FROM community_game_activity_daily
+      WHERE guild_id = ${input.guildId}
+        AND activity_date <= ${input.to}::date
+      GROUP BY user_id, activity_name, application_id`;
+    return {
+      totals: projectCommunityInsightsTotalsRow(
+        totalsRows[0] ?? { totalSeconds: 0n, playerCount: 0 },
+      ),
+      matrix: {
+        games: topGames,
+        members: buildCommunityMatrixV5(topGames, sourceRows, mappings),
+      },
+      weekdaySeconds: buildCommunityWeekdaySeconds(
+        weekdayRows.map((row) => projectCommunityWeekdaySecondsRow(row)),
+      ),
+      momentum: buildCommunityMomentumV5(
+        topGames,
+        recentRows.map((row) => projectCommunityGameSourceRow(row)),
+        firstPlayRows.map((row) => projectCommunityGameFirstPlayRow(row)),
+        mappings,
+        { from: input.from, to: input.to },
+      ),
+    };
+  } catch (error) {
+    console.error('community_game_insights_read_failed', error);
+    return null;
+  }
+}
+/**
+ * v5 game mode by application id / unified key (S7b,
+ * #1060): the selector resolves to one unified game; its
+ * source rows are fetched per selector (by id, or by name
+ * restricted to id-less rows — the rows a name mapping is
+ * allowed to claim) and filtered through the same
+ * resolution the overview applies, so a superset fetch
+ * can never leak another game's rows into the detail.
+ * Like the v3 game mode this is the response's main
+ * content: a read failure propagates to the 503 catch.
+ */
+async function readGameDetailV5(
+  input: CommunityGameStatsInput,
+  mappings: CommunityGameIdentityMapping[],
+): Promise<{
+  game: CommunityGameDetailV5;
+  players: {
+    items: Array<{ discordUserId: string; totalSeconds: number }>;
+    pagination: ActivityPagination;
+  };
+  viewer: CommunityGameViewer | null;
+}> {
+  let targetKey: string;
+  let selectorIds: string[] = [];
+  let selectorNames: string[] = [];
+  let fallbackName: string;
+  let fallbackApplicationId: string | null;
+  const applicationId =
+    input.gameApplicationId ?? (input.gameKey?.startsWith('app:') ? input.gameKey.slice(4) : null);
+  if (applicationId !== null) {
+    const mapping = findCommunityGameMappingByApplicationId(mappings, applicationId);
+    targetKey = resolveCommunityGame('', applicationId, mappings).key;
+    selectorIds = mapping ? [...mapping.applicationIds] : [applicationId];
+    selectorNames = mapping ? [...mapping.activityNames, mapping.canonicalName] : [];
+    fallbackName = mapping?.canonicalName ?? targetKey;
+    fallbackApplicationId = mapping?.applicationIds[0] ?? applicationId;
+  } else {
+    const name = (input.gameKey as string).slice(5);
+    const mapping = findCommunityGameMappingByName(mappings, name);
+    targetKey = resolveCommunityGame(name, null, mappings).key;
+    selectorIds = mapping ? [...mapping.applicationIds] : [];
+    selectorNames = mapping ? [...mapping.activityNames, mapping.canonicalName] : [name];
+    fallbackName = mapping?.canonicalName ?? name;
+    fallbackApplicationId = mapping?.applicationIds[0] ?? null;
+  }
+  type DetailRow = {
+    discordUserId: string;
+    name: string;
+    applicationId: string;
+    totalSeconds: bigint;
+    firstPlayDate: Date | string;
+    lastPlayDate: Date | string;
+  };
+  const fetched: DetailRow[] = [];
+  for (const id of selectorIds) {
+    fetched.push(
+      ...(await prisma.$queryRaw<DetailRow[]>`SELECT user_id AS "discordUserId",
+          activity_name AS name, application_id AS "applicationId",
+          SUM(value)::bigint AS "totalSeconds",
+          MIN(activity_date) AS "firstPlayDate", MAX(activity_date) AS "lastPlayDate"
+        FROM community_game_activity_daily
+        WHERE guild_id = ${input.guildId} AND application_id = ${id}
+          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+        GROUP BY user_id, activity_name, application_id`),
+    );
+  }
+  for (const name of selectorNames) {
+    fetched.push(
+      ...(await prisma.$queryRaw<DetailRow[]>`SELECT user_id AS "discordUserId",
+          activity_name AS name, application_id AS "applicationId",
+          SUM(value)::bigint AS "totalSeconds",
+          MIN(activity_date) AS "firstPlayDate", MAX(activity_date) AS "lastPlayDate"
+        FROM community_game_activity_daily
+        WHERE guild_id = ${input.guildId} AND application_id = '' AND activity_name = ${name}
+          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+        GROUP BY user_id, activity_name, application_id`),
+    );
+  }
+  const rows = fetched
+    .map((row) => projectCommunityGameDetailSourceRow(row))
+    .filter((row) => resolveCommunityGame(row.name, row.applicationId, mappings).key === targetKey);
+  const groups = groupCommunityGameRows(rows, mappings);
+  const identity = groups[0]
+    ? communityGameGroupIdentity(groups[0])
+    : { key: targetKey, name: fallbackName, applicationId: fallbackApplicationId };
+  const secondsByUser = new Map<string, number>();
+  let totalSeconds = 0;
+  let firstPlayDate: string | null = null;
+  let lastPlayDate: string | null = null;
+  for (const row of rows) {
+    totalSeconds += row.totalSeconds;
+    secondsByUser.set(
+      row.discordUserId,
+      (secondsByUser.get(row.discordUserId) ?? 0) + row.totalSeconds,
+    );
+    if (firstPlayDate === null || row.firstPlayDate < firstPlayDate)
+      firstPlayDate = row.firstPlayDate;
+    if (lastPlayDate === null || row.lastPlayDate > lastPlayDate) lastPlayDate = row.lastPlayDate;
+  }
+  const players = [...secondsByUser.entries()]
+    .map(([discordUserId, seconds]) => ({ discordUserId, totalSeconds: seconds }))
+    .sort(
+      (a, b) => b.totalSeconds - a.totalSeconds || a.discordUserId.localeCompare(b.discordUserId),
+    );
+  let viewer: CommunityGameViewer | null = null;
+  if (input.discordUserId !== null) {
+    const viewerSeconds = secondsByUser.get(input.discordUserId) ?? 0;
+    viewer = {
+      discordUserId: input.discordUserId,
+      rank:
+        viewerSeconds > 0
+          ? players.filter((player) => player.totalSeconds > viewerSeconds).length + 1
+          : null,
+      totalSeconds: viewerSeconds,
+    };
+  }
+  const playerItems = players.slice(input.offset, input.offset + input.limit);
+  return {
+    game: {
+      ...identity,
+      totalSeconds,
+      playerCount: players.length,
+      firstPlayDate,
+      lastPlayDate,
+    },
+    players: {
+      items: playerItems,
+      pagination: {
+        limit: input.limit,
+        offset: input.offset,
+        total: players.length,
+        hasNext: input.offset + playerItems.length < players.length,
+      },
+    },
+    viewer,
+  };
+}
 export async function POST(request: Request) {
   const input = await authorizeCommunityGameStatsRead(request);
   if (input instanceof Response) return input;
@@ -470,6 +751,24 @@ export async function POST(request: Request) {
       WHERE guild_id = ${input.guildId}`;
     const meta = { earliestDate: formatCommunityGameEarliestDate(earliestRows[0]?.earliestDate) };
     const range = { from: input.from, to: input.to };
+    const mappings = input.version === 5 ? await readGameIdentityMappings(input.guildId) : [];
+    if (input.mode === 'game' && input.version === 5 && input.gameName === null) {
+      // v5 game mode by application id / unified key (S7b):
+      // the detail covers the whole unified game, not one
+      // recorded name. Main content, so failures reach the
+      // 503 catch like the v3 game mode.
+      const detail = await readGameDetailV5(input, mappings);
+      return reply({
+        status: 'ok',
+        guildId: input.guildId,
+        mode: 'game',
+        range,
+        meta,
+        game: detail.game,
+        players: detail.players,
+        viewer: detail.viewer,
+      });
+    }
     if (input.mode === 'game') {
       // v3 game mode (S5, #1041): one game's totals and first /
       // last observed play inside the period, every player's
@@ -540,13 +839,30 @@ export async function POST(request: Request) {
         }
         viewer = { discordUserId: input.discordUserId, rank, totalSeconds: viewerSeconds };
       }
+      // In v5 a gameName lookup keeps the exact-name
+      // figures of v3/v4; key / applicationId report the
+      // unified identity the name resolves to on its own
+      // (the relay addresses unified games by key instead).
+      const resolution =
+        input.version === 5 ? resolveCommunityGame(gameName, null, mappings) : null;
+      const gameDetail: CommunityGameDetail | CommunityGameDetailV5 = resolution
+        ? {
+            key: resolution.key,
+            name: detail.name,
+            applicationId: resolution.applicationId,
+            totalSeconds: detail.totalSeconds,
+            playerCount: detail.playerCount,
+            firstPlayDate: detail.firstPlayDate,
+            lastPlayDate: detail.lastPlayDate,
+          }
+        : detail;
       return reply({
         status: 'ok',
         guildId: input.guildId,
         mode: 'game',
         range,
         meta,
-        game: detail,
+        game: gameDetail,
         players: {
           items: playerRows.map((row) => projectCommunityGamePlayerRow(row)),
           pagination: {
@@ -561,19 +877,40 @@ export async function POST(request: Request) {
     }
     if (input.mode === 'user') {
       const userId = input.discordUserId as string;
-      const rows = await prisma.$queryRaw<
-        Array<{ name: string; totalSeconds: bigint }>
-      >`SELECT activity_name AS name, SUM(value)::bigint AS "totalSeconds"
-        FROM community_game_activity_daily
-        WHERE guild_id = ${input.guildId} AND user_id = ${userId}
-          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
-        GROUP BY activity_name
-        ORDER BY SUM(value) DESC, activity_name ASC
-        LIMIT ${COMMUNITY_GAME_STATS_GAMES_LIMIT}`;
       const totals = await prisma.$queryRaw<Array<{ totalSeconds: bigint | null }>>`
         SELECT SUM(value)::bigint AS "totalSeconds" FROM community_game_activity_daily
         WHERE guild_id = ${input.guildId} AND user_id = ${userId}
           AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date`;
+      let games: CommunityUserGameItem[] | CommunityUserGameItemV5[];
+      if (input.version === 5) {
+        // v5 user games (S7b): the member's rows unified
+        // like the overview games. The SQL cap moves into
+        // the grouping — capping source rows first could
+        // cut a unified game whose names rank low apart.
+        const rows = await prisma.$queryRaw<
+          Array<{ name: string; applicationId: string; totalSeconds: bigint }>
+        >`SELECT activity_name AS name, application_id AS "applicationId",
+            SUM(value)::bigint AS "totalSeconds"
+          FROM community_game_activity_daily
+          WHERE guild_id = ${input.guildId} AND user_id = ${userId}
+            AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+          GROUP BY activity_name, application_id`;
+        games = buildCommunityUserGamesV5(
+          rows.map((row) => projectCommunityGameSourceRow(row)),
+          mappings,
+        ).slice(0, COMMUNITY_GAME_STATS_GAMES_LIMIT);
+      } else {
+        const rows = await prisma.$queryRaw<
+          Array<{ name: string; totalSeconds: bigint }>
+        >`SELECT activity_name AS name, SUM(value)::bigint AS "totalSeconds"
+          FROM community_game_activity_daily
+          WHERE guild_id = ${input.guildId} AND user_id = ${userId}
+            AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+          GROUP BY activity_name
+          ORDER BY SUM(value) DESC, activity_name ASC
+          LIMIT ${COMMUNITY_GAME_STATS_GAMES_LIMIT}`;
+        games = rows.map((row) => projectCommunityUserGameRow(row));
+      }
       return reply({
         status: 'ok',
         guildId: input.guildId,
@@ -583,19 +920,74 @@ export async function POST(request: Request) {
         user: {
           discordUserId: userId,
           totalSeconds: toCommunityGameSeconds(totals[0]?.totalSeconds ?? 0n),
-          games: rows.map((row) => projectCommunityUserGameRow(row)),
+          games,
         },
         ...(input.version >= 2
           ? {
               activity:
-                input.version === 4
+                input.version >= 4
                   ? await readUserActivityV4(input)
                   : await readUserActivity(input),
             }
           : {}),
-        ...(input.version === 3 || input.version === 4
+        ...(input.version === 3 || input.version === 4 || input.version === 5
           ? { insights: await readUserInsights(input) }
           : {}),
+      });
+    }
+    if (input.version === 5) {
+      // v5 overview (S7b, #1060): games and the ranking
+      // aggregate per-user source rows through the unified
+      // identity — the games cap and the ranking pagination
+      // move into the aggregation, because unified totals
+      // only exist after grouping. Activity and channels
+      // keep the v2 / v4 reads; insights use the v5 variant.
+      const userRows = await prisma.$queryRaw<
+        Array<{
+          discordUserId: string;
+          name: string;
+          applicationId: string;
+          totalSeconds: bigint;
+        }>
+      >`SELECT user_id AS "discordUserId", activity_name AS name,
+          application_id AS "applicationId", SUM(value)::bigint AS "totalSeconds"
+        FROM community_game_activity_daily
+        WHERE guild_id = ${input.guildId}
+          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+        GROUP BY user_id, activity_name, application_id`;
+      const aggregated = aggregateCommunityGamesOverviewV5(
+        userRows.map((row) => projectCommunityGameUserSourceRow(row)),
+        mappings,
+      );
+      const rankingItems = aggregated.users.slice(input.offset, input.offset + input.limit);
+      return reply({
+        status: 'ok',
+        guildId: input.guildId,
+        mode: 'overview',
+        range,
+        meta,
+        games: aggregated.games.slice(0, COMMUNITY_GAME_STATS_GAMES_LIMIT).map((game) => ({
+          ...game.identity,
+          totalSeconds: game.totalSeconds,
+          playerCount: game.playerCount,
+        })),
+        ranking: {
+          items: rankingItems.map((user) => ({
+            discordUserId: user.discordUserId,
+            totalSeconds: user.totalSeconds,
+            topGameName: user.topGame.name,
+            topGameKey: user.topGame.key,
+          })),
+          pagination: {
+            limit: input.limit,
+            offset: input.offset,
+            total: aggregated.users.length,
+            hasNext: input.offset + rankingItems.length < aggregated.users.length,
+          },
+        },
+        activity: await readOverviewActivity(input),
+        insights: await readOverviewInsightsV5(input, mappings),
+        channels: await readOverviewChannels(input),
       });
     }
     const gameRows = await prisma.$queryRaw<
