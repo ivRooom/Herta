@@ -118,6 +118,16 @@ export interface IvrmBirthdaySettings {
  * on; when it is off the key is absent entirely. `age: null`
  * means showAge is on but the member has no usable birth year
  * on the Web side, so no age is shown.
+ *
+ * The API may also add `cardPresetId` (#1921 R3-H): the card
+ * preset this member picked for their own birthday card, either
+ * a bundled preset id or a database preset id whose definition
+ * rides along in the response-level `presetDefinitions` table.
+ * Absent or null means the member has no pick and the global
+ * settings decide. A well-formed id that resolves to nothing
+ * (the preset was deleted after the pick) is kept as-is here
+ * and treated as "no pick" at render time, so a stale pick can
+ * never stop a delivery.
  */
 export interface IvrmBirthdayRecipient {
   memberId: string;
@@ -126,6 +136,7 @@ export interface IvrmBirthdayRecipient {
   month: number;
   day: number;
   age: number | null;
+  cardPresetId: string | null;
 }
 
 /**
@@ -147,6 +158,17 @@ export type IvrmBirthdayResult =
       enabled: true;
       settings: IvrmBirthdaySettings;
       recipients: IvrmBirthdayRecipient[];
+      /**
+       * Database preset definitions referenced by the
+       * recipients' `cardPresetId` picks (#1921 R3-H), keyed by
+       * preset id. Definitions that fail validation are dropped
+       * individually (their pickers fall back to the global
+       * settings); the table is empty when no recipient picked
+       * a database preset. Held as a Map, not a plain object:
+       * the keys arrive from the network, and a Map keeps them
+       * away from object prototypes entirely.
+       */
+      presetDefinitions: ReadonlyMap<string, BirthdayCardPresetDefinition>;
     }
   | { status: 'ok'; enabled: false; settings: null; recipients: [] }
   | { status: 'ineligible-guild' | 'unavailable' | 'unconfigured' };
@@ -297,11 +319,57 @@ function parseRecipientAge(value: Record<string, unknown>): number | null | unde
   return value.age;
 }
 
+/**
+ * Preset ids follow the slug rule shared by the bundled presets
+ * and the ivrm-web database presets (#1921 R3-D). `cardPresetId`
+ * is parsed like `age`: absent or null means "no pick", a
+ * well-formed id is kept as-is (resolution happens at render
+ * time, where an unresolvable id counts as no pick), and
+ * anything else means the payload is not the contract, so the
+ * recipient — and with it the whole response — fails closed.
+ */
+const CARD_PRESET_ID_REGEX = /^[a-z0-9][a-z0-9-]{1,62}$/;
+
+function parseRecipientCardPresetId(value: Record<string, unknown>): string | null | undefined {
+  if (!('cardPresetId' in value) || value.cardPresetId === null) return null;
+  if (typeof value.cardPresetId !== 'string' || !CARD_PRESET_ID_REGEX.test(value.cardPresetId))
+    return undefined;
+  return value.cardPresetId;
+}
+
+/**
+ * The response-level database preset definition table (#1921
+ * R3-H). Absent means no recipient picked a database preset.
+ * A malformed definition — or one whose carried id does not
+ * match its table key — is dropped on its own: only the
+ * members who picked that preset fall back to the global
+ * settings, never the whole delivery. A table that is not an
+ * object at all is an envelope shape violation and fails the
+ * response, like the other envelope fields. The parsed table
+ * is a Map so the network-supplied keys are never written
+ * into a plain object.
+ */
+function parsePresetDefinitions(
+  value: unknown,
+): Map<string, BirthdayCardPresetDefinition> | undefined {
+  if (value === undefined) return new Map();
+  if (!isRecord(value)) return undefined;
+  const definitions = new Map<string, BirthdayCardPresetDefinition>();
+  for (const [id, entry] of Object.entries(value)) {
+    const definition = parseBirthdayCardPresetDefinition(entry);
+    if (!definition || definition.id !== id) continue;
+    definitions.set(id, definition);
+  }
+  return definitions;
+}
+
 function parseRecipient(value: unknown): IvrmBirthdayRecipient | undefined {
   if (!isRecord(value)) return undefined;
   if (BIRTH_YEAR_KEYS.some((key) => key in value)) return undefined;
   const age = parseRecipientAge(value);
   if (age === undefined) return undefined;
+  const cardPresetId = parseRecipientCardPresetId(value);
+  if (cardPresetId === undefined) return undefined;
   if (
     typeof value.memberId !== 'string' ||
     value.memberId.length === 0 ||
@@ -324,6 +392,7 @@ function parseRecipient(value: unknown): IvrmBirthdayRecipient | undefined {
     month: value.month,
     day: value.day,
     age,
+    cardPresetId,
   };
 }
 
@@ -355,7 +424,9 @@ function parseSuccessBody(value: unknown, requestId: string): IvrmBirthdayResult
     if (!recipient) return { status: 'unavailable' };
     recipients.push(recipient);
   }
-  return { status: 'ok', enabled: true, settings, recipients };
+  const presetDefinitions = parsePresetDefinitions(value.presetDefinitions);
+  if (!presetDefinitions) return { status: 'unavailable' };
+  return { status: 'ok', enabled: true, settings, recipients, presetDefinitions };
 }
 
 async function readBoundedJson(
