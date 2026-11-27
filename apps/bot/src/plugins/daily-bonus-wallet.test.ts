@@ -197,3 +197,95 @@ describe('canonical streak reward extension', () => {
     }
   });
 });
+
+describe('daily bonus wallet failure diagnostics', () => {
+  it('keeps the HTTP status and API error code for a service failure', async () => {
+    configure();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({ error: 'daily_login_unavailable' }, { status: 503 }),
+      ),
+    );
+    expect(await dailyBonusStatus(guild, user)).toEqual({
+      status: 'unavailable',
+      failure: { kind: 'http', status: 503, errorCode: 'daily_login_unavailable' },
+    });
+    expect(await claimDailyBonus(guild, user, '2026-10-30', '323456789012345678')).toEqual({
+      status: 'unavailable',
+      failure: { kind: 'http', status: 503, errorCode: 'daily_login_unavailable' },
+    });
+  });
+  it('keeps a non-setup conflict error code instead of dropping it', async () => {
+    configure();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ error: 'date_mismatch' }, { status: 409 })),
+    );
+    expect(await claimDailyBonus(guild, user, '2026-10-30', '323456789012345678')).toEqual({
+      status: 'unavailable',
+      failure: { kind: 'http', status: 409, errorCode: 'date_mismatch' },
+    });
+  });
+  it('distinguishes transport failures, missing configuration and malformed payloads', async () => {
+    configure();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed');
+      }),
+    );
+    expect(await dailyBonusStatus(guild, user)).toEqual({
+      status: 'unavailable',
+      failure: { kind: 'network', errorName: 'TypeError' },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          status: 'ok',
+          guildId: guild,
+          discordUserId: 'other',
+          claimedToday: false,
+          quiz: null,
+        }),
+      ),
+    );
+    expect(await dailyBonusStatus(guild, user)).toEqual({
+      status: 'unavailable',
+      failure: { kind: 'invalid_response' },
+    });
+    vi.unstubAllEnvs();
+    expect(await dailyBonusStatus(guild, user)).toEqual({
+      status: 'unavailable',
+      failure: { kind: 'not_configured' },
+    });
+  });
+  it('marks a structurally invalid receipt as invalid_receipt', async () => {
+    configure();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          status: 'ok',
+          guildId: guild,
+          discordUserId: user,
+          mode: 'created',
+          claim: {
+            claimDateJst: '2026-10-30',
+            rewardPoints: 15,
+            rollPoints: 5,
+            quizBonusPoints: 9,
+            streakDay: 1,
+            channel: 'discord',
+          },
+          account: { balance: 115 },
+        }),
+      ),
+    );
+    expect(await claimDailyBonus(guild, user, '2026-10-30', '323456789012345678')).toEqual({
+      status: 'unavailable',
+      failure: { kind: 'invalid_receipt' },
+    });
+  });
+});
