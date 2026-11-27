@@ -72,7 +72,7 @@ jobs:
           # Compare that existing drift with the post-change drift; any new drift fails.
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE valorant_baseline_test TEMPLATE valorant_test'
           baseline_url="${DATABASE_URL%/*}/valorant_baseline_test"
-          psql "$baseline_url" -v ON_ERROR_STOP=1 -c 'DROP TABLE valorant_match_results; DROP TABLE valorant_pick_participants; DROP TABLE valorant_pick_sessions; DROP TABLE valorant_agents; DROP TABLE valorant_rosters;'
+          psql "$baseline_url" -v ON_ERROR_STOP=1 -c 'DROP TABLE valorant_match_results; DROP TABLE valorant_pick_participants; DROP TABLE valorant_werewolf_votes; DROP TABLE valorant_werewolf_secrets; DROP TABLE valorant_werewolf_games; DROP TABLE valorant_pick_sessions; DROP TABLE valorant_agents; DROP TABLE valorant_rosters;'
           node --input-type=module -e '
             import fs from "node:fs";
             let schema = fs.readFileSync("packages/db/prisma/schema.prisma", "utf8");
