@@ -330,6 +330,120 @@ export function readValorantTrollFromEntry(entry: unknown): ValorantTroll | null
   return troll ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// 人狼モード (#1049) の purpose 別抽選
+//
+// 通常合流 (S2) と違い、秘密の縛りは fail-closed: 抽選できなければ
+// ゲームを開始しない。罰ゲームは結果確定後の付随処理として別キーで
+// 引き、勝敗公開は止めない。キーを purpose ごとに分けるため、通常
+// 抽選・人狼秘密・罰ゲームの台帳は混ざらない。
+// ---------------------------------------------------------------------------
+
+export type ValorantWerewolfDrawPurpose = 'secret' | 'punishment';
+
+export function valorantWerewolfSecretIdempotencyKey(sessionId: string): string {
+  return `herta-valorant-werewolf:${sessionId}:secret:v1`;
+}
+
+export function valorantWerewolfPunishmentIdempotencyKey(sessionId: string): string {
+  return `herta-valorant-werewolf:${sessionId}:punishment:v1`;
+}
+
+export function valorantWerewolfIdempotencyKey(
+  sessionId: string,
+  purpose: ValorantWerewolfDrawPurpose,
+): string {
+  return purpose === 'secret'
+    ? valorantWerewolfSecretIdempotencyKey(sessionId)
+    : valorantWerewolfPunishmentIdempotencyKey(sessionId);
+}
+
+export interface ValorantWerewolfDrawInput {
+  purpose: ValorantWerewolfDrawPurpose;
+  /** 抽選を実行した Discord ユーザー (開始・締切を押した権限者) */
+  operatorDiscordUserId: string;
+  guildId: string;
+  sessionId: string;
+  /** 対象者は常に1人だけ (人狼本人 or 罰ゲーム対象者) */
+  participant: { discordUserId: string; name: string };
+  /**
+   * 秘密は Guild の trollRarityFilter を使う。罰ゲームはカテゴリ内で
+   * 'all' 固定 (フィルター継承でプール不足を起こさないため)。
+   */
+  rarityFilter: ValorantTrollRarityFilter;
+}
+
+/** S1 の検証 (名前は非空・64文字以内) に合わせて送信フィールドを整える */
+export function buildValorantWerewolfDrawFields(
+  input: ValorantWerewolfDrawInput,
+  secretCategories: readonly ValorantTrollCategory[],
+): Record<string, unknown> {
+  return {
+    discordUserId: input.operatorDiscordUserId,
+    guildId: input.guildId,
+    participants: [
+      {
+        discordUserId: input.participant.discordUserId,
+        name: input.participant.name.trim().slice(0, 64) || '参加者1',
+      },
+    ],
+    trollCount: 1,
+    rarityFilter: input.rarityFilter,
+    categories: input.purpose === 'secret' ? [...secretCategories] : ['punishment'],
+    // 人狼選定後の対象者を troll-off で外すと割当が成立しないため常に空
+    trollOffDiscordUserIds: [],
+    idempotencyKey: valorantWerewolfIdempotencyKey(input.sessionId, input.purpose),
+  };
+}
+
+export type ValorantWerewolfDrawResult =
+  | { status: 'ok'; drawId: string; troll: ValorantTroll }
+  | { status: 'unavailable'; httpStatus: number; code: string | null }
+  | { status: 'invalid_response'; httpStatus: number };
+
+/**
+ * 人狼用の1人抽選。応答は通常の parser で検証したうえで、対象者が
+ * ちょうど含まれ・縛りが null でなく・カテゴリが purpose の許可集合に
+ * 入ることまで確認する。1つでも外れたら invalid_response として
+ * 呼び出し側は確定に進まない (秘密抽選は fail-closed)。
+ * HTTP エラーとネットワーク失敗は unavailable。
+ */
+export async function drawValorantWerewolfTroll(
+  config: ValorantTrollApiConfig,
+  input: ValorantWerewolfDrawInput,
+  secretCategories: readonly ValorantTrollCategory[],
+  fetcher: typeof fetch = fetch,
+): Promise<ValorantWerewolfDrawResult> {
+  const request = buildValorantTrollApiRequest(
+    config,
+    buildValorantWerewolfDrawFields(input, secretCategories),
+  );
+  let response: Response;
+  try {
+    response = await fetcher(request.url, {
+      ...request.init,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch {
+    return { status: 'unavailable', httpStatus: 0, code: null };
+  }
+  const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!response.ok) {
+    const code = data && typeof data['code'] === 'string' ? (data['code'] as string) : null;
+    return { status: 'unavailable', httpStatus: response.status, code };
+  }
+  const parsed = parseValorantTrollDrawResponse(data);
+  if (!parsed) return { status: 'invalid_response', httpStatus: response.status };
+  const troll = parsed.trollByUserId.get(input.participant.discordUserId);
+  if (!troll) return { status: 'invalid_response', httpStatus: response.status };
+  const categoryOk =
+    input.purpose === 'punishment'
+      ? troll.category === 'punishment'
+      : secretCategories.includes(troll.category);
+  if (!categoryOk) return { status: 'invalid_response', httpStatus: response.status };
+  return { status: 'ok', drawId: parsed.drawId, troll };
+}
+
 /** Embed の結果行に付ける縛り表記 */
 export function formatValorantTrollEmbedText(troll: ValorantTroll): string {
   const rarity = VALORANT_TROLL_RARITY_LABELS[troll.rarity];

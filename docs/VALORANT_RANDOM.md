@@ -2,6 +2,10 @@
 
 対象: /valorant random [map]、Issue #589、PR #590。2026-10-30 Patch 13.09。
 
+## 2026-11-27 人狼モード（Issue #1049）
+
+`/valorant werewolf` で、参加者のうち1人だけが秘密の縛りを持つ人狼モードの部屋を作れる。ルール・秘匿の境界・有効化（Guild設定 `trollWerewolfEnabled`）・データ保持は [VALORANT_WEREWOLF.md](./VALORANT_WEREWOLF.md) を参照。本節は開発仕様であり、マージ・本番反映・有人実機確認を成功扱いしない。
+
 ## 2026-11-03 VC一括追加・参加者管理・Patch 13.09（PR #758）
 
 旧VC接続者の**自動抽選**は廃止したまま、募集作成者が明示操作したときだけVCメンバーを**募集に追加**できます。

@@ -11,6 +11,15 @@ export type ValorantComponentAction =
   | 'remove-select'
   | 'select-vc'
   | 'close'
+  | 'wolf-start'
+  | 'wolf-secret'
+  | 'wolf-vote-open'
+  | 'wolf-vote'
+  | 'wolf-close'
+  | 'wolf-cancel'
+  | 'wolf-punishment-retry'
+  | `wolf-vote-cast-${string}`
+  | `wolf-close-confirm-${string}`
   | `vc-commit-${string}`
   | `vc-choose-${string}`
   | `vc-stage-${string}`
@@ -62,10 +71,18 @@ export function parseValorantSessionAction(
       'remove-select',
       'select-vc',
       'close',
+      'wolf-start',
+      'wolf-secret',
+      'wolf-vote-open',
+      'wolf-vote',
+      'wolf-close',
+      'wolf-cancel',
+      'wolf-punishment-retry',
     ].includes(action ?? '') &&
     !/^(vc-commit|vc-choose)-[a-f0-9]{12}$/.test(action ?? '') &&
     !/^vc-stage-[a-f0-9]{12}-[0-9a-z.]{1,20}$/.test(action ?? '') &&
-    !/^(vc-bind|add|remove)-[0-9]{17,20}$/.test(action ?? '')
+    !/^(vc-bind|add|remove)-[0-9]{17,20}$/.test(action ?? '') &&
+    !/^wolf-(vote-cast|close-confirm)-[12]$/.test(action ?? '')
   )
     return null;
   return { id: segments[0]!, action: action as ValorantComponentAction };
@@ -77,7 +94,7 @@ export function createValorantSession(
     guildId: string;
     channelId: string;
     creatorId: string;
-    mode: 'RANDOM' | 'TACTICAL';
+    mode: 'RANDOM' | 'TACTICAL' | 'WEREWOLF';
     mapId: string | null;
     maxParticipants: number;
     expiresAt: Date;
@@ -96,7 +113,7 @@ export function createDirectValorantSession(
     guildId: string;
     channelId: string;
     creatorId: string;
-    mode: 'RANDOM' | 'TACTICAL';
+    mode: 'RANDOM' | 'TACTICAL' | 'WEREWOLF';
     mapId: string | null;
     expiresAt: Date;
     rulesVersion: string;

@@ -51,7 +51,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ guil
   try {
     const [sessions, reports] = await Promise.all([
       prisma.valorantPickSession.findMany({
-        where: { guildId, status: 'COMPLETED' },
+        // 人狼セッション (#1049) は通常の抽選結果へ混ぜない
+        where: { guildId, status: 'COMPLETED', mode: { not: 'WEREWOLF' } },
         select: { id: true, mode: true, mapId: true, completedAt: true, result: true },
         orderBy: { completedAt: 'desc' },
         take: 100,
@@ -139,7 +140,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     data.matchId === undefined || data.matchId === null ? null : (data.matchId as string);
   try {
     const session = await prisma.valorantPickSession.findFirst({
-      where: { id: data.sessionId, guildId, status: 'COMPLETED', creatorId: { not: 'redacted' } },
+      where: {
+        id: data.sessionId,
+        guildId,
+        status: 'COMPLETED',
+        // 人狼セッション (#1049) には手動の試合結果を登録させない
+        mode: { not: 'WEREWOLF' },
+        creatorId: { not: 'redacted' },
+      },
       select: { id: true, participants: { select: { userId: true } } },
     });
     if (!session || session.participants.length === 0)

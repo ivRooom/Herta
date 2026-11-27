@@ -14,6 +14,32 @@ describe('VALORANT session custom IDs', () => {
       ),
     ).toBeNull();
   });
+  it('accepts the werewolf actions and bounded round suffixes (#1049)', () => {
+    const prefix = VALORANT_SESSION_PREFIX + 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05:';
+    for (const action of [
+      'wolf-start',
+      'wolf-secret',
+      'wolf-vote-open',
+      'wolf-vote',
+      'wolf-close',
+      'wolf-cancel',
+      'wolf-punishment-retry',
+    ]) {
+      expect(parseValorantSessionAction(prefix + action)?.action).toBe(action);
+    }
+    expect(parseValorantSessionAction(prefix + 'wolf-vote-cast-1')?.action).toBe(
+      'wolf-vote-cast-1',
+    );
+    expect(parseValorantSessionAction(prefix + 'wolf-vote-cast-2')?.action).toBe(
+      'wolf-vote-cast-2',
+    );
+    expect(parseValorantSessionAction(prefix + 'wolf-close-confirm-2')?.action).toBe(
+      'wolf-close-confirm-2',
+    );
+    expect(parseValorantSessionAction(prefix + 'wolf-vote-cast-3')).toBeNull();
+    expect(parseValorantSessionAction(prefix + 'wolf-vote-cast-12')).toBeNull();
+    expect(parseValorantSessionAction(prefix + 'wolf-unknown')).toBeNull();
+  });
   it('accepts only bounded VC and membership selection custom IDs', () => {
     const prefix = VALORANT_SESSION_PREFIX + 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05:';
     expect(parseValorantSessionAction(prefix + 'manage')?.action).toBe('manage');

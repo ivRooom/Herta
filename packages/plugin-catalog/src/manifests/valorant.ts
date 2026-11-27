@@ -158,7 +158,7 @@ const VALORANT_REGION_CHOICES = [
 export const valorantManifest: PluginManifest = {
   id: 'valorant',
   name: 'Valorant',
-  version: '1.4.0',
+  version: '1.5.0',
   description: 'Riot ID連携・戦績確認と、参加ボタン方式のエージェント抽選ができるPluginです',
   author: { name: 'Herta' },
   category: 'fun',
@@ -243,6 +243,15 @@ export const valorantManifest: PluginManifest = {
         default: ['troll', 'punishment', 'settings', 'custom'],
         'x-herta-ui': { section: 'トロールガチャ' },
       },
+      trollWerewolfEnabled: {
+        type: 'boolean',
+        title: '人狼モードを有効化する',
+        default: false,
+        'x-herta-ui': {
+          section: 'トロールガチャ',
+          help: '通常の縛り合流とは独立した有効化スイッチです。有効化しても、ivrm-web側のBot APIと環境変数 HERTA_TROLL_BOT_SECRET が未設定の間は人狼を開始できません (開始は fail-closed で保留されます)。',
+        },
+      },
     },
     required: ['enabled'],
   },
@@ -289,6 +298,17 @@ export const valorantManifest: PluginManifest = {
                   : `抽選に追加する@メンバー（${index + 1}人目）`,
               type: 'user' as const,
             })),
+          ],
+        },
+        {
+          name: 'werewolf',
+          description: '人狼モードの部屋を作成（1人だけ秘密の縛りを持ち、投票で当てる）',
+          options: [
+            {
+              name: 'vc_auto_join',
+              description: '対象VCへの入室者を自動で参加登録する',
+              type: 'boolean',
+            },
           ],
         },
         {
