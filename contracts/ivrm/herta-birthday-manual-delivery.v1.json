@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "discordUserId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+        "guildId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+        "localDate": { "format": "date", "type": "string" }
+      },
+      "required": ["guildId", "discordUserId", "localDate"],
+      "type": "object"
+    },
+    "response": {
+      "additionalProperties": false,
+      "properties": {
+        "guildId": { "pattern": "^[0-9]{17,20}$", "type": "string" },
+        "result": {
+          "additionalProperties": false,
+          "properties": {
+            "deliveries": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "category": { "enum": ["card", "role_assign"], "type": "string" },
+                  "outcome": {
+                    "enum": [
+                      "delivered",
+                      "already_delivered",
+                      "failed",
+                      "not_configured",
+                      "in_progress"
+                    ],
+                    "type": "string"
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "enum": ["member_not_in_guild", "role_not_editable", "channel_unavailable"]
+                      },
+                      { "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$", "type": "string" }
+                    ],
+                    "type": ["string", "null"]
+                  }
+                },
+                "required": ["category", "outcome", "reason"],
+                "type": "object"
+              },
+              "maxItems": 2,
+              "type": "array"
+            },
+            "reason": {
+              "enum": [
+                "plugin_not_enabled",
+                "ivrm_source_disabled",
+                "date_out_of_range",
+                "supply_unavailable",
+                "delivery_disabled",
+                "not_a_recipient",
+                null
+              ]
+            },
+            "status": { "enum": ["ok", "rejected"] }
+          },
+          "required": ["status", "reason", "deliveries"],
+          "type": "object"
+        },
+        "status": { "const": "ok" }
+      },
+      "required": ["status", "guildId", "result"],
+      "type": "object"
+    }
+  },
+  "$id": "https://ivrm.jp/contracts/herta-birthday-manual-delivery/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Producer Herta Studio; consumer server-only ivrm-web. POST /api/ivrm/birthday-deliveries/manual. Key=HMAC-SHA256(IVRM_INTEGRATION_TOKEN,herta-birthday-manual-delivery-v1); signature=HMAC-SHA256(key,timestamp.eventId.POST.path.rawBody). Headers X-IVRM-Timestamp ISO, X-IVRM-Event-Id UUID, X-IVRM-Signature hex. Five-minute freshness, no query, max8192bytes. Triggers one manual birthday delivery run in the bot for one member and one JST local date (today or up to 7 days back, enforced again bot-side); the run shares the hourly cycle's idempotency keys, so a repeat call never double-delivers, and no points are granted on this path. Results carry fixed reason codes or a bare error-class summary only: no raw delivery kind, no birth year, no age. All responses private,no-store (#1062)."
+}
