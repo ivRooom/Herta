@@ -1657,6 +1657,7 @@ model ValorantPickSession {
   guild           Guild                       @relation(fields: [guildId], references: [id], onDelete: Cascade)
   participants    ValorantPickParticipant[]
   matchResult     ValorantMatchResult?
+  werewolfGame    ValorantWerewolfGame?
 
   @@unique([id, guildId])
   @@index([guildId, status, expiresAt])
@@ -1672,6 +1673,97 @@ model ValorantPickParticipant {
 
   @@id([sessionId, userId])
   @@map("valorant_pick_participants")
+}
+
+/**
+ * Werewolf mode (#1049): public progression and resolved outcome for a
+ * pick session in mode WEREWOLF. This table NEVER stores the secret
+ * assignment itself; the werewolf identity and secret troll live only in
+ * ValorantWerewolfSecret and are copied into the revealed_* snapshot by
+ * the resolution transaction, which is the single publication boundary.
+ */
+model ValorantWerewolfGame {
+  sessionId               String    @id @map("session_id")
+  guildId                 String    @map("guild_id")
+  phase                   String    @default("ASSIGNING") @db.VarChar(16)
+  rosterSnapshot          Json      @default("[]") @map("roster_snapshot")
+  currentRound            Int       @default(0) @map("current_round")
+  currentCandidateUserIds String[]  @default([]) @map("current_candidate_user_ids")
+  roundHistory            Json      @default("[]") @map("round_history")
+  firstRoundTally         Json?     @map("first_round_tally")
+  voteEndsAt              DateTime? @map("vote_ends_at") @db.Timestamptz(3)
+  assignmentStatus        String    @default("PENDING") @map("assignment_status") @db.VarChar(20)
+  assignmentErrorCode     String?   @map("assignment_error_code") @db.VarChar(40)
+  outcome                 String?   @db.VarChar(16)
+  outcomeReason           String?   @map("outcome_reason") @db.VarChar(24)
+  accusedUserId           String?   @map("accused_user_id")
+  punishmentStatus        String    @default("NOT_STARTED") @map("punishment_status") @db.VarChar(16)
+  punishmentErrorCode     String?   @map("punishment_error_code") @db.VarChar(40)
+  punishmentUserId        String?   @map("punishment_user_id")
+  punishmentDrawId        String?   @map("punishment_draw_id") @db.VarChar(64)
+  punishmentItemId        String?   @map("punishment_item_id") @db.VarChar(64)
+  punishmentText          String?   @map("punishment_text")
+  punishmentRarity        String?   @map("punishment_rarity") @db.VarChar(16)
+  punishmentCategory      String?   @map("punishment_category") @db.VarChar(16)
+  revealedTrollItemId     String?   @map("revealed_troll_item_id") @db.VarChar(64)
+  revealedTrollText       String?   @map("revealed_troll_text")
+  revealedTrollRarity     String?   @map("revealed_troll_rarity") @db.VarChar(16)
+  revealedTrollCategory   String?   @map("revealed_troll_category") @db.VarChar(16)
+  startedAt               DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  votingStartedAt         DateTime? @map("voting_started_at") @db.Timestamptz(3)
+  resolvedAt              DateTime? @map("resolved_at") @db.Timestamptz(3)
+  abortedAt               DateTime? @map("aborted_at") @db.Timestamptz(3)
+  version                 Int       @default(0)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  session                 ValorantPickSession @relation(fields: [sessionId, guildId], references: [id, guildId], onDelete: Cascade, map: "valorant_werewolf_games_session_fkey")
+  secret                  ValorantWerewolfSecret?
+  votes                   ValorantWerewolfVote[]
+
+  @@unique([sessionId, guildId])
+  @@index([guildId, phase, updatedAt])
+  @@index([guildId, resolvedAt])
+  @@map("valorant_werewolf_games")
+}
+
+/**
+ * The werewolf identity and secret troll, isolated from every public
+ * read path. Only the internal assignment flow and the owning member's
+ * own ephemeral check may read this table; public DTOs never join it.
+ */
+model ValorantWerewolfSecret {
+  sessionId      String    @id @map("session_id")
+  guildId        String    @map("guild_id")
+  werewolfUserId String    @map("werewolf_user_id")
+  drawId         String?   @map("draw_id") @db.VarChar(64)
+  trollItemId    String?   @map("troll_item_id") @db.VarChar(64)
+  trollText      String?   @map("troll_text")
+  trollRarity    String?   @map("troll_rarity") @db.VarChar(16)
+  trollCategory  String?   @map("troll_category") @db.VarChar(16)
+  assignedAt     DateTime? @map("assigned_at") @db.Timestamptz(3)
+  secretViewedAt DateTime? @map("secret_viewed_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game           ValorantWerewolfGame @relation(fields: [sessionId, guildId], references: [sessionId, guildId], onDelete: Cascade, map: "valorant_werewolf_secrets_game_fkey")
+
+  @@unique([sessionId, guildId])
+  @@map("valorant_werewolf_secrets")
+}
+
+/** One row per voter per round; the PK makes double voting impossible. */
+model ValorantWerewolfVote {
+  sessionId   String   @map("session_id")
+  guildId     String   @map("guild_id")
+  round       Int
+  voterUserId String   @map("voter_user_id")
+  targetUserId String  @map("target_user_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game        ValorantWerewolfGame @relation(fields: [sessionId, guildId], references: [sessionId, guildId], onDelete: Cascade, map: "valorant_werewolf_votes_game_fkey")
+
+  @@id([sessionId, round, voterUserId])
+  @@index([sessionId, round, targetUserId])
+  @@map("valorant_werewolf_votes")
 }
 
 /** Manual game outcome; API-derived results may reuse the same verified session link. */

@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildValorantTrollApiRequest,
   buildValorantTrollDrawFields,
+  buildValorantWerewolfDrawFields,
   drawValorantTrolls,
+  drawValorantWerewolfTroll,
   formatValorantTrollCardText,
   formatValorantTrollEmbedText,
   mergeValorantTrollsIntoResult,
@@ -12,9 +14,14 @@ import {
   readValorantTrollFromEntry,
   resolveValorantTrollApiConfig,
   valorantTrollIdempotencyKey,
+  valorantWerewolfIdempotencyKey,
+  valorantWerewolfPunishmentIdempotencyKey,
+  valorantWerewolfSecretIdempotencyKey,
   type ValorantTroll,
   type ValorantTrollApiConfig,
+  type ValorantTrollCategory,
   type ValorantTrollDrawInput,
+  type ValorantWerewolfDrawInput,
 } from './valorant-troll-gacha.js';
 
 const API: ValorantTrollApiConfig = { apiBaseUrl: 'https://api.ivrm.jp', secret: 'test-secret' };
@@ -312,5 +319,196 @@ describe('display formats', () => {
     expect(
       formatValorantTrollEmbedText({ ...TROLL, rarity: 'ultra_rare', category: 'settings' }),
     ).toContain('ウルトラレア / 設定変更');
+  });
+});
+
+describe('werewolf draws (#1049)', () => {
+  const SECRET_CATEGORIES: readonly ValorantTrollCategory[] = ['troll', 'settings', 'custom'];
+  const SESSION_ID = 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05';
+
+  function werewolfInput(
+    overrides: Partial<ValorantWerewolfDrawInput> = {},
+  ): ValorantWerewolfDrawInput {
+    return {
+      purpose: 'secret',
+      operatorDiscordUserId: '123456789012345678',
+      guildId: '964326043420872704',
+      sessionId: SESSION_ID,
+      participant: { discordUserId: '222222222222222222', name: 'Bob' },
+      rarityFilter: 'all',
+      ...overrides,
+    };
+  }
+
+  it('uses distinct stable idempotency keys per purpose', () => {
+    expect(valorantWerewolfSecretIdempotencyKey(SESSION_ID)).toBe(
+      `herta-valorant-werewolf:${SESSION_ID}:secret:v1`,
+    );
+    expect(valorantWerewolfPunishmentIdempotencyKey(SESSION_ID)).toBe(
+      `herta-valorant-werewolf:${SESSION_ID}:punishment:v1`,
+    );
+    expect(valorantWerewolfIdempotencyKey(SESSION_ID, 'secret')).toBe(
+      valorantWerewolfSecretIdempotencyKey(SESSION_ID),
+    );
+    expect(valorantWerewolfIdempotencyKey(SESSION_ID, 'punishment')).not.toBe(
+      valorantWerewolfSecretIdempotencyKey(SESSION_ID),
+    );
+    expect(valorantWerewolfSecretIdempotencyKey(SESSION_ID)).toMatch(/^[A-Za-z0-9._:-]{8,128}$/);
+  });
+
+  it('builds a secret draw for exactly one person with the secret categories and no troll-off', () => {
+    const fields = buildValorantWerewolfDrawFields(werewolfInput(), SECRET_CATEGORIES);
+    expect(fields).toEqual({
+      discordUserId: '123456789012345678',
+      guildId: '964326043420872704',
+      participants: [{ discordUserId: '222222222222222222', name: 'Bob' }],
+      trollCount: 1,
+      rarityFilter: 'all',
+      categories: ['troll', 'settings', 'custom'],
+      trollOffDiscordUserIds: [],
+      idempotencyKey: `herta-valorant-werewolf:${SESSION_ID}:secret:v1`,
+    });
+  });
+
+  it('builds a punishment draw restricted to the punishment category', () => {
+    const fields = buildValorantWerewolfDrawFields(
+      werewolfInput({ purpose: 'punishment' }),
+      SECRET_CATEGORIES,
+    );
+    expect(fields).toMatchObject({
+      categories: ['punishment'],
+      trollCount: 1,
+      idempotencyKey: `herta-valorant-werewolf:${SESSION_ID}:punishment:v1`,
+    });
+  });
+
+  it('accepts a secret draw response with an allowed category', async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        status: 'ok',
+        drawId: 'draw-secret',
+        alreadyDrawn: false,
+        assignments: [
+          {
+            participantKey: '222222222222222222',
+            participantName: 'Bob',
+            troll: {
+              itemId: 'troll-item-7',
+              text: '秘密の縛り',
+              rarity: 'rare',
+              category: 'settings',
+            },
+          },
+        ],
+      }),
+    );
+    const result = await drawValorantWerewolfTroll(
+      API,
+      werewolfInput(),
+      SECRET_CATEGORIES,
+      fetcher as unknown as typeof fetch,
+    );
+    expect(result).toEqual({
+      status: 'ok',
+      drawId: 'draw-secret',
+      troll: { itemId: 'troll-item-7', text: '秘密の縛り', rarity: 'rare', category: 'settings' },
+    });
+  });
+
+  it('fails closed when the secret draw returns no troll, a punishment troll, or the wrong person', async () => {
+    const nullFetcher = vi.fn(async () =>
+      jsonResponse({
+        status: 'ok',
+        drawId: 'd',
+        alreadyDrawn: false,
+        assignments: [
+          { participantKey: '222222222222222222', participantName: 'Bob', troll: null },
+        ],
+      }),
+    );
+    expect(
+      await drawValorantWerewolfTroll(
+        API,
+        werewolfInput(),
+        SECRET_CATEGORIES,
+        nullFetcher as unknown as typeof fetch,
+      ),
+    ).toEqual({ status: 'invalid_response', httpStatus: 200 });
+
+    const punishmentFetcher = vi.fn(async () =>
+      jsonResponse({
+        status: 'ok',
+        drawId: 'd',
+        alreadyDrawn: false,
+        assignments: [
+          {
+            participantKey: '222222222222222222',
+            participantName: 'Bob',
+            troll: { itemId: 'troll-item-9', text: '罰', rarity: 'normal', category: 'punishment' },
+          },
+        ],
+      }),
+    );
+    expect(
+      await drawValorantWerewolfTroll(
+        API,
+        werewolfInput(),
+        SECRET_CATEGORIES,
+        punishmentFetcher as unknown as typeof fetch,
+      ),
+    ).toEqual({ status: 'invalid_response', httpStatus: 200 });
+
+    const wrongPersonFetcher = vi.fn(async () =>
+      jsonResponse({
+        status: 'ok',
+        drawId: 'd',
+        alreadyDrawn: false,
+        assignments: [
+          {
+            participantKey: '333333333333333333',
+            participantName: 'Carol',
+            troll: {
+              itemId: 'troll-item-1',
+              text: '別人の縛り',
+              rarity: 'normal',
+              category: 'troll',
+            },
+          },
+        ],
+      }),
+    );
+    expect(
+      await drawValorantWerewolfTroll(
+        API,
+        werewolfInput(),
+        SECRET_CATEGORIES,
+        wrongPersonFetcher as unknown as typeof fetch,
+      ),
+    ).toEqual({ status: 'invalid_response', httpStatus: 200 });
+  });
+
+  it('reports unavailable on HTTP errors and network failures', async () => {
+    const httpFetcher = vi.fn(async () =>
+      jsonResponse({ status: 'error', code: 'troll_gacha_disabled' }, 404),
+    );
+    expect(
+      await drawValorantWerewolfTroll(
+        API,
+        werewolfInput(),
+        SECRET_CATEGORIES,
+        httpFetcher as unknown as typeof fetch,
+      ),
+    ).toEqual({ status: 'unavailable', httpStatus: 404, code: 'troll_gacha_disabled' });
+    const throwing = vi.fn(async () => {
+      throw new Error('network');
+    });
+    expect(
+      await drawValorantWerewolfTroll(
+        API,
+        werewolfInput(),
+        SECRET_CATEGORIES,
+        throwing as unknown as typeof fetch,
+      ),
+    ).toEqual({ status: 'unavailable', httpStatus: 0, code: null });
   });
 });
