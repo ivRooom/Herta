@@ -10,6 +10,8 @@ import {
   mutateValorantSession,
   bindValorantVoiceChannel,
   manageValorantParticipants,
+  findOpenValorantAutoJoinSessions,
+  autoJoinValorantSession,
 } from './valorant-session-repository.js';
 
 const url = process.env.HERTA_VALORANT_TEST_DATABASE_URL;
@@ -349,6 +351,198 @@ test(
       const expired = await create(5, new Date(Date.now() - 10_000));
       assert.equal((await operate(expired.id, 'alice', 'join')).status, 'closed');
       assert.equal((await getValorantSession(prisma, guildId, expired.id))?.status, 'EXPIRED');
+    } finally {
+      await prisma.guild.deleteMany({ where: { id: { in: [guildId, otherGuild] } } });
+      await prisma.$disconnect();
+    }
+  },
+);
+
+test(
+  'real PostgreSQL: VC auto-join registration, opt-out, capacity and lifecycle (#1048)',
+  {
+    skip: !url,
+  },
+  async () => {
+    const prisma = new PrismaClient({ datasourceUrl: url });
+    const guildId = 'valorant-autojoin-integration-a';
+    const otherGuild = 'valorant-autojoin-integration-b';
+    const voiceChannelId = '123456789012345678';
+    const otherVoiceChannelId = '987654321098765432';
+    const alice = '111111111111111111';
+    const bob = '222222222222222222';
+    const charlie = '333333333333333333';
+    const future = () => new Date(Date.now() + 60_000);
+    const createAuto = (overrides: Partial<Parameters<typeof createValorantSession>[1]> = {}) =>
+      createValorantSession(prisma, {
+        guildId,
+        channelId: 'channel',
+        creatorId: 'owner',
+        mode: 'RANDOM',
+        mapId: null,
+        maxParticipants: 5,
+        expiresAt: future(),
+        rulesVersion: 'integration-v1',
+        voiceChannelId,
+        vcAutoJoin: true,
+        ...overrides,
+      });
+    const autoJoin = (id: string, userId: string, guild = guildId, vc = voiceChannelId) =>
+      autoJoinValorantSession(prisma, { guildId: guild, id, userId, voiceChannelId: vc });
+
+    try {
+      await prisma.guild.createMany({
+        data: [guildId, otherGuild].map((id) => ({ id, name: 'VALORANT synthetic integration' })),
+      });
+
+      // Normal registration through the finder + mutation pair.
+      const session = await createAuto();
+      const found = await findOpenValorantAutoJoinSessions(prisma, guildId, voiceChannelId);
+      assert.deepEqual(
+        found.map(({ id }) => id),
+        [session.id],
+      );
+      const joined = await autoJoin(session.id, alice);
+      assert.equal(joined.status, 'ok');
+      if (joined.status === 'ok') {
+        assert.equal(joined.changed, true);
+        assert.equal(joined.becameFull, false);
+        assert.deepEqual(
+          joined.session.participants.map(({ userId }) => userId),
+          [alice],
+        );
+      }
+      // Re-joining the VC is idempotent.
+      const repeat = await autoJoin(session.id, alice);
+      assert.equal(repeat.status, 'ok');
+      if (repeat.status === 'ok') assert.equal(repeat.changed, false);
+      assert.equal((await getValorantSession(prisma, guildId, session.id))?.participants.length, 1);
+
+      // A session without the opt-in is invisible to the finder and the
+      // mutation refuses it even when called directly.
+      const manualOnly = await createAuto({ vcAutoJoin: false });
+      assert.equal(
+        (await findOpenValorantAutoJoinSessions(prisma, guildId, voiceChannelId)).some(
+          ({ id }) => id === manualOnly.id,
+        ),
+        false,
+      );
+      assert.equal((await autoJoin(manualOnly.id, alice)).status, 'not_auto');
+      // A retargeted VC is rejected by the mutation re-check as well.
+      assert.equal(
+        (await autoJoin(session.id, bob, guildId, otherVoiceChannelId)).status,
+        'not_auto',
+      );
+      assert.equal(
+        (await findOpenValorantAutoJoinSessions(prisma, guildId, otherVoiceChannelId)).length,
+        0,
+      );
+      // Guild separation: neither the finder nor the mutation crosses guilds.
+      assert.equal(
+        (await findOpenValorantAutoJoinSessions(prisma, otherGuild, voiceChannelId)).length,
+        0,
+      );
+      assert.equal((await autoJoin(session.id, bob, otherGuild)).status, 'missing');
+
+      // Opt-out: join manually, leave (records the opt-out), then a VC
+      // re-join must not register the member NOR clear the opt-out.
+      const optOut = await createAuto();
+      assert.equal(
+        (
+          await mutateValorantSession(prisma, {
+            guildId,
+            id: optOut.id,
+            userId: bob,
+            action: 'join',
+            isAdmin: false,
+          })
+        ).status,
+        'ok',
+      );
+      assert.equal(
+        (
+          await mutateValorantSession(prisma, {
+            guildId,
+            id: optOut.id,
+            userId: bob,
+            action: 'leave',
+            isAdmin: false,
+          })
+        ).status,
+        'ok',
+      );
+      assert.equal((await autoJoin(optOut.id, bob)).status, 'opted_out');
+      const optOutAfter = await getValorantSession(prisma, guildId, optOut.id);
+      assert.deepEqual(optOutAfter?.optedOutUserIds, [bob]);
+      assert.equal(optOutAfter?.participants.length, 0);
+
+      // Capacity: the registration that fills the last seat reports
+      // becameFull, keeps the session OPEN for the draw, and later joins
+      // are refused.
+      const tiny = await createAuto({ maxParticipants: 1 });
+      const filled = await autoJoin(tiny.id, alice);
+      assert.equal(filled.status, 'ok');
+      if (filled.status === 'ok') assert.equal(filled.becameFull, true);
+      assert.equal((await getValorantSession(prisma, guildId, tiny.id))?.status, 'OPEN');
+      assert.equal((await autoJoin(tiny.id, bob)).status, 'full');
+
+      // Lifecycle: completed, cancelled and expired sessions never register.
+      const drawn = await createAuto();
+      assert.equal((await autoJoin(drawn.id, alice)).status, 'ok');
+      assert.equal(
+        (
+          await mutateValorantSession(prisma, {
+            guildId,
+            id: drawn.id,
+            userId: 'owner',
+            action: 'draw',
+            isAdmin: false,
+            candidates: [{ agentId: 'jett', agentName: 'Jett', displayName: 'ジェット' }],
+            pick: (participants, pool) =>
+              participants.map((userId, index) => ({ userId, ...pool[index]! })),
+          })
+        ).status,
+        'ok',
+      );
+      assert.equal((await autoJoin(drawn.id, bob)).status, 'closed');
+
+      const cancelled = await createAuto();
+      assert.equal(
+        (
+          await mutateValorantSession(prisma, {
+            guildId,
+            id: cancelled.id,
+            userId: 'owner',
+            action: 'cancel',
+            isAdmin: false,
+          })
+        ).status,
+        'ok',
+      );
+      assert.equal((await autoJoin(cancelled.id, alice)).status, 'closed');
+
+      const expired = await createAuto({ expiresAt: new Date(Date.now() - 10_000) });
+      assert.equal((await autoJoin(expired.id, alice)).status, 'closed');
+      assert.equal((await getValorantSession(prisma, guildId, expired.id))?.status, 'EXPIRED');
+
+      // Concurrency: an auto-join and a manual join racing for the last
+      // seat must never exceed capacity (shared row lock).
+      const race = await createAuto({ maxParticipants: 1 });
+      const raceResults = await Promise.allSettled([
+        autoJoin(race.id, alice),
+        mutateValorantSession(prisma, {
+          guildId,
+          id: race.id,
+          userId: charlie,
+          action: 'join',
+          isAdmin: false,
+        }),
+      ]);
+      assert.deepEqual(
+        raceResults.map((r) => (r.status === 'fulfilled' ? r.value.status : 'rejected')).sort(),
+        ['full', 'ok'],
+      );
+      assert.equal((await getValorantSession(prisma, guildId, race.id))?.participants.length, 1);
     } finally {
       await prisma.guild.deleteMany({ where: { id: { in: [guildId, otherGuild] } } });
       await prisma.$disconnect();

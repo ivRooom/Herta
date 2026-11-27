@@ -36,6 +36,15 @@
 | `valorant_pick_sessions.voice_channel_id`   | TEXT NULL       | NULL     | 固定された対象VC         |
 | `valorant_pick_sessions.opted_out_user_ids` | TEXT[] NOT NULL | 空配列   | 本人が取消したユーザーID |
 
+`20261127133000_valorant_vc_auto_join` を**追加migration**として適用（Issue #1048）:
+
+| 列                                    | 型               | 旧行の値 | 用途                            |
+| ------------------------------------- | ---------------- | -------- | ------------------------------- |
+| `valorant_pick_sessions.vc_auto_join` | BOOLEAN NOT NULL | false    | VC自動参加の per-session opt-in |
+
+- `voice_channel_id` の有無を自動参加のトリガに流用しない。作成者がVC接続中に作った募集は一括追加用に対象VCが自動保存されるため、流用すると既存の全募集が一斉に自動参加化し、本書の「旧行は manual-only」の約束を破る。自動参加は `vc_auto_join = true` の明示 opt-in がある募集だけに効く。
+- 自動登録は行ロック内の専用 mutation で行い、opt-out を検査するが**解除はしない**（手動参加だけが opt-out を解除する）。詳細は [VALORANT_RANDOM.md](./VALORANT_RANDOM.md) の「2026-11-27 VC自動参加」を参照。
+
 - 90日匿名化では参加者ID削除に加えopt-out配列とVC IDもクリア。履歴、構成、抽選結果・統計は保持。
 - 旧イメージへロールバックしても追加列をDROPしない。切替前の正常imageに戻してBot/API/Studio healthを確認。本番migration前のPG custom-format backup・SHA-256・隔離restore/リハーサルが必須。
 

@@ -83,6 +83,7 @@ export function createValorantSession(
     expiresAt: Date;
     rulesVersion: string;
     voiceChannelId?: string | null;
+    vcAutoJoin?: boolean;
   },
 ) {
   return prisma.valorantPickSession.create({ data: input, include: { participants: true } });
@@ -459,6 +460,92 @@ export async function manageValorantParticipants(
       });
       return { status: 'ok', session, changed: true };
     },
+    { isolationLevel: 'ReadCommitted' },
+  );
+}
+
+export type ValorantAutoJoinResult =
+  | { status: 'ok'; session: ValorantSessionSnapshot; changed: boolean; becameFull: boolean }
+  | { status: 'missing' | 'closed' | 'not_auto' | 'opted_out' | 'full' };
+
+/**
+ * Candidate sessions for a live VC auto-join event (#1048). Only sessions
+ * that explicitly opted in per-session are returned; a pinned voice channel
+ * alone never enables auto-join (see migration 20261127133000). Expiry is
+ * deliberately NOT decided here — the mutation re-checks it under the row
+ * lock and performs the lazy EXPIRED transition, like every other mutation.
+ */
+export function findOpenValorantAutoJoinSessions(
+  prisma: PrismaClient,
+  guildId: string,
+  voiceChannelId: string,
+) {
+  return prisma.valorantPickSession.findMany({
+    where: { guildId, status: 'OPEN', vcAutoJoin: true, voiceChannelId },
+    include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+}
+
+/**
+ * Register one member who just joined the pinned VC (#1048).
+ *
+ * This is intentionally NOT the manual join path: a manual join clears the
+ * member's opt-out (an explicit act of will), while an automatic
+ * registration must never clear it — an opted-out member is skipped and
+ * stays opted out. Reaching capacity does not close the session: the row
+ * stays OPEN so the creator can still draw, and every later join attempt
+ * (auto, manual, bulk) is rejected by the capacity checks. Shares the
+ * session row lock with every other mutation.
+ */
+export async function autoJoinValorantSession(
+  prisma: PrismaClient,
+  input: { guildId: string; id: string; userId: string; voiceChannelId: string },
+): Promise<ValorantAutoJoinResult> {
+  return prisma.$transaction(
+    async (tx) => {
+      const locked = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        'SELECT "id" FROM "valorant_pick_sessions" WHERE "id" = $1 AND "guild_id" = $2 FOR UPDATE',
+        input.id,
+        input.guildId,
+      );
+      if (!locked.length) return { status: 'missing' };
+      const row = await tx.valorantPickSession.findFirst({
+        where: { id: input.id, guildId: input.guildId },
+        include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
+      });
+      if (!row) return { status: 'missing' };
+      if (row.status === 'OPEN' && row.expiresAt <= new Date()) {
+        await tx.valorantPickSession.update({ where: { id: row.id }, data: { status: 'EXPIRED' } });
+        return { status: 'closed' };
+      }
+      if (row.status !== 'OPEN') return { status: 'closed' };
+      if (!row.vcAutoJoin || row.voiceChannelId !== input.voiceChannelId)
+        return { status: 'not_auto' };
+      if (row.optedOutUserIds.includes(input.userId)) return { status: 'opted_out' };
+      if (row.participants.some((entry) => entry.userId === input.userId))
+        return {
+          status: 'ok',
+          session: row,
+          changed: false,
+          becameFull: row.participants.length >= row.maxParticipants,
+        };
+      if (row.participants.length >= row.maxParticipants) return { status: 'full' };
+      await tx.valorantPickParticipant.create({
+        data: { sessionId: row.id, userId: input.userId },
+      });
+      const session = await tx.valorantPickSession.findUniqueOrThrow({
+        where: { id: row.id },
+        include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
+      });
+      return {
+        status: 'ok',
+        session,
+        changed: true,
+        becameFull: session.participants.length >= session.maxParticipants,
+      };
+    },
+    // The session row is locked with FOR UPDATE. ReadCommitted sees prior joins after waiting.
     { isolationLevel: 'ReadCommitted' },
   );
 }

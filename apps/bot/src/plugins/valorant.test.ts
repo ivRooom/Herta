@@ -13,6 +13,7 @@ function fixture(
   members: Array<{ id: string; bot?: boolean }> = [],
   maxParticipants = 5,
   expiryOverride?: Date,
+  vcAutoJoin = false,
 ) {
   const create = vi.fn().mockResolvedValue({
     id: 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05',
@@ -44,6 +45,7 @@ function fixture(
     options: {
       getSubcommand: () => 'random',
       getString: () => map,
+      getBoolean: (name: string) => (name === 'vc_auto_join' ? vcAutoJoin : null),
       getUser: (name: string) => memberSlots[name] ?? null,
       getMember: (name: string) => (memberSlots[name] ? { user: memberSlots[name] } : null),
     },
@@ -122,6 +124,25 @@ describe('VALORANT button recruitment slash command', () => {
     expect(buttons.every((button) => button.data.disabled)).toBe(true);
   });
 
+  it('stores the vc_auto_join opt-in on the session and announces it in the reply', async () => {
+    const f = fixture(null, true, [], 5, undefined, true);
+    await f.run();
+    expect(f.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ vcAutoJoin: true }),
+      }),
+    );
+    expect(f.editReply).toHaveBeenCalledWith(expect.stringContaining('自動で参加登録されます'));
+  });
+  it('defaults vc_auto_join to off when the option is not given', async () => {
+    const f = fixture();
+    await f.run();
+    expect(f.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ vcAutoJoin: false }),
+      }),
+    );
+  });
   it('uses tactical mode when a map is selected', async () => {
     const f = fixture('Ascent');
     await f.run();
