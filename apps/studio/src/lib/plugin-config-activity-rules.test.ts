@@ -59,3 +59,15 @@ test('新規設定は既定の除外リストで検証を通る (#980)', () => {
   assert.equal(validate(candidate), true, JSON.stringify(validate.errors));
   assert.deepEqual(candidate.excludedGameActivityNames, ['Valorant Tracker App']);
 });
+
+test('excludedGameApplicationIdsはrequiredに入っておらず既定は空 (#1060)', () => {
+  const schema = activityRulesSchema();
+  assert.equal(schema.required?.includes('excludedGameApplicationIds') ?? false, false);
+  assert.deepEqual(schema.properties.excludedGameApplicationIds?.default, []);
+
+  const ajv = createPluginConfigAjv();
+  const validate = ajv.compile(schema);
+  const candidate: Record<string, unknown> = {};
+  assert.equal(validate(candidate), true, JSON.stringify(validate.errors));
+  assert.deepEqual(candidate.excludedGameApplicationIds, []);
+});
