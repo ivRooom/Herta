@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const activityRulesManifest: PluginManifest = {
   id: 'activity-rules',
   name: 'Activity Rules',
-  version: '1.7.0',
+  version: '1.8.0',
   description:
     'Community Activityの発言・リアクション・VC集計へ除外ルールとanti-spam設定を適用します',
   author: { name: 'Herta' },
@@ -197,6 +197,49 @@ export const activityRulesManifest: PluginManifest = {
           section: 'プレゼンス集計',
           placeholder: 'アプリケーションID（数字のみ）',
           help: 'Discordのapplication_idでゲーム集計から除外します。名前の表記ゆれ(ローカライズ名・改名)に影響されないため、名前リストの補助として使えます。除外は今後の収集から適用され、過去の蓄積データは書き換えません。空にするとIDによる除外なしになります。',
+        },
+      },
+      gameIdentityMappings: {
+        type: 'array',
+        title: 'ゲーム名寄せ（同一ゲームの別名統合）',
+        maxItems: 50,
+        default: [
+          {
+            canonicalName: 'Genshin Impact',
+            applicationIds: ['762434991303950386'],
+            activityNames: ['原神'],
+          },
+          {
+            canonicalName: 'Honkai: Star Rail',
+            applicationIds: ['1121201675240210523'],
+            activityNames: ['崩壊：スターレイル'],
+          },
+        ],
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['canonicalName'],
+          properties: {
+            canonicalName: { type: 'string', minLength: 1, maxLength: 128 },
+            applicationIds: {
+              type: 'array',
+              uniqueItems: true,
+              maxItems: 50,
+              default: [],
+              items: { type: 'string', pattern: '^\\d+$' },
+            },
+            activityNames: {
+              type: 'array',
+              uniqueItems: true,
+              maxItems: 50,
+              default: [],
+              items: { type: 'string', minLength: 1, maxLength: 128 },
+            },
+          },
+        },
+        'x-herta-ui': {
+          section: 'プレゼンス集計',
+          help: '同一ゲームの言語・クライアント別名（例: 原神とGenshin Impact）を、コミュニティ統計の表示で正規名へ統合します。application_idが一致する記録はidで、idが記録されていない過去分は別名で寄せます。統合は表示（読み取り）時にだけ適用され、蓄積データは書き換えません。空にすると名寄せなしになります。',
         },
       },
       countCommandPoints: {

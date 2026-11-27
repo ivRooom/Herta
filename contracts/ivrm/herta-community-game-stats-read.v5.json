@@ -1,0 +1,2210 @@
+{
+  "$defs": {
+    "activityOverview": {
+      "additionalProperties": false,
+      "properties": {
+        "messageRanking": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "discordUserId": {
+                    "pattern": "^[0-9]{17,20}$",
+                    "type": "string"
+                  },
+                  "totalCount": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["discordUserId", "totalCount"],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": {
+                  "type": "boolean"
+                },
+                "limit": {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "offset": {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        },
+        "totals": {
+          "additionalProperties": false,
+          "properties": {
+            "messageCount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "messageMemberCount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "onlineSeconds": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "voiceMemberCount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "voiceSeconds": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "voiceSeconds",
+            "messageCount",
+            "onlineSeconds",
+            "voiceMemberCount",
+            "messageMemberCount"
+          ],
+          "type": "object"
+        },
+        "voiceRanking": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "discordUserId": {
+                    "pattern": "^[0-9]{17,20}$",
+                    "type": "string"
+                  },
+                  "totalSeconds": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["discordUserId", "totalSeconds"],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": {
+                  "type": "boolean"
+                },
+                "limit": {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "offset": {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        }
+      },
+      "required": ["totals", "voiceRanking", "messageRanking"],
+      "type": "object"
+    },
+    "activityUser": {
+      "additionalProperties": false,
+      "properties": {
+        "messageCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "onlineSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "voiceSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["voiceSeconds", "messageCount", "onlineSeconds"],
+      "type": "object"
+    },
+    "activityUserV4": {
+      "additionalProperties": false,
+      "properties": {
+        "messageCharUnits": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "messageCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "onlineSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "voiceSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["voiceSeconds", "messageCount", "onlineSeconds", "messageCharUnits"],
+      "type": "object"
+    },
+    "channelsOverview": {
+      "additionalProperties": false,
+      "properties": {
+        "charUnits": {
+          "additionalProperties": false,
+          "properties": {
+            "memberCount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "ranking": {
+              "additionalProperties": false,
+              "properties": {
+                "items": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "discordUserId": {
+                        "pattern": "^[0-9]{17,20}$",
+                        "type": "string"
+                      },
+                      "totalUnits": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["discordUserId", "totalUnits"],
+                    "type": "object"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                "pagination": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "hasNext": {
+                      "type": "boolean"
+                    },
+                    "limit": {
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "maximum": 100000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "total": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["limit", "offset", "total", "hasNext"],
+                  "type": "object"
+                }
+              },
+              "required": ["items", "pagination"],
+              "type": "object"
+            },
+            "totalUnits": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": ["totalUnits", "memberCount", "ranking"],
+          "type": "object"
+        },
+        "messageChannels": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "channelId": {
+                "pattern": "^[0-9]{17,20}$",
+                "type": "string"
+              },
+              "memberCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": ["string", "null"]
+              },
+              "totalCount": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": ["channelId", "name", "totalCount", "memberCount"],
+            "type": "object"
+          },
+          "maxItems": 25,
+          "type": "array"
+        },
+        "recordedFrom": {
+          "format": "date",
+          "type": ["string", "null"]
+        },
+        "voiceChannels": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "channelId": {
+                "pattern": "^[0-9]{17,20}$",
+                "type": "string"
+              },
+              "memberCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": ["string", "null"]
+              },
+              "totalSeconds": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": ["channelId", "name", "totalSeconds", "memberCount"],
+            "type": "object"
+          },
+          "maxItems": 25,
+          "type": "array"
+        }
+      },
+      "required": ["recordedFrom", "voiceChannels", "messageChannels", "charUnits"],
+      "type": "object"
+    },
+    "gameDailyPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "format": "date",
+          "type": "string"
+        },
+        "totalSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["date", "totalSeconds"],
+      "type": "object"
+    },
+    "gameDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "firstPlayDate": {
+          "format": "date",
+          "type": ["string", "null"]
+        },
+        "lastPlayDate": {
+          "format": "date",
+          "type": ["string", "null"]
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "playerCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["name", "totalSeconds", "playerCount", "firstPlayDate", "lastPlayDate"],
+      "type": "object"
+    },
+    "gameDetailV5": {
+      "additionalProperties": false,
+      "properties": {
+        "applicationId": {
+          "pattern": "^[0-9]+$",
+          "type": ["string", "null"]
+        },
+        "firstPlayDate": {
+          "format": "date",
+          "type": ["string", "null"]
+        },
+        "key": {
+          "maxLength": 149,
+          "minLength": 5,
+          "type": "string"
+        },
+        "lastPlayDate": {
+          "format": "date",
+          "type": ["string", "null"]
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "playerCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "applicationId",
+        "totalSeconds",
+        "playerCount",
+        "firstPlayDate",
+        "lastPlayDate"
+      ],
+      "type": "object"
+    },
+    "gameIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "applicationId": {
+          "pattern": "^[0-9]+$",
+          "type": ["string", "null"]
+        },
+        "key": {
+          "maxLength": 149,
+          "minLength": 5,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["key", "name", "applicationId"],
+      "type": "object"
+    },
+    "gameItemV5": {
+      "additionalProperties": false,
+      "properties": {
+        "applicationId": {
+          "pattern": "^[0-9]+$",
+          "type": ["string", "null"]
+        },
+        "key": {
+          "maxLength": 149,
+          "minLength": 5,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "playerCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["key", "name", "applicationId", "totalSeconds", "playerCount"],
+      "type": "object"
+    },
+    "gameMomentum": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "newPlayerCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "recentSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["name", "recentSeconds", "newPlayerCount"],
+      "type": "object"
+    },
+    "gameMomentumV5": {
+      "additionalProperties": false,
+      "properties": {
+        "applicationId": {
+          "pattern": "^[0-9]+$",
+          "type": ["string", "null"]
+        },
+        "key": {
+          "maxLength": 149,
+          "minLength": 5,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "newPlayerCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "recentSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["key", "name", "applicationId", "recentSeconds", "newPlayerCount"],
+      "type": "object"
+    },
+    "gamePlayer": {
+      "additionalProperties": false,
+      "properties": {
+        "discordUserId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "totalSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["discordUserId", "totalSeconds"],
+      "type": "object"
+    },
+    "gameResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "game": {
+          "$ref": "#/$defs/gameDetail"
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "game"
+        },
+        "players": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/gamePlayer"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": {
+                  "type": "boolean"
+                },
+                "limit": {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "offset": {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "viewer": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/gameViewer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["status", "guildId", "mode", "range", "meta", "game", "players", "viewer"],
+      "type": "object"
+    },
+    "gameResponseV5": {
+      "additionalProperties": false,
+      "properties": {
+        "game": {
+          "$ref": "#/$defs/gameDetailV5"
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "game"
+        },
+        "players": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/gamePlayer"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": {
+                  "type": "boolean"
+                },
+                "limit": {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "offset": {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "viewer": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/gameViewer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["status", "guildId", "mode", "range", "meta", "game", "players", "viewer"],
+      "type": "object"
+    },
+    "gameViewer": {
+      "additionalProperties": false,
+      "properties": {
+        "discordUserId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "rank": {
+          "minimum": 1,
+          "type": ["integer", "null"]
+        },
+        "totalSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["discordUserId", "rank", "totalSeconds"],
+      "type": "object"
+    },
+    "insightsMatrix": {
+      "additionalProperties": false,
+      "properties": {
+        "games": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 15,
+          "type": "array"
+        },
+        "members": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "discordUserId": {
+                "pattern": "^[0-9]{17,20}$",
+                "type": "string"
+              },
+              "secondsByGame": {
+                "items": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "maxItems": 15,
+                "type": "array"
+              }
+            },
+            "required": ["discordUserId", "secondsByGame"],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["games", "members"],
+      "type": "object"
+    },
+    "insightsMatrixV5": {
+      "additionalProperties": false,
+      "properties": {
+        "games": {
+          "items": {
+            "$ref": "#/$defs/gameIdentity"
+          },
+          "maxItems": 15,
+          "type": "array"
+        },
+        "members": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "discordUserId": {
+                "pattern": "^[0-9]{17,20}$",
+                "type": "string"
+              },
+              "secondsByGame": {
+                "items": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "maxItems": 15,
+                "type": "array"
+              }
+            },
+            "required": ["discordUserId", "secondsByGame"],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["games", "members"],
+      "type": "object"
+    },
+    "insightsOverview": {
+      "additionalProperties": false,
+      "properties": {
+        "matrix": {
+          "$ref": "#/$defs/insightsMatrix"
+        },
+        "momentum": {
+          "items": {
+            "$ref": "#/$defs/gameMomentum"
+          },
+          "maxItems": 15,
+          "type": "array"
+        },
+        "totals": {
+          "$ref": "#/$defs/insightsTotals"
+        },
+        "weekdaySeconds": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 7,
+          "minItems": 7,
+          "type": "array"
+        }
+      },
+      "required": ["totals", "matrix", "weekdaySeconds", "momentum"],
+      "type": "object"
+    },
+    "insightsOverviewV5": {
+      "additionalProperties": false,
+      "properties": {
+        "matrix": {
+          "$ref": "#/$defs/insightsMatrixV5"
+        },
+        "momentum": {
+          "items": {
+            "$ref": "#/$defs/gameMomentumV5"
+          },
+          "maxItems": 15,
+          "type": "array"
+        },
+        "totals": {
+          "$ref": "#/$defs/insightsTotals"
+        },
+        "weekdaySeconds": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 7,
+          "minItems": 7,
+          "type": "array"
+        }
+      },
+      "required": ["totals", "matrix", "weekdaySeconds", "momentum"],
+      "type": "object"
+    },
+    "insightsTotals": {
+      "additionalProperties": false,
+      "properties": {
+        "playerCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["totalSeconds", "playerCount"],
+      "type": "object"
+    },
+    "insightsUser": {
+      "additionalProperties": false,
+      "properties": {
+        "currentStreakDays": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dailySeries": {
+          "items": {
+            "$ref": "#/$defs/gameDailyPoint"
+          },
+          "type": "array"
+        },
+        "lastPlayDate": {
+          "format": "date",
+          "type": ["string", "null"]
+        },
+        "longestStreakDays": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "playDays": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "weekdaySeconds": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 7,
+          "minItems": 7,
+          "type": "array"
+        }
+      },
+      "required": [
+        "playDays",
+        "longestStreakDays",
+        "currentStreakDays",
+        "lastPlayDate",
+        "dailySeries",
+        "weekdaySeconds"
+      ],
+      "type": "object"
+    },
+    "overviewResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "games": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "playerCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "totalSeconds": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": ["name", "totalSeconds", "playerCount"],
+            "type": "object"
+          },
+          "maxItems": 25,
+          "type": "array"
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "overview"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "ranking": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "discordUserId": {
+                    "pattern": "^[0-9]{17,20}$",
+                    "type": "string"
+                  },
+                  "topGameName": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "totalSeconds": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["discordUserId", "totalSeconds", "topGameName"],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": {
+                  "type": "boolean"
+                },
+                "limit": {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "offset": {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        }
+      },
+      "required": ["status", "guildId", "mode", "range", "meta", "games", "ranking"],
+      "type": "object"
+    },
+    "overviewResponseV2": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/activityOverview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "games": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "playerCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "totalSeconds": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": ["name", "totalSeconds", "playerCount"],
+            "type": "object"
+          },
+          "maxItems": 25,
+          "type": "array"
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "overview"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "ranking": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "discordUserId": {
+                    "pattern": "^[0-9]{17,20}$",
+                    "type": "string"
+                  },
+                  "topGameName": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "totalSeconds": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["discordUserId", "totalSeconds", "topGameName"],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": {
+                  "type": "boolean"
+                },
+                "limit": {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "offset": {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        }
+      },
+      "required": ["activity", "games", "guildId", "meta", "mode", "range", "ranking", "status"],
+      "type": "object"
+    },
+    "overviewResponseV3": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/activityOverview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "games": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "playerCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "totalSeconds": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": ["name", "totalSeconds", "playerCount"],
+            "type": "object"
+          },
+          "maxItems": 25,
+          "type": "array"
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "insights": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/insightsOverview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "overview"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "ranking": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "discordUserId": {
+                    "pattern": "^[0-9]{17,20}$",
+                    "type": "string"
+                  },
+                  "topGameName": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "totalSeconds": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["discordUserId", "totalSeconds", "topGameName"],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": {
+                  "type": "boolean"
+                },
+                "limit": {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "offset": {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        }
+      },
+      "required": [
+        "activity",
+        "games",
+        "guildId",
+        "insights",
+        "meta",
+        "mode",
+        "range",
+        "ranking",
+        "status"
+      ],
+      "type": "object"
+    },
+    "overviewResponseV4": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/activityOverview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "channels": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/channelsOverview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "games": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "playerCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "totalSeconds": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": ["name", "totalSeconds", "playerCount"],
+            "type": "object"
+          },
+          "maxItems": 25,
+          "type": "array"
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "insights": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/insightsOverview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "overview"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "ranking": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "discordUserId": {
+                    "pattern": "^[0-9]{17,20}$",
+                    "type": "string"
+                  },
+                  "topGameName": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "totalSeconds": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["discordUserId", "totalSeconds", "topGameName"],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": {
+                  "type": "boolean"
+                },
+                "limit": {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "offset": {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        }
+      },
+      "required": [
+        "activity",
+        "channels",
+        "games",
+        "guildId",
+        "insights",
+        "meta",
+        "mode",
+        "range",
+        "ranking",
+        "status"
+      ],
+      "type": "object"
+    },
+    "overviewResponseV5": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/activityOverview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "channels": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/channelsOverview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "games": {
+          "items": {
+            "$ref": "#/$defs/gameItemV5"
+          },
+          "maxItems": 25,
+          "type": "array"
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "insights": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/insightsOverviewV5"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "overview"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "ranking": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/rankingItemV5"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "pagination": {
+              "additionalProperties": false,
+              "properties": {
+                "hasNext": {
+                  "type": "boolean"
+                },
+                "limit": {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "offset": {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": ["limit", "offset", "total", "hasNext"],
+              "type": "object"
+            }
+          },
+          "required": ["items", "pagination"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        }
+      },
+      "required": [
+        "activity",
+        "channels",
+        "games",
+        "guildId",
+        "insights",
+        "meta",
+        "mode",
+        "range",
+        "ranking",
+        "status"
+      ],
+      "type": "object"
+    },
+    "rankingItemV5": {
+      "additionalProperties": false,
+      "properties": {
+        "discordUserId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "topGameKey": {
+          "maxLength": 149,
+          "minLength": 5,
+          "type": "string"
+        },
+        "topGameName": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "totalSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["discordUserId", "totalSeconds", "topGameName", "topGameKey"],
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "discordUserId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "from": {
+          "format": "date",
+          "type": "string"
+        },
+        "gameApplicationId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "gameKey": {
+          "maxLength": 133,
+          "minLength": 5,
+          "type": "string"
+        },
+        "gameName": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "limit": {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mode": {
+          "enum": ["overview", "user", "game"],
+          "type": "string"
+        },
+        "offset": {
+          "maximum": 100000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to": {
+          "format": "date",
+          "type": "string"
+        },
+        "version": {
+          "enum": [1, 2, 3, 4, 5],
+          "type": "integer"
+        }
+      },
+      "required": ["guildId", "from", "to", "limit", "offset"],
+      "type": "object"
+    },
+    "userGameItemV5": {
+      "additionalProperties": false,
+      "properties": {
+        "applicationId": {
+          "pattern": "^[0-9]+$",
+          "type": ["string", "null"]
+        },
+        "key": {
+          "maxLength": 149,
+          "minLength": 5,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "totalSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["key", "name", "applicationId", "totalSeconds"],
+      "type": "object"
+    },
+    "userResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "user"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "user": {
+          "additionalProperties": false,
+          "properties": {
+            "discordUserId": {
+              "pattern": "^[0-9]{17,20}$",
+              "type": "string"
+            },
+            "games": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "totalSeconds": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["name", "totalSeconds"],
+                "type": "object"
+              },
+              "maxItems": 25,
+              "type": "array"
+            },
+            "totalSeconds": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": ["discordUserId", "totalSeconds", "games"],
+          "type": "object"
+        }
+      },
+      "required": ["status", "guildId", "mode", "range", "meta", "user"],
+      "type": "object"
+    },
+    "userResponseV2": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/activityUser"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "user"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "user": {
+          "additionalProperties": false,
+          "properties": {
+            "discordUserId": {
+              "pattern": "^[0-9]{17,20}$",
+              "type": "string"
+            },
+            "games": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "totalSeconds": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["name", "totalSeconds"],
+                "type": "object"
+              },
+              "maxItems": 25,
+              "type": "array"
+            },
+            "totalSeconds": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": ["discordUserId", "totalSeconds", "games"],
+          "type": "object"
+        }
+      },
+      "required": ["activity", "guildId", "meta", "mode", "range", "status", "user"],
+      "type": "object"
+    },
+    "userResponseV3": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/activityUser"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "insights": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/insightsUser"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "user"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "user": {
+          "additionalProperties": false,
+          "properties": {
+            "discordUserId": {
+              "pattern": "^[0-9]{17,20}$",
+              "type": "string"
+            },
+            "games": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "totalSeconds": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["name", "totalSeconds"],
+                "type": "object"
+              },
+              "maxItems": 25,
+              "type": "array"
+            },
+            "totalSeconds": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": ["discordUserId", "totalSeconds", "games"],
+          "type": "object"
+        }
+      },
+      "required": ["activity", "guildId", "insights", "meta", "mode", "range", "status", "user"],
+      "type": "object"
+    },
+    "userResponseV4": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/activityUserV4"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "insights": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/insightsUser"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "user"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "user": {
+          "additionalProperties": false,
+          "properties": {
+            "discordUserId": {
+              "pattern": "^[0-9]{17,20}$",
+              "type": "string"
+            },
+            "games": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "totalSeconds": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["name", "totalSeconds"],
+                "type": "object"
+              },
+              "maxItems": 25,
+              "type": "array"
+            },
+            "totalSeconds": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": ["discordUserId", "totalSeconds", "games"],
+          "type": "object"
+        }
+      },
+      "required": ["activity", "guildId", "insights", "meta", "mode", "range", "status", "user"],
+      "type": "object"
+    },
+    "userResponseV5": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/activityUserV4"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "guildId": {
+          "pattern": "^[0-9]{17,20}$",
+          "type": "string"
+        },
+        "insights": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/insightsUser"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "earliestDate": {
+              "format": "date",
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["earliestDate"],
+          "type": "object"
+        },
+        "mode": {
+          "const": "user"
+        },
+        "range": {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "format": "date",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "required": ["from", "to"],
+          "type": "object"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "user": {
+          "additionalProperties": false,
+          "properties": {
+            "discordUserId": {
+              "pattern": "^[0-9]{17,20}$",
+              "type": "string"
+            },
+            "games": {
+              "items": {
+                "$ref": "#/$defs/userGameItemV5"
+              },
+              "maxItems": 25,
+              "type": "array"
+            },
+            "totalSeconds": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": ["discordUserId", "totalSeconds", "games"],
+          "type": "object"
+        }
+      },
+      "required": ["activity", "guildId", "insights", "meta", "mode", "range", "status", "user"],
+      "type": "object"
+    }
+  },
+  "$id": "https://ivrm.jp/contracts/herta-community-game-stats-read/v5",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Producer Herta Studio; consumer server-only ivrm-web. POST /api/ivrm/community-game-stats/read. Key=HMAC-SHA256(IVRM_INTEGRATION_TOKEN,herta-community-game-stats-read-v1); signature=HMAC-SHA256(key,timestamp.eventId.POST.path.rawBody). Headers X-IVRM-Timestamp ISO, X-IVRM-Event-Id UUID, X-IVRM-Signature hex. Five-minute freshness, no query, max8192bytes. Signing is unchanged from v1 (the v1 purpose string remains the key-derivation domain separator); the contract version is negotiated by the signed request field version: absent or 1 returns exactly the v1 response (overviewResponse / userResponse), 2 returns the same game sections plus a required activity section (overviewResponseV2 / userResponseV2), 3 adds the insights sections and the game mode (overviewResponseV3 / userResponseV3 / gameResponse), and 4 adds the overview channels section and messageCharUnits on the user activity (overviewResponseV4 / userResponseV4); the game mode accepts version 3 or 4 with an unchanged shape, and 5 returns the unified game identity view (overviewResponseV5 / userResponseV5 / gameResponseV5) in which games are unified across localized and client-specific activity names. The source of truth stays Herta community_game_activity_daily for games and community_activity_daily for activity; ivrm-web relays each read and stores no copy (ivrm-web #1703 S1/S4b, Herta #998). Request range from/to is a JST local_date range. mode is optional and defaults to overview: overview returns meta.earliestDate (the guild-wide first observed date, not range-limited), the top 25 games by totalSeconds with playerCount, and the user ranking paginated by limit/offset (max 100, ordered by totalSeconds desc then discordUserId asc; each entry carries its topGameName). mode=user requires discordUserId (and overview forbids it) and returns that user's totalSeconds plus their top 25 games. The v2 activity section is built only from the community_activity_daily metrics voice_seconds, messages and online_seconds (reactions are excluded: accumulated too sparsely). messages counts only the messages the bot's Activity Rules counted (cooldown-filtered), never the guild's raw message total; voice_seconds is stay time in countable voice channels; online_seconds is presence time and is a reference total only. overview activity carries guild totals for the range (voiceSeconds, messageCount, onlineSeconds, plus voiceMemberCount / messageMemberCount distinct-user counts) and the voice and message rankings, paginated by the same limit/offset as the game ranking (ordered by value desc then discordUserId asc). user activity carries only that user's voiceSeconds, messageCount and onlineSeconds for the range. Activity is fail-soft per section: when the activity read fails, activity is null while the game sections still return ok. All members are returned; opt-out filtering is applied by the ivrm-web relay, not here. Items carry aggregated seconds/counts only: no Rich Presence details/state, no message content, no raw session rows. All responses private,no-store. Version 3 returns the v2 sections plus a required insights section on overview and user, and unlocks mode=game (version 3 only). Overview insights carry the period totals (totalSeconds and distinct playerCount), a member-by-game matrix over the period's top 15 games (games ordered by totalSeconds desc then name asc; members ordered by their period total desc then discordUserId asc; secondsByGame aligns with games and zero-fills games a member did not play), the weekday distribution of play seconds as a Monday-first array of 7, and momentum for the same top 15 games (recentSeconds inside the trailing 7 days of the range, and newPlayerCount of players whose first observed play of that game falls inside the range). User insights carry playDays inside the range, longestStreakDays and currentStreakDays computed over the whole observed history up to the range end (streaks are personal-panel data only and are never ranked), lastPlayDate, the daily series inside the range (days without play are omitted), and the user's Monday-first weekday distribution. mode=game requires gameName and returns that game's totals with first/last observed play dates inside the range, every player's seconds paginated by limit/offset (ordered by totalSeconds desc then discordUserId asc), and viewer (null unless discordUserId is given): the viewer's competition rank over all players (null when the viewer has no play of the game in the range) and totalSeconds; the relay recomputes the viewer rank after opt-out filtering. Insights are fail-soft per section like activity: when an insights read fails, insights is null while the other sections still return ok; the game mode is a main content and fails with 503 instead. A game with no play inside the range returns zeroed game totals with null dates and an empty players list. Version 4 (ivrm-web #2035 S6, Herta #1054): the overview gains a required channels section, fail-soft like activity and insights (null when its read fails, while the other sections still return ok). channels.recordedFrom is the guild-wide first date of community_activity_channel_daily (not range-limited, null when the table holds no row for the guild); channel recording starts later than the activity totals, so the channel sums deliberately do not add up to the activity totals and consumers must say so. channels.voiceChannels and channels.messageChannels are the top 25 channels of the range by voice_seconds / messages from community_activity_channel_daily, each with memberCount (distinct users with a row in that channel). Channel names are not stored in the database: name is resolved by Studio from the bot guild options and is null when the channel no longer resolves (deleted, or the bot unreachable); a name is never invented, and consumers fall back to an id-derived label. channels.charUnits carries the message_char_units totals and the member ranking paginated like the other rankings. message_char_units is the bot's character-points metric: one unit per half-width (ASCII) character and two units per full-width character, excluding URLs, custom emoji, Unicode emoji and whitespace; points are units / 2, and the wire carries raw integer units only. The v4 user activity (activityUserV4) adds the user's own messageCharUnits to the three v2 fields; the v2/v3 activity shapes are unchanged. Version 5 game identity (Herta #1060 S7b): since S7a the daily rows also record the Discord application_id (empty when the presence carried none, which covers all rows before S7a). A row belongs to a canonical game when its application_id is listed in the guild's Activity Rules gameIdentityMappings, else it groups by application_id, else — for id-less rows — by a mapped activity name (aliases and the canonical name itself), else by its recorded name. A game's key is app:<applicationId> (for a mapped game, the mapping's first id) or name:<activityName>; name is the display name: the canonical name when mapped, else the name the group accumulated the most seconds under in the range. applicationId is null for name groups. The overview ranking items add topGameKey next to topGameName (now the unified display name). The game mode at version 5 accepts exactly one selector: gameName (the exact recorded name, figures identical to v3/v4; key/applicationId report the unified identity that name resolves to), gameApplicationId, or gameKey (app:<id> or name:<name>), the latter two returning the whole unified game's figures; a unified game with no rows in range reports zeroed figures, with name falling back to the canonical name, the name key's name, or the key itself for an unknown application id. The activity, channels, insights-user and weekday/totals payloads are unchanged from v4. Mappings are applied at read time on the supply side only; stored rows are never rewritten, and unmapped games keep their recorded name as their key.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/overviewResponse"
+    },
+    {
+      "$ref": "#/$defs/userResponse"
+    },
+    {
+      "$ref": "#/$defs/overviewResponseV2"
+    },
+    {
+      "$ref": "#/$defs/userResponseV2"
+    },
+    {
+      "$ref": "#/$defs/overviewResponseV3"
+    },
+    {
+      "$ref": "#/$defs/userResponseV3"
+    },
+    {
+      "$ref": "#/$defs/gameResponse"
+    },
+    {
+      "$ref": "#/$defs/overviewResponseV4"
+    },
+    {
+      "$ref": "#/$defs/userResponseV4"
+    },
+    {
+      "$ref": "#/$defs/overviewResponseV5"
+    },
+    {
+      "$ref": "#/$defs/userResponseV5"
+    },
+    {
+      "$ref": "#/$defs/gameResponseV5"
+    }
+  ]
+}

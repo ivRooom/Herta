@@ -40,6 +40,18 @@ describe('Activity Rules v1.3', () => {
       countGamePresence: true,
       excludedGameActivityNames: ['Valorant Tracker App'],
       excludedGameApplicationIds: [],
+      gameIdentityMappings: [
+        {
+          canonicalName: 'Genshin Impact',
+          applicationIds: ['762434991303950386'],
+          activityNames: ['原神'],
+        },
+        {
+          canonicalName: 'Honkai: Star Rail',
+          applicationIds: ['1121201675240210523'],
+          activityNames: ['崩壊：スターレイル'],
+        },
+      ],
       countCommandPoints: true,
       messagePointsPerMessage: 2,
       reactionPointsPerReaction: 1,
@@ -440,6 +452,30 @@ describe('Activity Rules v1.3', () => {
         excludedGameApplicationIds: ['100000000000000001', 'bad', '100000000000000001'],
       }).excludedGameApplicationIds,
     ).toEqual(['100000000000000001']);
+    // 名寄せ対応表の正規化: 明示した配列が正で、空配列なら名寄せなしになる。
+    // 正規名が空のエントリは落ち、idはsnowflakeのみ、別名は重複除去される
+    expect(normalizeActivityRulesConfig({ gameIdentityMappings: [] }).gameIdentityMappings).toEqual(
+      [],
+    );
+    expect(
+      normalizeActivityRulesConfig({
+        gameIdentityMappings: [
+          {
+            canonicalName: '  Genshin Impact ',
+            applicationIds: ['762434991303950386', 'bad', '762434991303950386'],
+            activityNames: ['原神', '原神', ' '],
+          },
+          { canonicalName: ' ', applicationIds: ['100000000000000001'], activityNames: [] },
+          'not-a-mapping',
+        ],
+      }).gameIdentityMappings,
+    ).toEqual([
+      {
+        canonicalName: 'Genshin Impact',
+        applicationIds: ['762434991303950386'],
+        activityNames: ['原神'],
+      },
+    ]);
   });
 
   it('LFG・Team Split・Poll参加ポイントは設定OFFまたは除外Roleで無効化できる', () => {

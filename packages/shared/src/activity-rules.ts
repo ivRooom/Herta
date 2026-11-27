@@ -10,6 +10,43 @@ const DEFAULT_COMMAND_PREFIXES = ['/', '!'] as const;
  */
 export const DEFAULT_EXCLUDED_GAME_ACTIVITY_NAMES: readonly string[] = ['Valorant Tracker App'];
 
+/**
+ * ゲーム名寄せ(S7)の対応表。同一ゲームが言語・クライアント別名で分離する
+ * 問題(例: `原神` と `Genshin Impact`)を、供給側の読み取り時に統合するための
+ * 正規ゲームへの対応付け。application_idが主キーで、名前は過去分
+ * (application_idが記録されていない行)向けのフォールバックキーになる。
+ * 正規名そのものも名前キーとして扱う(グローバル版の素のpresence名が
+ * id無しで記録された行を正規ゲームへ寄せるため)。
+ *
+ * 既定値はDiscord公式detectable applicationsで実在を確認できたidだけを
+ * 入れる(原神/Genshin Impactはdetectable登録がグローバル版1件のみで、
+ * `原神` という登録名は存在しない。idの最終確定は本番presenceの観測待ちで、
+ * 別idが判明したらGuild設定側の applicationIds へ足して吸収する)。
+ * Guild設定で gameIdentityMappings を明示した場合はそちらが優先され、
+ * 空配列を明示すると名寄せなしになる(除外リストと同じ規約)。
+ */
+export interface GameIdentityMapping {
+  /** 統合後の表示名(正規名)。 */
+  canonicalName: string;
+  /** この正規ゲームに属するDiscordのapplication_id。 */
+  applicationIds: string[];
+  /** この正規ゲームに属する別名(application_idが無い行の名前キー)。 */
+  activityNames: string[];
+}
+
+export const DEFAULT_GAME_IDENTITY_MAPPINGS: readonly GameIdentityMapping[] = [
+  {
+    canonicalName: 'Genshin Impact',
+    applicationIds: ['762434991303950386'],
+    activityNames: ['原神'],
+  },
+  {
+    canonicalName: 'Honkai: Star Rail',
+    applicationIds: ['1121201675240210523'],
+    activityNames: ['崩壊：スターレイル'],
+  },
+];
+
 /** Discord ActivityType のうちゲーム集計の対象にする種別(数値はdiscord.jsのActivityTypeと一致)。 */
 export const GAME_ACTIVITY_TYPES = {
   /** ActivityType.Playing */
@@ -136,6 +173,7 @@ export interface ActivityRulesConfig {
   countGamePresence: boolean;
   excludedGameActivityNames: string[];
   excludedGameApplicationIds: string[];
+  gameIdentityMappings: GameIdentityMapping[];
   countCommandPoints: boolean;
   messagePointsPerMessage: number;
   reactionPointsPerReaction: number;
@@ -262,6 +300,7 @@ export function normalizeActivityRulesConfig(value: unknown): ActivityRulesConfi
     // application_idの除外は名前リストの補助(名前ゆれへの耐性用)。既定値は空で、
     // 実presenceで確認できたidだけをGuild設定へ明示して使う。
     excludedGameApplicationIds: normalizedIds(source.excludedGameApplicationIds, 50),
+    gameIdentityMappings: normalizedGameIdentityMappings(source.gameIdentityMappings),
     countCommandPoints:
       source.countCommandPoints === undefined ? true : source.countCommandPoints === true,
     messagePointsPerMessage: clamp(toInteger(source.messagePointsPerMessage, 2), 0, 20),
@@ -469,6 +508,55 @@ function normalizedIds(value: unknown, maxItems: number): string[] {
  */
 function normalizedGameActivityNames(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_EXCLUDED_GAME_ACTIVITY_NAMES];
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const name = item.trim().slice(0, 128);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+    if (names.length >= 50) break;
+  }
+  return names;
+}
+
+/**
+ * 名寄せ対応表の正規化。除外リストと同じ規約で、未設定(undefined)や配列で
+ * ない値のときは既定の対応表を適用し、配列が明示された場合はその内容を
+ * 正とする(空配列なら名寄せなし)。正規名が空のエントリは落とし、idは
+ * snowflake文字列のみ、別名は除外リストと同じ正規化(前後空白除去・
+ * 128文字上限・大文字小文字を区別しない重複除去)を通す。同一のidや別名が
+ * 複数エントリに現れた場合は、適用側が配列の先頭から照合して先勝ちにする。
+ */
+function normalizedGameIdentityMappings(value: unknown): GameIdentityMapping[] {
+  if (!Array.isArray(value)) {
+    return DEFAULT_GAME_IDENTITY_MAPPINGS.map((mapping) => ({
+      canonicalName: mapping.canonicalName,
+      applicationIds: [...mapping.applicationIds],
+      activityNames: [...mapping.activityNames],
+    }));
+  }
+  const mappings: GameIdentityMapping[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const canonicalName =
+      typeof entry.canonicalName === 'string' ? entry.canonicalName.trim().slice(0, 128) : '';
+    if (!canonicalName) continue;
+    mappings.push({
+      canonicalName,
+      applicationIds: normalizedIds(entry.applicationIds, 50),
+      activityNames: normalizedMappingActivityNames(entry.activityNames),
+    });
+    if (mappings.length >= 50) break;
+  }
+  return mappings;
+}
+
+function normalizedMappingActivityNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
   const names: string[] = [];
   for (const item of value) {

@@ -1,6 +1,7 @@
 export {
   communityPointsRatesFromConfig,
   DEFAULT_EXCLUDED_GAME_ACTIVITY_NAMES,
+  DEFAULT_GAME_IDENTITY_MAPPINGS,
   evaluateMessageActivity,
   GAME_ACTIVITY_TYPES,
   gameActivityIdentityKey,
@@ -24,6 +25,7 @@ export type {
   ActivityRulesConfig,
   CommunityPointsRates,
   GameActivityLike,
+  GameIdentityMapping,
   MessageActivityBlockingReason,
   MessageActivityCandidate,
   MessageActivityEvaluation,
