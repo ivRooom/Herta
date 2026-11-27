@@ -647,6 +647,21 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
     }
     const status = await dailyBonusStatus(ctx.guildId, interaction.user.id);
     if (status.status !== 'ready' && status.status !== 'confirmed') {
+      if (status.status === 'unavailable') {
+        // Keep why the wallet call failed: without this log and record,
+        // the generic member reply is the only trace of the failure.
+        ctx.logger.warn(
+          {
+            guildId: ctx.guildId,
+            userId: interaction.user.id,
+            date,
+            stage: 'status',
+            failure: status.failure ?? null,
+          },
+          'Daily bonus status check unavailable',
+        );
+        await recordDailyClaim(ctx.prisma, ctx.guildId, interaction.user.id, date, 'unavailable');
+      }
       await replyClaimFailure(ctx, interaction, status.status, date);
       return;
     }
@@ -665,6 +680,18 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
     // No daily question or fortune may be awarded by this button.
     const result = await claimDailyBonus(ctx.guildId, interaction.user.id, date, originalMessage);
     if (result.status !== 'confirmed') {
+      if (result.status === 'unavailable') {
+        ctx.logger.warn(
+          {
+            guildId: ctx.guildId,
+            userId: interaction.user.id,
+            date,
+            stage: 'claim',
+            failure: result.failure ?? null,
+          },
+          'Daily bonus claim unavailable',
+        );
+      }
       await recordDailyClaim(
         ctx.prisma,
         ctx.guildId,

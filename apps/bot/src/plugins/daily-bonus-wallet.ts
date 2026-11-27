@@ -16,6 +16,20 @@ type V1ClaimWithQuiz = DailyWalletReceipt & {
   quiz?: { correct?: unknown } | null;
 };
 
+/**
+ * Why a wallet call could not be confirmed, kept for operator logs only.
+ * Never shown to members: the user-facing copy stays the generic
+ * retry guidance, but a bare 'unavailable' must not swallow the HTTP
+ * status, the API error code or the transport failure again (2026-11-27
+ * claim failure was undiagnosable because every layer discarded it).
+ */
+export type DailyWalletFailure =
+  | { kind: 'not_configured' }
+  | { kind: 'http'; status: number; errorCode: string | null }
+  | { kind: 'invalid_response' }
+  | { kind: 'invalid_receipt' }
+  | { kind: 'network'; errorName: string };
+
 export type DailyWalletResult =
   | {
       status: 'confirmed';
@@ -25,7 +39,8 @@ export type DailyWalletResult =
       alreadyClaimed: boolean;
     }
   | { status: 'ready' }
-  | { status: 'profile_required' | 'account_initialization_required' | 'unlinked' | 'unavailable' };
+  | { status: 'profile_required' | 'account_initialization_required' | 'unlinked' }
+  | { status: 'unavailable'; failure?: DailyWalletFailure };
 
 export async function dailyServiceFetch(
   guildId: string,
@@ -64,25 +79,87 @@ export async function dailyServiceFetch(
     body,
   });
 }
+
+type RequestOutcome =
+  | { type: 'value'; value: Record<string, unknown> }
+  | { type: 'setup'; status: 'profile_required' | 'account_initialization_required' }
+  | { type: 'unlinked' }
+  | { type: 'failure'; failure: DailyWalletFailure };
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : 'UnknownError';
+}
+
+async function responseErrorCode(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    return typeof body.error === 'string' ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestDetailed(
+  guildId: string,
+  userId: string,
+  path: string,
+  extra: Record<string, unknown> = {},
+): Promise<RequestOutcome> {
+  let response: Response | null;
+  try {
+    response = await dailyServiceFetch(guildId, userId, path, extra);
+  } catch (error) {
+    // A malformed base URL is a configuration problem, not a network one.
+    if (error instanceof TypeError && error.message.includes('Invalid URL'))
+      return { type: 'failure', failure: { kind: 'not_configured' } };
+    return { type: 'failure', failure: { kind: 'network', errorName: errorName(error) } };
+  }
+  if (!response) return { type: 'failure', failure: { kind: 'not_configured' } };
+  if (response.status === 409) {
+    const errorCode = await responseErrorCode(response);
+    if (errorCode === 'profile_required' || errorCode === 'account_initialization_required')
+      return { type: 'setup', status: errorCode };
+    if (errorCode === 'identity_or_baseline_unresolved') return { type: 'unlinked' };
+    return {
+      type: 'failure',
+      failure: { kind: 'http', status: response.status, errorCode },
+    };
+  }
+  if (!response.ok)
+    return {
+      type: 'failure',
+      failure: {
+        kind: 'http',
+        status: response.status,
+        errorCode: await responseErrorCode(response),
+      },
+    };
+  let value: Record<string, unknown>;
+  try {
+    value = (await response.json()) as Record<string, unknown>;
+  } catch {
+    return { type: 'failure', failure: { kind: 'invalid_response' } };
+  }
+  if (value.status !== 'ok' || value.guildId !== guildId || value.discordUserId !== userId)
+    return { type: 'failure', failure: { kind: 'invalid_response' } };
+  return { type: 'value', value };
+}
+
 export async function request(
   guildId: string,
   userId: string,
   path: string,
   extra: Record<string, unknown> = {},
 ) {
-  const response = await dailyServiceFetch(guildId, userId, path, extra);
-  if (!response) return null;
-  if (response.status === 409) {
-    const error = (await response.json()) as { error?: string };
-    if (error.error === 'profile_required' || error.error === 'account_initialization_required')
-      return { setupRequired: error.error };
-    return error.error === 'identity_or_baseline_unresolved' ? { unlinked: true } : null;
-  }
-  if (!response.ok) return null;
-  const value = (await response.json()) as Record<string, unknown>;
-  if (value.status !== 'ok' || value.guildId !== guildId || value.discordUserId !== userId)
-    return null;
-  return value;
+  const outcome = await requestDetailed(guildId, userId, path, extra);
+  if (outcome.type === 'value') return outcome.value;
+  if (outcome.type === 'setup') return { setupRequired: outcome.status };
+  if (outcome.type === 'unlinked') return { unlinked: true };
+  return null;
+}
+
+function invalidReceipt(): DailyWalletResult {
+  return { status: 'unavailable', failure: { kind: 'invalid_receipt' } };
 }
 
 function confirmed(
@@ -114,7 +191,7 @@ function confirmed(
     !Number.isSafeInteger(account?.balance) ||
     account!.balance! < 0
   )
-    return { status: 'unavailable' };
+    return invalidReceipt();
   let streakReward: { points: number; streakDay: number } | undefined;
   if (value?.streakReward !== undefined && value.streakReward !== null) {
     const extra = value.streakReward;
@@ -123,7 +200,7 @@ function confirmed(
       Array.isArray(extra) ||
       Object.keys(extra).sort().join() !== ['points', 'streakDay'].sort().join()
     )
-      return { status: 'unavailable' };
+      return invalidReceipt();
     const item = extra as Record<string, unknown>;
     if (
       !Number.isSafeInteger(item.points) ||
@@ -131,7 +208,7 @@ function confirmed(
       item.streakDay !== receipt.streakDay ||
       !Number.isSafeInteger(receipt.rewardPoints + Number(item.points))
     )
-      return { status: 'unavailable' };
+      return invalidReceipt();
     streakReward = { points: Number(item.points), streakDay: receipt.streakDay };
   }
   let firstClaimReward: DailyWalletReceipt['firstClaimReward'];
@@ -142,7 +219,7 @@ function confirmed(
       Array.isArray(raw) ||
       Object.keys(raw).sort().join() !== 'points,rank,scope'
     )
-      return { status: 'unavailable' };
+      return invalidReceipt();
     const extra = raw as Record<string, unknown>;
     if (
       !Number.isSafeInteger(extra.points) ||
@@ -155,7 +232,7 @@ function confirmed(
         receipt.rewardPoints + (streakReward?.points ?? 0) + Number(extra.points),
       )
     )
-      return { status: 'unavailable' };
+      return invalidReceipt();
     firstClaimReward = { points: Number(extra.points), rank: Number(extra.rank), scope: 'global' };
   }
   return {
@@ -178,22 +255,22 @@ function confirmed(
 }
 export async function dailyBonusStatus(guild: string, user: string): Promise<DailyWalletResult> {
   try {
-    const value = await request(guild, user, '/v1/points/herta/login-bonus/status');
-    if (
-      value?.setupRequired === 'profile_required' ||
-      value?.setupRequired === 'account_initialization_required'
-    )
-      return { status: value.setupRequired };
-    if (value?.unlinked) return { status: 'unlinked' };
-    if (value?.claimedToday)
+    const outcome = await requestDetailed(guild, user, '/v1/points/herta/login-bonus/status');
+    if (outcome.type === 'setup') return { status: outcome.status };
+    if (outcome.type === 'unlinked') return { status: 'unlinked' };
+    if (outcome.type === 'failure') return { status: 'unavailable', failure: outcome.failure };
+    const value = outcome.value;
+    if (value.claimedToday)
       return typeof value.todayJst === 'string'
         ? confirmed(value, value.todayJst)
-        : { status: 'unavailable' };
+        : { status: 'unavailable', failure: { kind: 'invalid_response' } };
     // The V1 daily quiz was retired (ivrm-web#770): status always reports
     // quiz=null, and a quiz-bearing response is no longer conformant.
-    return value?.quiz === null ? { status: 'ready' } : { status: 'unavailable' };
-  } catch {
-    return { status: 'unavailable' };
+    return value.quiz === null
+      ? { status: 'ready' }
+      : { status: 'unavailable', failure: { kind: 'invalid_response' } };
+  } catch (error) {
+    return { status: 'unavailable', failure: { kind: 'network', errorName: errorName(error) } };
   }
 }
 export async function claimDailyBonus(
@@ -203,19 +280,20 @@ export async function claimDailyBonus(
   message: string,
 ): Promise<DailyWalletResult> {
   try {
-    return confirmed(
-      await request(guild, user, '/v1/points/herta/login-bonus/claim', {
-        claimDateJst: date,
-        announcementMessageId: message,
-        idempotencyKey: `daily-login:${guild}:${user}:${date}`,
-        // Contract fields deprecated in bundle 1.4.0: claims never carry a
-        // V1 quiz answer after the retirement (ivrm-web#770).
-        quizId: null,
-        choiceIndex: null,
-      }),
-      date,
-    );
-  } catch {
-    return { status: 'unavailable' };
+    const outcome = await requestDetailed(guild, user, '/v1/points/herta/login-bonus/claim', {
+      claimDateJst: date,
+      announcementMessageId: message,
+      idempotencyKey: `daily-login:${guild}:${user}:${date}`,
+      // Contract fields deprecated in bundle 1.4.0: claims never carry a
+      // V1 quiz answer after the retirement (ivrm-web#770).
+      quizId: null,
+      choiceIndex: null,
+    });
+    if (outcome.type === 'setup') return { status: outcome.status };
+    if (outcome.type === 'unlinked') return { status: 'unlinked' };
+    if (outcome.type === 'failure') return { status: 'unavailable', failure: outcome.failure };
+    return confirmed(outcome.value, date);
+  } catch (error) {
+    return { status: 'unavailable', failure: { kind: 'network', errorName: errorName(error) } };
   }
 }
