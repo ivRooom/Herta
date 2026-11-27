@@ -30,6 +30,24 @@ export type DailyWalletFailure =
   | { kind: 'invalid_receipt' }
   | { kind: 'network'; errorName: string };
 
+export type DailyServiceFailure = DailyWalletFailure | { kind: 'unlinked' };
+
+/**
+ * Carries the failure reason out of the shared request layer for callers
+ * that report failure by throwing (the participation client). Without it
+ * the participation flow discarded the reason exactly like the V1 flow
+ * did before #1056: the 2026-11-27 20:19 recurrence left no trace in any
+ * log or ledger (#1065).
+ */
+export class DailyServiceFailureError extends Error {
+  readonly failure: DailyServiceFailure;
+  constructor(failure: DailyServiceFailure) {
+    super('daily_service_failure');
+    this.name = 'DailyServiceFailureError';
+    this.failure = failure;
+  }
+}
+
 export type DailyWalletResult =
   | {
       status: 'confirmed';

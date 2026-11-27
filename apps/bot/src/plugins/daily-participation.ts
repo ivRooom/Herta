@@ -12,7 +12,7 @@ import {
   type ModalSubmitInteraction,
   type Client,
 } from 'discord.js';
-import { dailyServiceFetch } from './daily-bonus-wallet.js';
+import { DailyServiceFailureError, dailyServiceFetch } from './daily-bonus-wallet.js';
 import {
   createDailyQuizSession,
   getDailyQuizSession,
@@ -40,11 +40,16 @@ import {
 import { renderDailyQuestionCard, type DailyQuestionCardResult } from './daily-question-card.js';
 import { replyDailyParticipationAnswer } from './daily-result-card-reply.js';
 import { dailySupportActionRow, type DailySupportReference } from './daily-support.js';
+import type { PluginRuntimeContext } from '@herta/plugin-sdk';
 
 interface Context {
   guildId: string;
   prisma: PrismaClient;
   client: Client;
+  // daily-bonus.ts から渡される PluginRuntimeContext と同じロガー。
+  // ローカル Context には元々 logger が無く、#1066 初版はここで型落ちした。
+  // PluginRuntimeContext は TConfig が必須のため unknown を明示する。
+  logger: PluginRuntimeContext<unknown>['logger'];
   config: {
     enabled: boolean;
     notificationRoleId: string;
@@ -375,7 +380,26 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
   let review: YesterdayReview;
   try {
     review = await yesterdayReview(ctx.guildId, interaction.user.id);
-  } catch {
+  } catch (error) {
+    // Keep why the review call failed (#1065): the retry reply alone
+    // leaves no trace, same as the claim/answer flow did before.
+    // Expected rejections stay unlogged, matching the main handler:
+    // setup states arrive as a plain Error carrying the setup value,
+    // and a review for a day other than yesterday is 'expired'.
+    const expected =
+      error instanceof Error &&
+      !(error instanceof DailyServiceFailureError) &&
+      ['profile_required', 'account_initialization_required', 'expired'].includes(error.message);
+    if (!expected)
+      ctx.logger.warn(
+        {
+          guildId: ctx.guildId,
+          userId: interaction.user.id,
+          failure: error instanceof DailyServiceFailureError ? error.failure : null,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        },
+        'Daily participation yesterday review unavailable',
+      );
     await interaction.editReply({
       content: '昨日の問題を取得できませんでした。時間をおいて再試行してください。',
       allowedMentions: { parse: [] },
@@ -768,6 +792,46 @@ export async function handleDailyParticipation(
     await showParticipationQuestions(ctx, interaction, state, messageId);
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
+    // Keep why a service call failed (#1065): without this log the
+    // generic member reply is the only trace of the failure. Known
+    // rejections (expired, invalid input, disabled, setup states) are
+    // normal flow and stay unlogged.
+    // An answer setup outcome reaches this catch as the response
+    // schema's ZodError over the { setupRequired } marker; that is an
+    // expected rejection too, not a malformed response.
+    const isSetupParse =
+      error instanceof Error &&
+      error.name === 'ZodError' &&
+      error.message.includes('setupRequired');
+    if (error instanceof DailyServiceFailureError)
+      ctx.logger.warn(
+        {
+          guildId: ctx.guildId,
+          userId: interaction.user.id,
+          action: supportRef.kind,
+          failure: error.failure,
+        },
+        'Daily participation service request failed',
+      );
+    else if (
+      !isSetupParse &&
+      ![
+        'expired',
+        'invalid_answer',
+        'disabled',
+        'profile_required',
+        'account_initialization_required',
+      ].includes(code)
+    )
+      ctx.logger.warn(
+        {
+          guildId: ctx.guildId,
+          userId: interaction.user.id,
+          action: supportRef.kind,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        },
+        'Daily participation request failed unexpectedly',
+      );
     const content =
       code === 'expired'
         ? '対象ロール・当日の通知・回答期限を確認してください。'

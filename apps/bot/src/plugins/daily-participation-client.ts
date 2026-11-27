@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { request } from './daily-bonus-wallet.js';
+import { DailyServiceFailureError, requestDetailed } from './daily-bonus-wallet.js';
 
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const points = z.number().int().min(0).max(100000);
@@ -129,11 +129,30 @@ export const participationStatusSchema = z
   );
 export type ParticipationStatus = z.infer<typeof participationStatusSchema>;
 export type ParticipationQuestion = z.infer<typeof publicDailyQuestion>;
+/**
+ * Participation calls share the wallet request layer, but a bare null
+ * must not swallow why a call failed again (#1065): transport and HTTP
+ * failures throw DailyServiceFailureError with the reason attached so
+ * the plugin can log it. Setup states keep the marker object the
+ * callers already translate, and success values are unchanged.
+ */
+async function participationRequest(
+  guild: string,
+  user: string,
+  path: string,
+  extra: Record<string, unknown> = {},
+) {
+  const outcome = await requestDetailed(guild, user, path, extra);
+  if (outcome.type === 'value') return outcome.value;
+  if (outcome.type === 'setup') return { setupRequired: outcome.status };
+  if (outcome.type === 'unlinked') throw new DailyServiceFailureError({ kind: 'unlinked' });
+  throw new DailyServiceFailureError(outcome.failure);
+}
 export async function participationStatus(
   guild: string,
   user: string,
 ): Promise<ParticipationStatus> {
-  const raw = await request(guild, user, '/v2/participation/herta/status');
+  const raw = await participationRequest(guild, user, '/v2/participation/herta/status');
   if (raw?.setupRequired) throw new Error(String(raw.setupRequired));
   const parsed = participationStatusSchema.parse(raw);
   if (parsed.todayJst !== new Date(Date.now() + 32400000).toISOString().slice(0, 10))
@@ -146,7 +165,7 @@ export async function participationClaim(
   date: string,
   messageId: string,
 ) {
-  const raw = await request(guild, user, '/v2/participation/herta/claim', {
+  const raw = await participationRequest(guild, user, '/v2/participation/herta/claim', {
     claimDateJst: date,
     announcementMessageId: messageId,
     idempotencyKey: `daily-login:${guild}:${user}:${date}`,
@@ -225,7 +244,7 @@ export const yesterdayReviewSchema = z
 export type YesterdayReview = z.infer<typeof yesterdayReviewSchema>;
 export type YesterdayReviewEntry = YesterdayReview['entries'][number];
 export async function yesterdayReview(guild: string, user: string): Promise<YesterdayReview> {
-  const raw = await request(guild, user, '/v2/participation/herta/yesterday');
+  const raw = await participationRequest(guild, user, '/v2/participation/herta/yesterday');
   if (raw?.setupRequired) throw new Error(String(raw.setupRequired));
   const parsed = yesterdayReviewSchema.parse(raw);
   // The review is pinned to yesterday JST. A stale or replayed payload for
@@ -241,7 +260,7 @@ export async function participationAnswer(
   optionId: string | null,
   text: string | null,
 ) {
-  const raw = await request(guild, user, '/v2/participation/herta/answer', {
+  const raw = await participationRequest(guild, user, '/v2/participation/herta/answer', {
     questionId,
     optionId,
     text,

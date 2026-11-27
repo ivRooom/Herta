@@ -9,6 +9,7 @@ import {
   yesterdayReview,
   yesterdayReviewSchema,
 } from './daily-participation-client.js';
+import { DailyServiceFailureError } from './daily-bonus-wallet.js';
 const fixture = JSON.parse(
   readFileSync(
     new URL('../../../../contracts/ivrm/daily-participation.v2.fixture.json', import.meta.url),
@@ -364,4 +365,50 @@ it('rejects wrong subject/question/date and accepts Unicode answer receipt', asy
   await expect(
     participationClaim(guild, user, '2026-10-31', '323456789012345678'),
   ).rejects.toThrow();
+});
+
+it('keeps the failure reason when a participation call fails (#1065)', async () => {
+  configure();
+  async function failureOf(promise: Promise<unknown>) {
+    try {
+      await promise;
+    } catch (error) {
+      expect(error).toBeInstanceOf(DailyServiceFailureError);
+      return (error as DailyServiceFailureError).failure;
+    }
+    throw new Error('expected the call to fail');
+  }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: 'daily_login_unavailable' }), { status: 503 }),
+    ),
+  );
+  expect(await failureOf(participationStatus(guild, user))).toEqual({
+    kind: 'http',
+    status: 503,
+    errorCode: 'daily_login_unavailable',
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }),
+  );
+  expect(
+    await failureOf(participationClaim(guild, user, '2026-10-31', '323456789012345678')),
+  ).toEqual({ kind: 'network', errorName: 'TypeError' });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: 'identity_or_baseline_unresolved' }), {
+          status: 409,
+        }),
+    ),
+  );
+  expect(
+    await failureOf(participationAnswer(guild, user, fixture.publicQuestion.id, 'a', null)),
+  ).toEqual({ kind: 'unlinked' });
 });
