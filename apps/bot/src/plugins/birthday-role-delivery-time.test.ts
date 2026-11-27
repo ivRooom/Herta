@@ -29,6 +29,7 @@ interface FakeDelivery {
   kind: string;
   idempotencyKey: string;
   status: string;
+  completedAt: Date | null;
   reconciledAt: Date | null;
 }
 
@@ -46,6 +47,10 @@ function createHarness(registrations: FakeRegistration[] = []) {
   const roleRemoves: Array<{ userId: string; roleId: string }> = [];
   const sends: Array<{ content: string }> = [];
   const membersWithRole = new Set<string>();
+  // The simulated instant stamped onto deliveries when they
+  // complete, so tests control which JST date a completion
+  // falls on instead of depending on the wall clock.
+  let completionTime = new Date();
 
   const sqlOf = (strings: TemplateStringsArray) => strings.join(' ');
 
@@ -68,6 +73,23 @@ function createHarness(registrations: FakeRegistration[] = []) {
         return [];
       }
       if (sql.includes('FROM "birthday_registrations"')) return registrations;
+      if (sql.includes('DISTINCT')) {
+        // listDeliveredBirthdayUserIds
+        const localDate = values[1] as string;
+        const userIds = [
+          ...new Set(
+            deliveries
+              .filter(
+                (entry) =>
+                  entry.guildId === values[0] &&
+                  entry.localDate === localDate &&
+                  entry.status === 'completed',
+              )
+              .map((entry) => entry.userId),
+          ),
+        ];
+        return userIds.map((userId) => ({ userId }));
+      }
       if (sql.includes('FROM "birthday_deliveries"') && sql.includes('LIKE')) {
         // listPendingBirthdayRoleAssignments
         const currentLocalDate = values[2] as string;
@@ -85,6 +107,7 @@ function createHarness(registrations: FakeRegistration[] = []) {
             userId: entry.userId,
             localDate: entry.localDate,
             kind: entry.kind,
+            completedAt: entry.completedAt,
           }));
       }
       if (sql.includes('FROM "birthday_deliveries"')) {
@@ -111,6 +134,7 @@ function createHarness(registrations: FakeRegistration[] = []) {
             kind: kind!,
             idempotencyKey: idempotencyKey!,
             status: 'pending',
+            completedAt: null,
             reconciledAt: null,
           });
         }
@@ -124,7 +148,10 @@ function createHarness(registrations: FakeRegistration[] = []) {
       }
       if (sql.includes(`"status" = 'completed'`)) {
         const delivery = deliveries.find((entry) => entry.id === values[1]);
-        if (delivery) delivery.status = 'completed';
+        if (delivery) {
+          delivery.status = 'completed';
+          delivery.completedAt = completionTime;
+        }
         return 1;
       }
       if (sql.includes(`"status" = 'failed'`)) {
@@ -197,6 +224,10 @@ function createHarness(registrations: FakeRegistration[] = []) {
       kind: `role-assigned:${ROLE_ID}`,
       idempotencyKey: `${GUILD_ID}:${YESTERDAY_USER}:2026-11-21:role-assigned:${ROLE_ID}`,
       status: 'completed',
+      // Granted on its own date (10:00 JST on 2026-11-21), so
+      // the next day's cleanup must not treat it as a late
+      // grant worth protecting.
+      completedAt: new Date('2026-11-21T01:00:00.000Z'),
       reconciledAt: null,
     });
     membersWithRole.add(`${YESTERDAY_USER}:${ROLE_ID}`);
@@ -210,6 +241,9 @@ function createHarness(registrations: FakeRegistration[] = []) {
     roleRemoves,
     seedYesterdayAssignment,
     sends,
+    setCompletionTime: (date: Date) => {
+      completionTime = date;
+    },
   };
 }
 
@@ -234,7 +268,20 @@ function apiSettings(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
-function stubIvrmApi(settings: Record<string, unknown>) {
+function stubIvrmApi(
+  settings: Record<string, unknown>,
+  recipientsByDate: Record<string, Array<Record<string, unknown>>> = {
+    '2026-11-22': [
+      {
+        memberId: 'member-a',
+        discordUserId: TODAY_USER,
+        displayName: 'A',
+        month: 11,
+        day: 22,
+      },
+    ],
+  },
+) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (_url: unknown, init: RequestInit) => {
@@ -246,15 +293,10 @@ function stubIvrmApi(settings: Record<string, unknown>) {
         status: 'ok',
         enabled: true,
         settings,
-        recipients: [
-          {
-            memberId: 'member-a',
-            discordUserId: TODAY_USER,
-            displayName: 'A',
-            month: 11,
-            day: 22,
-          },
-        ],
+        // The supply API answers for the requested JST date, so
+        // the stub keys recipients by the request's localDate
+        // (dates without an entry have no birthdays).
+        recipients: recipientsByDate[request.localDate as string] ?? [],
       });
     }),
   );
@@ -315,6 +357,44 @@ describe('runBirthdayRoleCycle の配信時刻ゲート (#1921 R3-B)', () => {
 
     expect(harness.roleAdds).toEqual([]);
     expect(harness.sends).toEqual([]);
+  });
+
+  it('配信時刻がその日の最終サイクルより遅いと日付をまたいでも翌日に回収される', async () => {
+    const harness = createHarness();
+    stubIvrmApi(apiSettings({ deliveryTime: '23:59' }));
+    const context = harness.contextFor({ useIvrmApiSource: true });
+
+    // 2026-11-22 23:30 JST: 23:59 に届かないため、その日の
+    // サイクルは最後まで先送りし続ける。
+    harness.setCompletionTime(new Date('2026-11-22T14:30:00.000Z'));
+    await runBirthdayRoleCycle(context, new Date('2026-11-22T14:30:00.000Z'));
+    expect(harness.roleAdds).toEqual([]);
+    expect(harness.sends).toEqual([]);
+
+    // 2026-11-23 00:30 JST: 前日分は未配信のまま due として
+    // 回収され、前日の localDate で配信される。
+    harness.setCompletionTime(new Date('2026-11-22T15:30:00.000Z'));
+    await runBirthdayRoleCycle(context, new Date('2026-11-22T15:30:00.000Z'));
+    expect(harness.roleAdds).toEqual([{ userId: TODAY_USER, roleId: ROLE_ID }]);
+    expect(harness.sends).toHaveLength(1);
+    expect(
+      harness.deliveries
+        .filter((entry) => entry.status === 'completed')
+        .map((entry) => entry.localDate),
+    ).toEqual(['2026-11-22', '2026-11-22']);
+    expect(harness.celebrations).toHaveLength(1);
+    expect(harness.celebrations[0]?.[2]).toBe('2026-11-22');
+
+    // 同日の後続サイクルでも二重配信にならず、遅れて付いた
+    // ロールもその日のうちは剥がれない。
+    await runBirthdayRoleCycle(context, new Date('2026-11-22T16:30:00.000Z'));
+    expect(harness.roleAdds).toEqual([{ userId: TODAY_USER, roleId: ROLE_ID }]);
+    expect(harness.sends).toHaveLength(1);
+    expect(harness.roleRemoves).toEqual([]);
+
+    // 翌日には通常どおりロールが解除される。
+    await runBirthdayRoleCycle(context, new Date('2026-11-23T15:30:00.000Z'));
+    expect(harness.roleRemoves).toEqual([{ userId: TODAY_USER, roleId: ROLE_ID }]);
   });
 
   it('legacy経路には時刻ゲートが無く、0時台でも従来どおり配信する', async () => {
