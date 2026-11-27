@@ -113,8 +113,8 @@ erDiagram
 | community_voice_sessions          | CommunityVoiceSession         | 5            | コミュニティ   |
 | community_activity_channel_daily  | CommunityActivityChannelDaily | 7            | コミュニティ   |
 | community_presence_sessions       | CommunityPresenceSession      | 4            | コミュニティ   |
-| community_game_sessions           | CommunityGameSession          | 5            | コミュニティ   |
-| community_game_activity_daily     | CommunityGameActivityDaily    | 6            | コミュニティ   |
+| community_game_sessions           | CommunityGameSession          | 6            | コミュニティ   |
+| community_game_activity_daily     | CommunityGameActivityDaily    | 7            | コミュニティ   |
 | achievement_unlocks               | AchievementUnlock             | 4            | コミュニティ   |
 | community_profile_preferences     | CommunityProfilePreference    | 6            | コミュニティ   |
 | community_challenge_assignments   | CommunityChallengeAssignment  | 5            | コミュニティ   |
@@ -843,27 +843,29 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - 主キー: `guildId`、`userId`（@@id、複合主キー）
 - インデックス: `@@index([guildId, startedAt])`
 
-| フィールド（Prisma） | 型       | 実列名（DB）  | 属性                            |
-| -------------------- | -------- | ------------- | ------------------------------- |
-| guildId              | String   | guild_id      | —                               |
-| userId               | String   | user_id       | —                               |
-| activityName         | String   | activity_name | @db.VarChar(128)                |
-| startedAt            | DateTime | started_at    | @db.Timestamptz(3)              |
-| updatedAt            | DateTime | updated_at    | @updatedAt / @db.Timestamptz(3) |
+| フィールド（Prisma） | 型       | 実列名（DB）   | 属性                            |
+| -------------------- | -------- | -------------- | ------------------------------- |
+| guildId              | String   | guild_id       | —                               |
+| userId               | String   | user_id        | —                               |
+| activityName         | String   | activity_name  | @db.VarChar(128)                |
+| applicationId        | String   | application_id | @default("")                    |
+| startedAt            | DateTime | started_at     | @db.Timestamptz(3)              |
+| updatedAt            | DateTime | updated_at     | @updatedAt / @db.Timestamptz(3) |
 
 #### community_game_activity_daily（model: CommunityGameActivityDaily）
 
-- 主キー: `guildId`、`userId`、`activityName`、`activityDate`（@@id、複合主キー）
-- インデックス: `@@index([guildId, activityName, activityDate])`
+- 主キー: `guildId`、`userId`、`activityName`、`applicationId`、`activityDate`（@@id、複合主キー）
+- インデックス: `@@index([guildId, activityName, activityDate])` / `@@index([guildId, applicationId, activityDate])`
 
-| フィールド（Prisma） | 型       | 実列名（DB）  | 属性                            |
-| -------------------- | -------- | ------------- | ------------------------------- |
-| guildId              | String   | guild_id      | —                               |
-| userId               | String   | user_id       | —                               |
-| activityName         | String   | activity_name | @db.VarChar(128)                |
-| activityDate         | DateTime | activity_date | @db.Date                        |
-| value                | BigInt   | value         | @default(0)                     |
-| updatedAt            | DateTime | updated_at    | @updatedAt / @db.Timestamptz(3) |
+| フィールド（Prisma） | 型       | 実列名（DB）   | 属性                            |
+| -------------------- | -------- | -------------- | ------------------------------- |
+| guildId              | String   | guild_id       | —                               |
+| userId               | String   | user_id        | —                               |
+| activityName         | String   | activity_name  | @db.VarChar(128)                |
+| applicationId        | String   | application_id | @default("")                    |
+| activityDate         | DateTime | activity_date  | @db.Date                        |
+| value                | BigInt   | value          | @default(0)                     |
+| updatedAt            | DateTime | updated_at     | @updatedAt / @db.Timestamptz(3) |
 
 #### achievement_unlocks（model: AchievementUnlock）
 

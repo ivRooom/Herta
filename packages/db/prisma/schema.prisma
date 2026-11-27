@@ -563,11 +563,12 @@ model CommunityPresenceSession {
 
 // 同上だが「プレイ中」アクティビティ(ゲーム名等)の切り替わりで開始/終了する。
 model CommunityGameSession {
-  guildId      String   @map("guild_id")
-  userId       String   @map("user_id")
-  activityName String   @map("activity_name") @db.VarChar(128)
-  startedAt    DateTime @map("started_at") @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  guildId       String   @map("guild_id")
+  userId        String   @map("user_id")
+  activityName  String   @map("activity_name") @db.VarChar(128)
+  applicationId String   @default("") @map("application_id")
+  startedAt     DateTime @map("started_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@id([guildId, userId])
   @@index([guildId, startedAt])
@@ -578,15 +579,17 @@ model CommunityGameSession {
 // sparse)。community_activity_dailyとは独立したテーブルとし、既存クエリへの
 // 影響をゼロにする。
 model CommunityGameActivityDaily {
-  guildId      String   @map("guild_id")
-  userId       String   @map("user_id")
-  activityName String   @map("activity_name") @db.VarChar(128)
-  activityDate DateTime @map("activity_date") @db.Date
-  value        BigInt   @default(0)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  guildId       String   @map("guild_id")
+  userId        String   @map("user_id")
+  activityName  String   @map("activity_name") @db.VarChar(128)
+  applicationId String   @default("") @map("application_id")
+  activityDate  DateTime @map("activity_date") @db.Date
+  value         BigInt   @default(0)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  @@id([guildId, userId, activityName, activityDate])
+  @@id([guildId, userId, activityName, applicationId, activityDate])
   @@index([guildId, activityName, activityDate])
+  @@index([guildId, applicationId, activityDate], map: "community_game_activity_daily_guild_app_date_idx")
   @@map("community_game_activity_daily")
 }
 

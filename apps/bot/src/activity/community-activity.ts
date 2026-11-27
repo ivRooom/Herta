@@ -1,5 +1,19 @@
 import type { PrismaClient } from '@herta/db';
-import { isExcludedGameActivityName } from './activity-rules.js';
+import { isExcludedGameActivityId, isExcludedGameActivityName } from './activity-rules.js';
+
+/**
+ * application_idが無い(未収集・null)場合の番兵。community_game_activity_daily
+ * の主キー列はNOT NULLのため、未知は空文字列で表す(S7a)。移行前の既存行も
+ * 全てこの値になり、過去分は名前キーのまま併存する(遡及統合はしない)。
+ */
+export const GAME_APPLICATION_ID_UNKNOWN = '';
+
+/** 保存用にapplication_idを正規化する(snowflakeでない値は番兵へ倒す)。 */
+function toStoredGameApplicationId(applicationId: string | null | undefined): string {
+  if (typeof applicationId !== 'string') return GAME_APPLICATION_ID_UNKNOWN;
+  const trimmed = applicationId.trim();
+  return /^\d+$/.test(trimmed) ? trimmed : GAME_APPLICATION_ID_UNKNOWN;
+}
 
 export const COMMUNITY_ACTIVITY_METRICS = [
   'messages',
@@ -378,13 +392,21 @@ export async function startGameSession(
   userId: string,
   activityName: string,
   startedAt = new Date(),
+  applicationId: string | null = null,
 ): Promise<void> {
   const normalizedName = activityName.trim().slice(0, 128);
   if (!normalizedName) return;
+  const storedApplicationId = toStoredGameApplicationId(applicationId);
   await prisma.communityGameSession.upsert({
     where: { guildId_userId: { guildId, userId } },
-    create: { guildId, userId, activityName: normalizedName, startedAt },
-    update: { activityName: normalizedName, startedAt },
+    create: {
+      guildId,
+      userId,
+      activityName: normalizedName,
+      applicationId: storedApplicationId,
+      startedAt,
+    },
+    update: { activityName: normalizedName, applicationId: storedApplicationId, startedAt },
   });
 }
 
@@ -409,10 +431,11 @@ export async function finishGameSession(
       total += chunk.seconds;
       await tx.communityGameActivityDaily.upsert({
         where: {
-          guildId_userId_activityName_activityDate: {
+          guildId_userId_activityName_applicationId_activityDate: {
             guildId,
             userId,
             activityName: session.activityName,
+            applicationId: session.applicationId,
             activityDate: chunk.date,
           },
         },
@@ -420,6 +443,7 @@ export async function finishGameSession(
           guildId,
           userId,
           activityName: session.activityName,
+          applicationId: session.applicationId,
           activityDate: chunk.date,
           value: BigInt(chunk.seconds),
         },
@@ -451,21 +475,33 @@ export async function discardGameSessionIfExcluded(
   guildId: string,
   userId: string,
   excludedGameActivityNames: readonly string[],
+  excludedGameApplicationIds: readonly string[] = [],
 ): Promise<boolean> {
-  if (excludedGameActivityNames.length === 0) return false;
+  if (excludedGameActivityNames.length === 0 && excludedGameApplicationIds.length === 0) {
+    return false;
+  }
   const session = await prisma.communityGameSession.findUnique({
     where: { guildId_userId: { guildId, userId } },
   });
   if (!session) return false;
-  if (!isExcludedGameActivityName(session.activityName, excludedGameActivityNames)) return false;
+  const excludedByName = isExcludedGameActivityName(
+    session.activityName,
+    excludedGameActivityNames,
+  );
+  // 番兵('')は「id不明」であって除外対象のidではないため、id判定は実idがある場合のみ。
+  const excludedById =
+    session.applicationId !== GAME_APPLICATION_ID_UNKNOWN &&
+    isExcludedGameActivityId(session.applicationId, excludedGameApplicationIds);
+  if (!excludedByName && !excludedById) return false;
   // PresenceUpdateは同一ユーザーでも重なって処理されうるため、読み取った
-  // 行そのもの(ゲーム名+startedAtが一致する行)だけを条件付きで削除する。
+  // 行そのもの(ゲーム名+application_id+startedAtが一致する行)だけを条件付きで削除する。
   // 並行処理が新しいセッションへ差し替えた場合は一致せず、そちらを消さない。
   const deleted = await prisma.communityGameSession.deleteMany({
     where: {
       guildId,
       userId,
       activityName: session.activityName,
+      applicationId: session.applicationId,
       startedAt: session.startedAt,
     },
   });
@@ -486,11 +522,12 @@ export async function ensureGameSessionStarted(
   userId: string,
   activityName: string,
   startedAt = new Date(),
+  applicationId: string | null = null,
 ): Promise<boolean> {
   const session = await prisma.communityGameSession.findUnique({
     where: { guildId_userId: { guildId, userId } },
   });
   if (session) return false;
-  await startGameSession(prisma, guildId, userId, activityName, startedAt);
+  await startGameSession(prisma, guildId, userId, activityName, startedAt, applicationId);
   return true;
 }

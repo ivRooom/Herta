@@ -11,6 +11,7 @@ interface GameSessionRow {
   guildId: string;
   userId: string;
   activityName: string;
+  applicationId: string;
   startedAt: Date;
 }
 
@@ -18,6 +19,7 @@ interface GameDailyKey {
   guildId: string;
   userId: string;
   activityName: string;
+  applicationId: string;
   activityDate: Date;
 }
 
@@ -33,7 +35,7 @@ function createFakePrisma(
   const daily = new Map<string, bigint>();
   const sessionKey = (guildId: string, userId: string) => `${guildId}:${userId}`;
   const dailyKey = (key: GameDailyKey) =>
-    `${key.guildId}:${key.userId}:${key.activityName}:${key.activityDate.toISOString()}`;
+    `${key.guildId}:${key.userId}:${key.activityName}:${key.applicationId}:${key.activityDate.toISOString()}`;
 
   const prisma = {
     communityGameSession: {
@@ -55,12 +57,13 @@ function createFakePrisma(
       }: {
         where: { guildId_userId: { guildId: string; userId: string } };
         create: GameSessionRow;
-        update: { activityName: string; startedAt: Date };
+        update: { activityName: string; applicationId: string; startedAt: Date };
       }) => {
         const key = sessionKey(where.guildId_userId.guildId, where.guildId_userId.userId);
         const existing = sessions.get(key);
         if (existing) {
           existing.activityName = update.activityName;
+          existing.applicationId = update.applicationId;
           existing.startedAt = update.startedAt;
           return existing;
         }
@@ -80,13 +83,21 @@ function createFakePrisma(
       deleteMany: async ({
         where,
       }: {
-        where: { guildId: string; userId?: string; activityName?: string; startedAt?: Date };
+        where: {
+          guildId: string;
+          userId?: string;
+          activityName?: string;
+          applicationId?: string;
+          startedAt?: Date;
+        };
       }) => {
         let count = 0;
         for (const [key, row] of sessions) {
           if (row.guildId !== where.guildId) continue;
           if (where.userId !== undefined && row.userId !== where.userId) continue;
           if (where.activityName !== undefined && row.activityName !== where.activityName) continue;
+          if (where.applicationId !== undefined && row.applicationId !== where.applicationId)
+            continue;
           if (
             where.startedAt !== undefined &&
             row.startedAt.getTime() !== where.startedAt.getTime()
@@ -104,11 +115,11 @@ function createFakePrisma(
         create,
         update,
       }: {
-        where: { guildId_userId_activityName_activityDate: GameDailyKey };
+        where: { guildId_userId_activityName_applicationId_activityDate: GameDailyKey };
         create: GameDailyKey & { value: bigint };
         update: { value: { increment: bigint } };
       }) => {
-        const key = dailyKey(where.guildId_userId_activityName_activityDate);
+        const key = dailyKey(where.guildId_userId_activityName_applicationId_activityDate);
         const current = daily.get(key);
         if (current === undefined) {
           daily.set(key, create.value);
@@ -134,6 +145,18 @@ function dailySeconds(daily: Map<string, bigint>, activityName: string): number 
   let total = 0;
   for (const [key, value] of daily) {
     if (key.includes(`:${activityName}:`)) total += Number(value);
+  }
+  return total;
+}
+
+function dailySecondsFor(
+  daily: Map<string, bigint>,
+  activityName: string,
+  applicationId: string,
+): number {
+  let total = 0;
+  for (const [key, value] of daily) {
+    if (key.includes(`:${activityName}:${applicationId}:`)) total += Number(value);
   }
   return total;
 }
@@ -212,6 +235,7 @@ describe('ゲームセッションと除外リストの照合 (#980)', () => {
           guildId: GUILD_ID,
           userId: USER_ID,
           activityName: 'VALORANT',
+          applicationId: '',
           startedAt: new Date(T0.getTime() + 60_000),
         });
       },
@@ -241,5 +265,71 @@ describe('ゲームセッションと除外リストの照合 (#980)', () => {
       ensureGameSessionStarted(prisma, GUILD_ID, USER_ID, 'Overwatch', later),
     ).resolves.toBe(false);
     expect(sessions.get(`${GUILD_ID}:${USER_ID}`)?.activityName).toBe('VALORANT');
+  });
+});
+
+describe('ゲームセッションのapplication_id伝播 (#1060 S7a)', () => {
+  const APP_ID = '100000000000000001';
+  const OTHER_APP_ID = '100000000000000002';
+
+  it('application_idがセッションから日次へ伝播する', async () => {
+    const { prisma, sessions, daily } = createFakePrisma();
+    await startGameSession(prisma, GUILD_ID, USER_ID, 'Genshin Impact', T0, APP_ID);
+    expect(sessions.get(`${GUILD_ID}:${USER_ID}`)?.applicationId).toBe(APP_ID);
+    const t1 = new Date(T0.getTime() + 3_600_000);
+    await expect(finishGameSession(prisma, GUILD_ID, USER_ID, t1)).resolves.toBe(3_600);
+    expect(dailySecondsFor(daily, 'Genshin Impact', APP_ID)).toBe(3_600);
+    expect(dailySecondsFor(daily, 'Genshin Impact', '')).toBe(0);
+  });
+
+  it('application_idが無い(null)場合は番兵の空文字列で記録される', async () => {
+    const { prisma, sessions, daily } = createFakePrisma();
+    await startGameSession(prisma, GUILD_ID, USER_ID, 'Some Game', T0);
+    expect(sessions.get(`${GUILD_ID}:${USER_ID}`)?.applicationId).toBe('');
+    const t1 = new Date(T0.getTime() + 1_800_000);
+    await expect(finishGameSession(prisma, GUILD_ID, USER_ID, t1)).resolves.toBe(1_800);
+    expect(dailySecondsFor(daily, 'Some Game', '')).toBe(1_800);
+  });
+
+  it('同名でもapplication_idが違えば日次では分かれて記録され、名前合算は一致する', async () => {
+    const { prisma, daily } = createFakePrisma();
+    await startGameSession(prisma, GUILD_ID, USER_ID, 'Genshin Impact', T0, APP_ID);
+    const t1 = new Date(T0.getTime() + 3_600_000);
+    await finishGameSession(prisma, GUILD_ID, USER_ID, t1);
+    await startGameSession(prisma, GUILD_ID, USER_ID, 'Genshin Impact', t1, OTHER_APP_ID);
+    const t2 = new Date(T0.getTime() + 5_400_000);
+    await finishGameSession(prisma, GUILD_ID, USER_ID, t2);
+    expect(dailySecondsFor(daily, 'Genshin Impact', APP_ID)).toBe(3_600);
+    expect(dailySecondsFor(daily, 'Genshin Impact', OTHER_APP_ID)).toBe(1_800);
+    // 名前で合算する既存の読み方(SUM系消費者)は行が分かれても合計が変わらない
+    expect(dailySeconds(daily, 'Genshin Impact')).toBe(5_400);
+  });
+
+  it('名前が除外でなくてもapplication_idが除外ならセッションは破棄される', async () => {
+    const { prisma, daily } = createFakePrisma();
+    await startGameSession(prisma, GUILD_ID, USER_ID, 'Tracker Clone', T0, APP_ID);
+    await expect(
+      discardGameSessionIfExcluded(prisma, GUILD_ID, USER_ID, [], [APP_ID]),
+    ).resolves.toBe(true);
+    const t1 = new Date(T0.getTime() + 3_600_000);
+    await expect(finishGameSession(prisma, GUILD_ID, USER_ID, t1)).resolves.toBe(0);
+    expect(daily.size).toBe(0);
+  });
+
+  it('番兵(空文字列)のセッションはid除外では破棄されない', async () => {
+    const { prisma, sessions } = createFakePrisma();
+    await startGameSession(prisma, GUILD_ID, USER_ID, 'Some Game', T0);
+    await expect(
+      discardGameSessionIfExcluded(prisma, GUILD_ID, USER_ID, [], [APP_ID]),
+    ).resolves.toBe(false);
+    expect(sessions.get(`${GUILD_ID}:${USER_ID}`)?.startedAt).toEqual(T0);
+  });
+
+  it('ensureGameSessionStartedもapplication_idを伝播する', async () => {
+    const { prisma, sessions } = createFakePrisma();
+    await expect(
+      ensureGameSessionStarted(prisma, GUILD_ID, USER_ID, 'Genshin Impact', T0, APP_ID),
+    ).resolves.toBe(true);
+    expect(sessions.get(`${GUILD_ID}:${USER_ID}`)?.applicationId).toBe(APP_ID);
   });
 });

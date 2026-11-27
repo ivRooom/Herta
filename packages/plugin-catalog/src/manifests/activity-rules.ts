@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const activityRulesManifest: PluginManifest = {
   id: 'activity-rules',
   name: 'Activity Rules',
-  version: '1.6.0',
+  version: '1.7.0',
   description:
     'Community Activityの発言・リアクション・VC集計へ除外ルールとanti-spam設定を適用します',
   author: { name: 'Herta' },
@@ -184,6 +184,19 @@ export const activityRulesManifest: PluginManifest = {
           section: 'プレゼンス集計',
           placeholder: '例: Valorant Tracker App',
           help: 'ゲーム本体ではないトラッカー等の周辺アプリ名を、ゲーム時間の集計から除外します。名前の完全一致(前後空白・大文字小文字は区別しない)で判定します。除外は今後の収集から適用され、過去の蓄積データは書き換えません。空にすると除外なしになります。',
+        },
+      },
+      excludedGameApplicationIds: {
+        type: 'array',
+        title: 'ゲーム集計から除外するアプリケーションID',
+        uniqueItems: true,
+        maxItems: 50,
+        default: [],
+        items: { type: 'string', pattern: '^\\d+$' },
+        'x-herta-ui': {
+          section: 'プレゼンス集計',
+          placeholder: 'アプリケーションID（数字のみ）',
+          help: 'Discordのapplication_idでゲーム集計から除外します。名前の表記ゆれ(ローカライズ名・改名)に影響されないため、名前リストの補助として使えます。除外は今後の収集から適用され、過去の蓄積データは書き換えません。空にするとIDによる除外なしになります。',
         },
       },
       countCommandPoints: {
