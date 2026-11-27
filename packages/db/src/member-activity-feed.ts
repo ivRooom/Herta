@@ -19,6 +19,16 @@ export interface MemberActivityFeedFilters {
   guildId: string;
   from?: Date | null;
   toExclusive?: Date | null;
+  /**
+   * event種別の完全一致フィルタ(Admin向けprojection API用)。queryの部分一致とは
+   * 独立にANDで効く。種別は文字列として汎用的に扱うため、bot側で追加された
+   * 新種別(channel_overwrite_*等)もこの関数の変更なしに指定できる。
+   */
+  event?: string | null;
+  /** userIdカラムへの完全一致フィルタ(event種別によっては実行者が入る。呼び出し側の解釈に委ねる)。 */
+  userId?: string | null;
+  /** channelIdカラムへの完全一致フィルタ。 */
+  channelId?: string | null;
   /** event種別・userId・channelId・messageIdに対する部分一致検索(大小無視)。 */
   query?: string | null;
   page?: number;
@@ -39,9 +49,10 @@ const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 50;
 
 /**
- * Studioの監査ログ統合ビュー向けに、Discord側のgatewayイベント(メッセージ編集/削除・
- * チャンネル作成/削除・Role付与等)をguildId+期間で検索する。本文(メッセージ内容)は
- * 一覧表示に含めない(PIIを統合ビューへ漏らさない)。
+ * Studioの監査ログ統合ビューとAdmin向けread-only projection API
+ * (apps/studio/src/lib/member-activity-read.ts)向けに、Discord側のgatewayイベント
+ * (メッセージ編集/削除・チャンネル作成/削除・Role付与等)をguildId+期間で検索する。
+ * 本文(メッセージ内容)はselectに含めない(PIIを統合ビュー・外部projectionへ漏らさない)。
  */
 export async function searchMemberActivityEvents(
   prisma: PrismaClient,
@@ -61,6 +72,9 @@ export async function searchMemberActivityEvents(
 
   const where: Prisma.MemberActivityEventWhereInput = {
     guildId: filters.guildId,
+    ...(filters.event ? { event: filters.event } : {}),
+    ...(filters.userId ? { userId: filters.userId } : {}),
+    ...(filters.channelId ? { channelId: filters.channelId } : {}),
     ...(filters.from || filters.toExclusive ? { occurredAt } : {}),
     ...(query
       ? {
