@@ -102,6 +102,15 @@ export function ticketCategoryDescription(category: TicketCategory): string {
 /** 起票直後の状態ラベル (Web 側の初期状態 received に対応)。 */
 export const TICKET_INITIAL_STATUS_LABEL = '受理';
 
+/**
+ * 起票時の受理メッセージ (一次受け)。intro Embed とは別メッセージで
+ * スレッドへ平文投稿する。worker (apps/worker/src/ticket-discord-outbox.ts)
+ * にも同じ文面を写して持ち、両側のテストで文字列を固定する
+ * (文面を変えるときは両側を揃えること)。
+ */
+export const TICKET_ACCEPTANCE_MESSAGE =
+  'お問い合わせを受け付けました。担当者が確認のうえ、こちらのスレッドで回答します。内容によっては、回答まで1週間ほどかかる場合があります。恐れ入りますが、しばらくお待ちください。';
+
 /** パネル Embed。カテゴリごとの説明をフィールドに併記する (E1)。 */
 export function buildTicketPanelEmbed(enabledCategories: readonly TicketCategory[]): TicketEmbed {
   return {
@@ -366,48 +375,6 @@ export interface TicketOutboxPayload {
   kind: TicketOutboxKind;
   ticketId: string;
   body: string;
-}
-
-/** 録音削除申請チケットの件名 (契約 v1.1 / Herta #750 方式B)。 */
-export const TICKET_ERASURE_SUBJECT = '録音データ削除申請（VC要約）';
-
-/** 録音削除申請チケットの本文。申請理由は Herta 側でのみ保持し、ここには載せない。 */
-export const TICKET_ERASURE_BODY =
-  '/herta-privacy delete-voice-data から、録音データ（VC要約・文字起こし）の削除申請がありました。\n' +
-  '申請は方式B（審査制）で受け付け済みです。新しい録音・保存の遮断と同意の失効は申請時点で適用されています。\n' +
-  'データの削除は、運営の承認（approved）後に実行されます。\n' +
-  '申請理由はプライバシー保護のため Herta 側でのみ保持し、このチケットには転記しません。';
-
-/**
- * 録音削除申請の起票 (kind=create) を outbox へ積むための payload。
- * 通常の起票は同期的だが、削除申請は Web が落ちていても fence を効かせ、
- * チケットは後から必ず作られる必要があるため、永続配送の outbox を使う。
- * 冪等キーはケースの requestId (契約 v1.1 の erasureRequestId) で、
- * 再送・再申請でもチケットは1件に解決される。ticketId 欄は起票前で
- * チケットIDが存在しないため、相関キーとして requestId を入れる
- * (配送は body のみを使い、ticketId は配送結果に影響しない)。
- */
-export function buildTicketErasureCreatePayload(input: {
-  requestId: string;
-  discordUserId: string;
-  requesterName?: string | null;
-}): TicketOutboxPayload {
-  const sourceEventId = `ticket-erasure-create:${input.requestId}`;
-  const body = JSON.stringify({
-    discordUserId: input.discordUserId,
-    ...(input.requesterName ? { requesterName: input.requesterName } : {}),
-    category: 'privacy',
-    subject: TICKET_ERASURE_SUBJECT,
-    body: TICKET_ERASURE_BODY,
-    erasureRequestId: input.requestId,
-  });
-  return {
-    sourceEventId,
-    eventId: deriveTicketEventId(sourceEventId),
-    kind: 'create',
-    ticketId: input.requestId,
-    body,
-  };
 }
 
 /** スレッド紐付け (/thread) の outbox payload。Discord メッセージIDが冪等キー。 */
