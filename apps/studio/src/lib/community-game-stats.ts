@@ -23,12 +23,17 @@ export type CommunityGameStatsMode = 'overview' | 'user' | 'game';
  * client-specific activity names (S7): game-bearing
  * sections carry a unified `key` and `applicationId`
  * alongside the display name, and the game mode also
- * accepts `gameApplicationId` / `gameKey` selectors.
- * Signing is unchanged across versions (the
+ * accepts `gameApplicationId` / `gameKey` selectors;
+ * 6 adds the overview `leaderboards` section (S9): member
+ * rankings by distinct unified games played (gameCount),
+ * by distinct play days (playDays) and by absolute growth
+ * against the previous period (growth), all aggregated
+ * from community_game_activity_daily. Signing is unchanged
+ * across versions (the
  * v1 purpose string stays the key-derivation domain
  * separator).
  */
-export type CommunityGameStatsVersion = 1 | 2 | 3 | 4 | 5;
+export type CommunityGameStatsVersion = 1 | 2 | 3 | 4 | 5 | 6;
 export interface CommunityGameStatsInput {
   guildId: string;
   from: string;
@@ -1167,6 +1172,184 @@ export function buildCommunityUserGamesV5(
     totalSeconds: group.totalSeconds,
   }));
 }
+/**
+ * v6 leaderboards shapes (S9, #1081), all aggregated from
+ * community_game_activity_daily. The three boards widen the
+ * ranking axes beyond raw volume: gameCount is breadth (how
+ * many distinct unified games a member played), playDays is
+ * continuity (on how many distinct dates they played — the
+ * user insights playDays figure, ranked; streaks stay
+ * personal-panel data and are never ranked, per the S5
+ * decision), and growth is change (the absolute increase of
+ * total play seconds against the previous period).
+ *
+ * The previous period of a range is the window of the same
+ * length immediately before it — the same definition the
+ * period comparison (G7) uses: this week against last week,
+ * this month against last month. Growth only lists members
+ * whose previous-period total reaches one hour and whose
+ * increase is positive: with almost no previous record the
+ * increase is noise (a first week always "grows"), and a
+ * ranking of decreases is not a leaderboard. A range whose
+ * previous period precedes observation — the cumulative
+ * range starting at the first observed date — therefore
+ * yields an empty growth ranking rather than fabricated
+ * growth.
+ *
+ * gameCount counts unified games (the v5 identity), so a
+ * game played under two names or ids counts once. Because
+ * application_id recording only started with S7a, rows
+ * before that unify by name only; counts over ranges
+ * reaching back mix the two, which the contract states.
+ */
+export const COMMUNITY_LEADERBOARD_GROWTH_MIN_PREVIOUS_SECONDS = 3600;
+export interface CommunityLeaderboardGameCountItem {
+  discordUserId: string;
+  gameCount: number;
+}
+export interface CommunityLeaderboardPlayDaysItem {
+  discordUserId: string;
+  playDays: number;
+}
+export interface CommunityLeaderboardGrowthItem {
+  discordUserId: string;
+  currentSeconds: number;
+  previousSeconds: number;
+  growthSeconds: number;
+}
+export interface CommunityLeaderboardPagination {
+  limit: number;
+  offset: number;
+  total: number;
+  hasNext: boolean;
+}
+export interface CommunityLeaderboardsOverview {
+  gameCount: {
+    items: CommunityLeaderboardGameCountItem[];
+    pagination: CommunityLeaderboardPagination;
+  };
+  playDays: {
+    items: CommunityLeaderboardPlayDaysItem[];
+    pagination: CommunityLeaderboardPagination;
+  };
+  growth: {
+    items: CommunityLeaderboardGrowthItem[];
+    pagination: CommunityLeaderboardPagination;
+    previousRange: { from: string; to: string };
+  };
+}
+function leaderboardUserId(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{17,20}$/.test(value))
+    throw new Error('InvalidCommunityLeaderboardUser');
+  return value;
+}
+function leaderboardCount(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)
+    throw new Error('InvalidCommunityLeaderboardCount');
+  return value;
+}
+/**
+ * Leaderboard projections follow the same rule as the game
+ * and activity ones: only the selected columns, re-validated
+ * field by field, aggregates through toCommunityGameSeconds
+ * so an uncast SUM throws here (#1004). The growth
+ * projection derives growthSeconds from the two totals; it
+ * may be zero or negative — eligibility is the builder's
+ * call, not the projection's.
+ */
+export function projectCommunityLeaderboardPlayDaysRow(row: {
+  discordUserId: unknown;
+  playDays: unknown;
+}): CommunityLeaderboardPlayDaysItem {
+  return {
+    discordUserId: leaderboardUserId(row.discordUserId),
+    playDays: leaderboardCount(row.playDays),
+  };
+}
+export function projectCommunityLeaderboardGrowthRow(row: {
+  discordUserId: unknown;
+  currentSeconds: unknown;
+  previousSeconds: unknown;
+}): CommunityLeaderboardGrowthItem {
+  const currentSeconds = toCommunityGameSeconds(row.currentSeconds);
+  const previousSeconds = toCommunityGameSeconds(row.previousSeconds);
+  return {
+    discordUserId: leaderboardUserId(row.discordUserId),
+    currentSeconds,
+    previousSeconds,
+    growthSeconds: currentSeconds - previousSeconds,
+  };
+}
+/**
+ * The window of the same length immediately before a
+ * range: for a 7-day range the 7 days before it, for a
+ * month range the same number of days before it. Pure date
+ * arithmetic on the validated range; anything else is a
+ * caller bug.
+ */
+export function communityGamePreviousRange(range: { from: string; to: string }): {
+  from: string;
+  to: string;
+} {
+  if (!date(range.from) || !date(range.to) || range.from > range.to)
+    throw new Error('InvalidCommunityGameRange');
+  const dayMs = 86_400_000;
+  const fromMs = Date.parse(`${range.from}T00:00:00Z`);
+  const toMs = Date.parse(`${range.to}T00:00:00Z`);
+  const lengthDays = Math.round((toMs - fromMs) / dayMs) + 1;
+  return {
+    from: new Date(fromMs - lengthDays * dayMs).toISOString().slice(0, 10),
+    to: new Date(fromMs - dayMs).toISOString().slice(0, 10),
+  };
+}
+/**
+ * The gameCount board: per member, the number of distinct
+ * unified games among their source rows. Ordered by count
+ * descending with the id as tie-break, like every other
+ * ranking. Members without a row in the range never appear
+ * (a zero-game entry is not data the daily table holds).
+ */
+export function buildCommunityLeaderboardGameCounts(
+  rows: readonly CommunityGameUserSourceRow[],
+  mappings: readonly CommunityGameIdentityMapping[],
+): CommunityLeaderboardGameCountItem[] {
+  const keysByUser = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const { key } = resolveCommunityGame(row.name, row.applicationId, mappings);
+    let keys = keysByUser.get(row.discordUserId);
+    if (!keys) {
+      keys = new Set();
+      keysByUser.set(row.discordUserId, keys);
+    }
+    keys.add(key);
+  }
+  return [...keysByUser.entries()]
+    .map(([discordUserId, keys]) => ({ discordUserId, gameCount: keys.size }))
+    .sort((a, b) => b.gameCount - a.gameCount || a.discordUserId.localeCompare(b.discordUserId));
+}
+/**
+ * The growth board: only members whose previous-period
+ * total reaches the one-hour floor and whose seconds grew.
+ * Ordered by the increase descending; ties break to the
+ * larger current total (the bigger presence behind the
+ * same growth), then to the id, so the order is total.
+ */
+export function buildCommunityLeaderboardGrowth(
+  rows: readonly CommunityLeaderboardGrowthItem[],
+): CommunityLeaderboardGrowthItem[] {
+  return rows
+    .filter(
+      (row) =>
+        row.previousSeconds >= COMMUNITY_LEADERBOARD_GROWTH_MIN_PREVIOUS_SECONDS &&
+        row.growthSeconds > 0,
+    )
+    .sort(
+      (a, b) =>
+        b.growthSeconds - a.growthSeconds ||
+        b.currentSeconds - a.currentSeconds ||
+        a.discordUserId.localeCompare(b.discordUserId),
+    );
+}
 export async function authorizeCommunityGameStatsRead(
   request: Request,
   environment: Record<string, string | undefined> = process.env,
@@ -1241,7 +1424,14 @@ export async function authorizeCommunityGameStatsRead(
   )
     return fail(422, 'invalid_request');
   const version = value.version === undefined ? 1 : value.version;
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5)
+  if (
+    version !== 1 &&
+    version !== 2 &&
+    version !== 3 &&
+    version !== 4 &&
+    version !== 5 &&
+    version !== 6
+  )
     return fail(422, 'invalid_request');
   const mode = value.mode === undefined ? 'overview' : value.mode;
   if (mode !== 'overview' && mode !== 'user' && mode !== 'game')
@@ -1260,8 +1450,10 @@ export async function authorizeCommunityGameStatsRead(
     // the players. v3/v4 select by exact gameName only; v5
     // adds the gameApplicationId / gameKey selectors for the
     // unified identity (S7b), and exactly one of the three
-    // selectors must be present.
-    if (version !== 3 && version !== 4 && version !== 5) return fail(422, 'invalid_request');
+    // selectors must be present. v6 keeps the v5 selectors
+    // and game shape unchanged.
+    if (version !== 3 && version !== 4 && version !== 5 && version !== 6)
+      return fail(422, 'invalid_request');
     if (
       discordUserId !== null &&
       (typeof discordUserId !== 'string' || !/^\d{17,20}$/.test(discordUserId))
@@ -1276,14 +1468,16 @@ export async function authorizeCommunityGameStatsRead(
       return fail(422, 'invalid_request');
     if (
       gameApplicationId !== null &&
-      (version !== 5 ||
+      ((version !== 5 && version !== 6) ||
         typeof gameApplicationId !== 'string' ||
         !/^\d{17,20}$/.test(gameApplicationId))
     )
       return fail(422, 'invalid_request');
     if (
       gameKey !== null &&
-      (version !== 5 || typeof gameKey !== 'string' || !isCommunityGameKey(gameKey))
+      ((version !== 5 && version !== 6) ||
+        typeof gameKey !== 'string' ||
+        !isCommunityGameKey(gameKey))
     )
       return fail(422, 'invalid_request');
   } else if (gameName !== null || gameApplicationId !== null || gameKey !== null)

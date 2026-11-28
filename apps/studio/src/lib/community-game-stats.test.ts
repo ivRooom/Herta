@@ -5,12 +5,15 @@ import { readFileSync } from 'node:fs';
 import {
   aggregateCommunityGamesOverviewV5,
   authorizeCommunityGameStatsRead,
+  buildCommunityLeaderboardGameCounts,
+  buildCommunityLeaderboardGrowth,
   buildCommunityMatrix,
   buildCommunityMatrixV5,
   buildCommunityMomentum,
   buildCommunityMomentumV5,
   buildCommunityUserGamesV5,
   buildCommunityWeekdaySeconds,
+  communityGamePreviousRange,
   COMMUNITY_CHANNEL_BREAKDOWN_LIMIT,
   COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT,
   COMMUNITY_GAME_STATS_PATH,
@@ -38,6 +41,8 @@ import {
   projectCommunityGameStatRow,
   projectCommunityGameUserSourceRow,
   projectCommunityInsightsTotalsRow,
+  projectCommunityLeaderboardGrowthRow,
+  projectCommunityLeaderboardPlayDaysRow,
   projectCommunityMatrixCellRow,
   projectCommunityMomentumNewPlayersRow,
   projectCommunityMomentumRecentRow,
@@ -240,8 +245,11 @@ test('read route casts every range bound to date (PG 42883 regression)', () => {
   const placeholders = route.match(/\$\{input\.(?:from|to)\}/g) ?? [];
   const casted = route.match(/\$\{input\.(?:from|to)\}::date/g) ?? [];
   // 73 through v4; v5 adds the unified per-user reads, the
-  // v5 insights reads and the game-detail selector reads.
-  assert.equal(placeholders.length, 91);
+  // v5 insights reads and the game-detail selector reads;
+  // v6 adds the leaderboards reads (the unified source rows,
+  // the play-days read and count, and the growth window
+  // split, which names the range start twice more).
+  assert.equal(placeholders.length, 100);
   assert.equal(casted.length, placeholders.length);
 });
 test('read route casts every SUM(value) aggregate to bigint (PG numeric regression)', () => {
@@ -261,8 +269,9 @@ test('read route casts every SUM(value) aggregate to bigint (PG numeric regressi
   );
   // 12 through v4; v5 adds eight more through the same
   // alias (overview / user / insights unified reads, the
-  // momentum window, and the two game-detail selectors).
-  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 20);
+  // momentum window, and the two game-detail selectors);
+  // v6 adds the leaderboards unified source read.
+  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 21);
   assert.equal((route.match(/SUM\(value\)::bigint AS total/g) ?? []).length, 4);
   assert.equal((route.match(/SUM\(value\)::bigint AS "totalCount"/g) ?? []).length, 2);
   // v4 additions follow the same rule: the char-units totals
@@ -1554,8 +1563,9 @@ test('read route pins the v5 query shapes (id column, selector reads, mapping lo
   // The unified reads group by the recorded (name, id)
   // pair; the game-detail name selector only claims
   // id-less rows, which is exactly the set a name mapping
-  // may unify.
-  assert.equal((route.match(/GROUP BY user_id, activity_name, application_id/g) ?? []).length, 5);
+  // may unify. (The v6 leaderboards source read groups the
+  // same way, so the count is six since S9.)
+  assert.equal((route.match(/GROUP BY user_id, activity_name, application_id/g) ?? []).length, 6);
   assert.equal((route.match(/GROUP BY activity_name, application_id/g) ?? []).length, 2);
   assert.ok(route.includes("application_id = '' AND activity_name ="));
   // The mappings come from the guild's Activity Rules
@@ -1563,4 +1573,387 @@ test('read route pins the v5 query shapes (id column, selector reads, mapping lo
   assert.ok(route.includes("pluginId: 'activity-rules'"));
   assert.ok(route.includes('normalizeActivityRulesConfig'));
   assert.ok(route.includes("console.error('community_game_identity_mapping_read_failed', error)"));
+});
+test('version 6 negotiates like v5 and keeps the id / key game selectors', async () => {
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(signed({ ...input, version: 6 }), environment),
+    {
+      ...input,
+      mode: 'overview',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      version: 6,
+    },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({
+        ...input,
+        mode: 'game',
+        gameApplicationId: '762434991303950386',
+        version: 6,
+      }),
+      environment,
+    ),
+    {
+      ...input,
+      mode: 'game',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: '762434991303950386',
+      gameKey: null,
+      version: 6,
+    },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({
+        ...input,
+        mode: 'user',
+        discordUserId: '100000000000000002',
+        version: 6,
+      }),
+      environment,
+    ),
+    {
+      ...input,
+      mode: 'user',
+      discordUserId: '100000000000000002',
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      version: 6,
+    },
+  );
+  for (const value of [
+    { ...input, version: 7 },
+    {
+      ...input,
+      mode: 'game',
+      gameApplicationId: '762434991303950386',
+      version: 2,
+    },
+    { ...input, mode: 'game', gameKey: 'app:762434991303950386', version: 4 },
+  ]) {
+    const response = await authorizeCommunityGameStatsRead(signed(value), environment);
+    assert.ok(response instanceof Response);
+    assert.equal(response.status, 422);
+  }
+});
+test('leaderboard projections emit exactly the contract fields', () => {
+  const playDays = projectCommunityLeaderboardPlayDaysRow({
+    discordUserId: '100000000000000002',
+    playDays: 42,
+  });
+  assert.deepEqual(playDays, {
+    discordUserId: '100000000000000002',
+    playDays: 42,
+  });
+  assert.deepEqual(Object.keys(playDays).sort(), ['discordUserId', 'playDays']);
+  // The growth projection derives the increase from the two
+  // totals; it does not filter — eligibility is the
+  // builder's rule, so a decrease projects as a negative.
+  const growth = projectCommunityLeaderboardGrowthRow({
+    discordUserId: '100000000000000002',
+    currentSeconds: 7200n,
+    previousSeconds: 3600n,
+  });
+  assert.deepEqual(growth, {
+    discordUserId: '100000000000000002',
+    currentSeconds: 7200,
+    previousSeconds: 3600,
+    growthSeconds: 3600,
+  });
+  assert.deepEqual(Object.keys(growth).sort(), [
+    'currentSeconds',
+    'discordUserId',
+    'growthSeconds',
+    'previousSeconds',
+  ]);
+  assert.equal(
+    projectCommunityLeaderboardGrowthRow({
+      discordUserId: '100000000000000002',
+      currentSeconds: 1800n,
+      previousSeconds: 3600n,
+    }).growthSeconds,
+    -1800,
+  );
+  for (const bad of [
+    () =>
+      projectCommunityLeaderboardPlayDaysRow({
+        discordUserId: 'nope',
+        playDays: 1,
+      }),
+    () =>
+      projectCommunityLeaderboardPlayDaysRow({
+        discordUserId: '100000000000000002',
+        playDays: 1.5,
+      }),
+    () =>
+      projectCommunityLeaderboardPlayDaysRow({
+        discordUserId: '100000000000000002',
+        playDays: -1,
+      }),
+    () =>
+      projectCommunityLeaderboardGrowthRow({
+        discordUserId: '100000000000000002',
+        currentSeconds: -1n,
+        previousSeconds: 0n,
+      }),
+  ])
+    assert.throws(bad);
+});
+test('previous range is the same-length window immediately before the range', () => {
+  // A week against the week before it.
+  assert.deepEqual(communityGamePreviousRange({ from: '2026-11-21', to: '2026-11-27' }), {
+    from: '2026-11-14',
+    to: '2026-11-20',
+  });
+  // A 30-day month window: the 30 days before it, not the
+  // calendar month (the G7 comparison definition).
+  assert.deepEqual(communityGamePreviousRange({ from: '2026-11-01', to: '2026-11-30' }), {
+    from: '2026-10-02',
+    to: '2026-10-31',
+  });
+  // A single day, across a year boundary, and across a leap day.
+  assert.deepEqual(communityGamePreviousRange({ from: '2027-01-01', to: '2027-01-01' }), {
+    from: '2026-12-31',
+    to: '2026-12-31',
+  });
+  assert.deepEqual(communityGamePreviousRange({ from: '2028-02-28', to: '2028-03-01' }), {
+    from: '2028-02-25',
+    to: '2028-02-27',
+  });
+  assert.throws(() => communityGamePreviousRange({ from: '2026-11-27', to: '2026-11-21' }));
+  assert.throws(() => communityGamePreviousRange({ from: '2026-02-30', to: '2026-03-01' }));
+});
+test('game count board counts distinct unified games per member', () => {
+  const rows = [
+    // U1 played Genshin under both its names and its id:
+    // one unified game, not three.
+    {
+      discordUserId: '100000000000000011',
+      name: 'Genshin Impact',
+      applicationId: '762434991303950386',
+      totalSeconds: 3600,
+    },
+    {
+      discordUserId: '100000000000000011',
+      name: '原神',
+      applicationId: null,
+      totalSeconds: 1800,
+    },
+    {
+      discordUserId: '100000000000000011',
+      name: '原神',
+      applicationId: '762434991303950386',
+      totalSeconds: 60,
+    },
+    {
+      discordUserId: '100000000000000011',
+      name: 'VALORANT',
+      applicationId: null,
+      totalSeconds: 7200,
+    },
+    // U2 played two games; the tie with U3 breaks by id.
+    {
+      discordUserId: '100000000000000012',
+      name: 'VALORANT',
+      applicationId: null,
+      totalSeconds: 100,
+    },
+    {
+      discordUserId: '100000000000000012',
+      name: 'Minecraft',
+      applicationId: null,
+      totalSeconds: 100,
+    },
+    {
+      discordUserId: '100000000000000013',
+      name: 'VALORANT',
+      applicationId: null,
+      totalSeconds: 100,
+    },
+    {
+      discordUserId: '100000000000000013',
+      name: 'Minecraft',
+      applicationId: null,
+      totalSeconds: 100,
+    },
+  ];
+  assert.deepEqual(buildCommunityLeaderboardGameCounts(rows, identityMappings), [
+    { discordUserId: '100000000000000011', gameCount: 2 },
+    { discordUserId: '100000000000000012', gameCount: 2 },
+    { discordUserId: '100000000000000013', gameCount: 2 },
+  ]);
+  // Without mappings the localized name and the id group
+  // stay apart — the documented pre-mapping behaviour.
+  assert.deepEqual(buildCommunityLeaderboardGameCounts(rows, []), [
+    { discordUserId: '100000000000000011', gameCount: 3 },
+    { discordUserId: '100000000000000012', gameCount: 2 },
+    { discordUserId: '100000000000000013', gameCount: 2 },
+  ]);
+  assert.deepEqual(buildCommunityLeaderboardGameCounts([], identityMappings), []);
+});
+test('growth board keeps only members with a previous hour and a positive increase', () => {
+  const board = buildCommunityLeaderboardGrowth([
+    // Eligible: grew by an hour over a solid previous week.
+    {
+      discordUserId: '100000000000000011',
+      currentSeconds: 10800,
+      previousSeconds: 7200,
+      growthSeconds: 3600,
+    },
+    // Eligible and tied on growth: the larger current total wins.
+    {
+      discordUserId: '100000000000000012',
+      currentSeconds: 14400,
+      previousSeconds: 10800,
+      growthSeconds: 3600,
+    },
+    // Exactly one previous hour is enough.
+    {
+      discordUserId: '100000000000000013',
+      currentSeconds: 3601,
+      previousSeconds: 3600,
+      growthSeconds: 1,
+    },
+    // Just under the previous-hour floor: excluded even
+    // though the increase is the largest on the board.
+    {
+      discordUserId: '100000000000000014',
+      currentSeconds: 999999,
+      previousSeconds: 3599,
+      growthSeconds: 996400,
+    },
+    // No previous record at all (a first week) is excluded.
+    {
+      discordUserId: '100000000000000015',
+      currentSeconds: 7200,
+      previousSeconds: 0,
+      growthSeconds: 7200,
+    },
+    // Flat and decreased members are not a leaderboard.
+    {
+      discordUserId: '100000000000000016',
+      currentSeconds: 7200,
+      previousSeconds: 7200,
+      growthSeconds: 0,
+    },
+    {
+      discordUserId: '100000000000000017',
+      currentSeconds: 3600,
+      previousSeconds: 7200,
+      growthSeconds: -3600,
+    },
+  ]);
+  assert.deepEqual(board, [
+    {
+      discordUserId: '100000000000000012',
+      currentSeconds: 14400,
+      previousSeconds: 10800,
+      growthSeconds: 3600,
+    },
+    {
+      discordUserId: '100000000000000011',
+      currentSeconds: 10800,
+      previousSeconds: 7200,
+      growthSeconds: 3600,
+    },
+    {
+      discordUserId: '100000000000000013',
+      currentSeconds: 3601,
+      previousSeconds: 3600,
+      growthSeconds: 1,
+    },
+  ]);
+  assert.deepEqual(buildCommunityLeaderboardGrowth([]), []);
+});
+test('v6 contract JSON extends v5 without changing the v1–v5 shapes', () => {
+  const read = (name: string) =>
+    JSON.parse(
+      readFileSync(new URL(`../../../../contracts/ivrm/${name}`, import.meta.url), 'utf8'),
+    ) as {
+      $id: string;
+      description: string;
+      $defs: Record<string, { required?: string[]; properties?: Record<string, unknown> }>;
+    };
+  const v5 = read('herta-community-game-stats-read.v5.json');
+  const v6 = read('herta-community-game-stats-read.v6.json');
+  assert.equal(v6.$id, 'https://ivrm.jp/contracts/herta-community-game-stats-read/v6');
+  assert.ok(v6.description.includes(COMMUNITY_GAME_STATS_PATH));
+  assert.ok(v6.description.includes(COMMUNITY_GAME_STATS_PURPOSE));
+  // Every v5 definition except the request is carried over
+  // unchanged in structure.
+  for (const name of Object.keys(v5.$defs).filter((key) => key !== 'request'))
+    assert.deepEqual(v6.$defs[name], v5.$defs[name]);
+  // The request only widens the version enum.
+  assert.deepEqual(
+    Object.keys(v6.$defs.request.properties ?? {}).sort(),
+    Object.keys(v5.$defs.request.properties ?? {}).sort(),
+  );
+  assert.deepEqual(v6.$defs.request.required, v5.$defs.request.required);
+  assert.deepEqual(
+    (v6.$defs.request.properties?.version as { enum: number[] }).enum,
+    [1, 2, 3, 4, 5, 6],
+  );
+  // The v6 overview is the v5 overview plus the required
+  // leaderboards section; nothing else moves.
+  assert.deepEqual(
+    Object.keys(v6.$defs.overviewResponseV6.properties ?? {}).sort(),
+    [...Object.keys(v5.$defs.overviewResponseV5.properties ?? {}), 'leaderboards'].sort(),
+  );
+  assert.deepEqual(Object.keys(v6.$defs.leaderboardsOverview.properties ?? {}).sort(), [
+    'gameCount',
+    'growth',
+    'playDays',
+  ]);
+  const boards = v6.$defs.leaderboardsOverview.properties as unknown as Record<
+    string,
+    {
+      properties: Record<string, { items?: { properties: Record<string, unknown> } } | undefined>;
+    }
+  >;
+  assert.deepEqual(Object.keys(boards.gameCount.properties.items?.items?.properties ?? {}).sort(), [
+    'discordUserId',
+    'gameCount',
+  ]);
+  assert.deepEqual(Object.keys(boards.playDays.properties.items?.items?.properties ?? {}).sort(), [
+    'discordUserId',
+    'playDays',
+  ]);
+  assert.deepEqual(Object.keys(boards.growth.properties.items?.items?.properties ?? {}).sort(), [
+    'currentSeconds',
+    'discordUserId',
+    'growthSeconds',
+    'previousSeconds',
+  ]);
+  assert.deepEqual(Object.keys(boards.growth.properties ?? {}).sort(), [
+    'items',
+    'pagination',
+    'previousRange',
+  ]);
+});
+test('read route pins the v6 query shapes (distinct days, previous window, fail-soft)', () => {
+  const route = readFileSync(
+    new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
+    'utf8',
+  );
+  // playDays counts distinct activity dates per member.
+  assert.ok(route.includes('COUNT(DISTINCT activity_date)::int AS "playDays"'));
+  // Growth splits one grouped read at the range start and
+  // bounds it by the derived previous window.
+  assert.ok(
+    route.includes(
+      'SUM(CASE WHEN activity_date >= ${input.from}::date THEN value ELSE 0 END)::bigint AS "currentSeconds"',
+    ),
+  );
+  assert.ok(route.includes('communityGamePreviousRange({ from: input.from, to: input.to })'));
+  assert.ok(route.includes('activity_date >= ${previousRange.from}::date'));
+  // The section degrades to null like the other sections,
+  // and only a v6 overview carries it.
+  assert.ok(route.includes("console.error('community_leaderboards_read_failed', error)"));
+  assert.ok(route.includes('leaderboards: await readOverviewLeaderboards(input, mappings)'));
 });
