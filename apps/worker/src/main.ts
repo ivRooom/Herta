@@ -18,6 +18,7 @@ import { startLfgRuntime, type LfgRuntime } from './lfg.js';
 import { startTeamSplitRuntime, type TeamSplitWorkerRuntime } from './team-split.js';
 import {
   createTicketDiscordOutboxStore,
+  createTicketThreadCreateDeps,
   startTicketDiscordPollerRuntime,
   type TicketDiscordPollerRuntime,
 } from './ticket-discord-outbox.js';
@@ -323,6 +324,20 @@ async function main() {
                 apiBaseUrl: ticketAttachmentApiBaseUrl.replace(/\/+$/, ''),
                 secret: ticketAttachmentSecret,
               }
+            : null,
+        // thread_create (ivrm-web #2098 WC-S4): Web 起票チケットの Discord
+        // スレッド作成には Herta DB (guild_plugins / TicketThreadLink) と
+        // /thread 署名ブリッジが要る。どちらか欠けたまま thread_create 行が
+        // 来ると、poller 側で恒久 failed になる (Admin の再送で復旧可能)。
+        threadCreate:
+          databaseConfigured && ticketAttachmentApiBaseUrl && ticketAttachmentSecret
+            ? createTicketThreadCreateDeps({
+                prisma: getPrismaClient(),
+                bridge: {
+                  apiBaseUrl: ticketAttachmentApiBaseUrl.replace(/\/+$/, ''),
+                  secret: ticketAttachmentSecret,
+                },
+              })
             : null,
       });
       logger.info('チケット配送Pollerを開始しました');
