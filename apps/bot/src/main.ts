@@ -21,6 +21,15 @@ import { HertaBot } from './bot.js';
 import { scrubExpiredMemberActivityContent } from './plugins/activity-log-repository.js';
 import { loadHealthConfig } from './health/config.js';
 import { HealthHttpServer } from './health/server.js';
+import {
+  isValorantPortalApiConfigured,
+  loadValorantPortalApiConfig,
+  type ValorantPortalPrisma,
+} from './plugins/valorant-portal-api.js';
+import {
+  startValorantPortalApiServer,
+  type ValorantPortalApiServer,
+} from './plugins/valorant-portal-server.js';
 import { HertaHealthService } from './health/service.js';
 import { RuleProductionRuntime } from './rules/runtime.js';
 import { createPrismaRuleRuntimeStore } from './rules/store.js';
@@ -100,6 +109,42 @@ const healthServer = healthConfig.enabled
       releaseNotifySecret: process.env['HERTA_RELEASE_NOTIFY_SECRET']?.trim(),
     })
   : undefined;
+
+// VALORANT ポータル API (S6-H1)。フラグ既定 OFF で、OFF のときは
+// リスナーを生成しない。起動失敗でも Bot 本体は継続する (fail-soft)。
+const valorantPortalConfig = loadValorantPortalApiConfig();
+let valorantPortalServer: ValorantPortalApiServer | null = null;
+
+async function startValorantPortalApi(): Promise<void> {
+  if (!valorantPortalConfig.enabled) return;
+  if (!isValorantPortalApiConfigured(valorantPortalConfig)) {
+    logger.warn(
+      'VALORANT portal API は有効ですが、HERTA_PORTAL_API_SECRET または IVRM_INTEGRATION_GUILD_ID が不足しているため起動しません',
+    );
+    return;
+  }
+  if (!process.env['DATABASE_URL']) {
+    logger.warn('VALORANT portal API は DATABASE_URL が無いため起動しません');
+    return;
+  }
+  const guildId = valorantPortalConfig.guildId;
+  valorantPortalServer = await startValorantPortalApiServer({
+    config: valorantPortalConfig,
+    secret: valorantPortalConfig.secret,
+    logger,
+    deps: {
+      prisma: getPrismaClient() as unknown as ValorantPortalPrisma,
+      guildId,
+      guild: {
+        getMember: (userId) => bot.getValorantPortalMember(guildId, userId),
+        listPostableTextChannels: async () =>
+          bot.listValorantPortalChannels(guildId)?.textChannels ?? [],
+        listVoiceChannels: async () => bot.listValorantPortalChannels(guildId)?.voiceChannels ?? [],
+        resolveDisplayNames: (userIds) => bot.resolveValorantPortalDisplayNames(guildId, userIds),
+      },
+    },
+  });
+}
 
 const RETENTION_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 const EXECUTION_ANALYTICS_RETENTION_DAYS = 90;
@@ -316,6 +361,7 @@ async function main(): Promise<void> {
     await pruneRetainedData();
     await healthServer?.start();
     await bot.start();
+    await startValorantPortalApi();
     if (ruleRuntime) {
       try {
         await ruleRuntime.start();
@@ -332,6 +378,7 @@ async function main(): Promise<void> {
     stopRetentionPruning();
     await stopHealthSnapshotCollection();
     await ruleRuntime?.close().catch(() => undefined);
+    await valorantPortalServer?.stop().catch(() => undefined);
     await healthServer?.stop().catch(() => undefined);
     logger.fatal(error, 'Bot の起動に失敗しました');
     process.exitCode = 1;
@@ -347,6 +394,7 @@ async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
 
   const results = await Promise.allSettled([
     ruleRuntime?.close(),
+    valorantPortalServer?.stop(),
     healthServer?.stop(),
     bot.stop(),
   ]);

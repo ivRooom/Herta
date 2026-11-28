@@ -1,5 +1,6 @@
 import {
   ActivityType,
+  ChannelType,
   Client,
   Events,
   GatewayIntentBits,
@@ -127,6 +128,10 @@ import {
 } from './plugins/activity-xp-outbox-repository.js';
 import { reportActivityXpEmitterStatus } from './plugins/activity-xp-emitter-status.js';
 import { searchGuildMemberOptions, type GuildMemberOption } from './health/guild-members.js';
+import type {
+  ValorantPortalChannelOption,
+  ValorantPortalMemberInfo,
+} from './plugins/valorant-portal-api.js';
 import {
   getGuildBotProfile as getDiscordGuildBotProfile,
   updateGuildBotProfile as updateDiscordGuildBotProfile,
@@ -1324,6 +1329,82 @@ export class HertaBot {
     limit: number,
   ): Promise<GuildMemberOption[] | null> {
     return searchGuildMemberOptions(this.client, guildId, query, limit);
+  }
+
+  /**
+   * VALORANT ポータル API (S6-H1) 用: actor の Guild メンバー情報を
+   * 返す。権限 (Administrator || ManageGuild) はここで算出し、
+   * 呼び出し側からの申告は受けない。メンバーでなければ null。
+   * 権限の鮮度のためキャッシュに無ければ REST で取得する。
+   */
+  async getValorantPortalMember(
+    guildId: string,
+    userId: string,
+  ): Promise<ValorantPortalMemberInfo | null> {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return null;
+    const member =
+      guild.members.cache.get(userId) ?? (await guild.members.fetch(userId).catch(() => null));
+    if (!member) return null;
+    return {
+      userId,
+      displayName: member.displayName,
+      isAdmin:
+        member.permissions.has(PermissionFlagsBits.Administrator) ||
+        member.permissions.has(PermissionFlagsBits.ManageGuild),
+    };
+  }
+
+  /** VALORANT ポータル API 用: 投稿先チャンネルと VC の候補 (Guild キャッシュから) */
+  listValorantPortalChannels(guildId: string): {
+    textChannels: ValorantPortalChannelOption[];
+    voiceChannels: ValorantPortalChannelOption[];
+  } | null {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return null;
+    const me = guild.members.me;
+    const textChannels: (ValorantPortalChannelOption & { position: number })[] = [];
+    const voiceChannels: (ValorantPortalChannelOption & { position: number })[] = [];
+    for (const channel of guild.channels.cache.values()) {
+      if (
+        channel.type === ChannelType.GuildText ||
+        channel.type === ChannelType.GuildAnnouncement
+      ) {
+        const permissions = me ? channel.permissionsFor(me) : null;
+        if (permissions?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages])) {
+          textChannels.push({ id: channel.id, name: channel.name, position: channel.position });
+        }
+      } else if (channel.type === ChannelType.GuildVoice) {
+        voiceChannels.push({ id: channel.id, name: channel.name, position: channel.position });
+      }
+    }
+    const byPosition = (
+      a: ValorantPortalChannelOption & { position: number },
+      b: ValorantPortalChannelOption & { position: number },
+    ) => a.position - b.position || a.name.localeCompare(b.name);
+    const strip = ({ id, name }: ValorantPortalChannelOption) => ({ id, name });
+    return {
+      textChannels: textChannels.sort(byPosition).map(strip),
+      voiceChannels: voiceChannels.sort(byPosition).map(strip),
+    };
+  }
+
+  /** VALORANT ポータル API 用: 参加者等の表示名を Guild メンバーから解決する */
+  async resolveValorantPortalDisplayNames(
+    guildId: string,
+    userIds: readonly string[],
+  ): Promise<Map<string, string>> {
+    const resolved = new Map<string, string>();
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return resolved;
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const member =
+          guild.members.cache.get(userId) ?? (await guild.members.fetch(userId).catch(() => null));
+        if (member) resolved.set(userId, member.displayName);
+      }),
+    );
+    return resolved;
   }
 
   async addRuleMemberRole(input: {
