@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   deleteVoice: vi.fn().mockResolvedValue({ deletedSessions: 1, redactedSessions: 2 }),
   revokeVoice: vi.fn().mockResolvedValue(undefined),
   consent: vi.fn().mockResolvedValue({ voiceTranscriptionConsent: false, updatedAt: new Date(0) }),
+  ticketLinkEnabled: vi.fn(() => false),
+  erasureCaseCreate: vi.fn(),
+  buildErasurePayload: vi.fn((input: unknown) => ({ kind: 'create', input })),
+  enqueue: vi.fn().mockResolvedValue(1),
   voice: vi.fn().mockResolvedValue([]),
   transcript: vi.fn().mockResolvedValue([
     {
@@ -35,6 +39,14 @@ vi.mock('@herta/db', () => ({
   requestVcRecapErasure: mocks.erasure,
   setVcRecapOpenAiAudioConsent: mocks.openAiConsent,
   setVoiceTranscriptionConsent: mocks.revokeVoice,
+  createVcRecapErasureCase: mocks.erasureCaseCreate,
+  isVcRecapErasureTicketLinkEnabled: mocks.ticketLinkEnabled,
+}));
+vi.mock('../plugins/tickets-core.js', () => ({
+  buildTicketErasureCreatePayload: mocks.buildErasurePayload,
+}));
+vi.mock('../plugins/tickets-outbox-repository.js', () => ({
+  enqueueTicketPayloads: mocks.enqueue,
 }));
 vi.mock('../voice/vc-recap-session-manager.js', () => ({
   revokeVcRecapConsent: mocks.revokeActive,
@@ -127,6 +139,108 @@ describe('privacy delete-voice-data', () => {
     expect(notice).toContain('完全削除完了通知ではありません');
     expect(notice).toContain('バックアップ');
     expect(notice).toContain('削除障壁');
+  });
+});
+
+describe('privacy delete-voice-data (チケット連携フラグ ON・方式B)', () => {
+  function ticketedInteraction(overrides: Record<string, unknown> = {}) {
+    return {
+      user: { id: 'owner-user', username: 'owner', displayName: 'Owner' },
+      guildId: 'guild-1',
+      options: {
+        getSubcommand: () => 'delete-voice-data',
+        getString: () => null,
+      },
+      reply: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  it('fence と同意失効は即時に効かせ、PG 削除は実行せずケース登録と起票を行う', async () => {
+    mocks.ticketLinkEnabled.mockReturnValueOnce(true);
+    mocks.deleteVoice.mockClear();
+    mocks.enqueue.mockClear();
+    mocks.buildErasurePayload.mockClear();
+    const order: string[] = [];
+    mocks.erasure.mockImplementationOnce(async () => {
+      order.push('fence');
+    });
+    mocks.erasureCaseCreate.mockImplementationOnce(async () => {
+      order.push('case');
+      return { created: true, erasureCase: { requestId: 'req-new' } };
+    });
+    mocks.enqueue.mockImplementationOnce(async () => {
+      order.push('enqueue');
+      return 1;
+    });
+    mocks.revokeVoice.mockImplementationOnce(async () => {
+      order.push('consent-off');
+    });
+    const interaction = ticketedInteraction({
+      options: {
+        getSubcommand: () => 'delete-voice-data',
+        getString: () => ' 退会のため ',
+      },
+    });
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(order).toEqual(['fence', 'case', 'enqueue', 'consent-off']);
+    // 承認前に PG 削除は実行されない。
+    expect(mocks.deleteVoice).not.toHaveBeenCalled();
+    expect(mocks.erasure).toHaveBeenCalledWith(expect.anything(), 'owner-user');
+    expect(mocks.erasureCaseCreate).toHaveBeenCalledWith(expect.anything(), {
+      userId: 'owner-user',
+      guildId: 'guild-1',
+      reason: '退会のため',
+    });
+    expect(mocks.buildErasurePayload).toHaveBeenCalledWith({
+      requestId: 'req-new',
+      discordUserId: 'owner-user',
+      requesterName: 'Owner',
+    });
+    expect(mocks.enqueue).toHaveBeenCalledWith(expect.anything(), 'guild-1', [
+      expect.objectContaining({ kind: 'create' }),
+    ]);
+    const notice = interaction.reply.mock.calls[0]![0].content as string;
+    expect(notice).toContain('削除申請を受け付けました');
+    expect(notice).toContain('req-new');
+    expect(notice).toContain('承認の後に実行されます');
+  });
+
+  it('未完了ケースがある間は新規の起票をせず、既存の申請を案内する', async () => {
+    mocks.ticketLinkEnabled.mockReturnValueOnce(true);
+    mocks.deleteVoice.mockClear();
+    mocks.enqueue.mockClear();
+    mocks.erasureCaseCreate.mockResolvedValueOnce({
+      created: false,
+      erasureCase: { requestId: 'req-open' },
+    });
+    const interaction = ticketedInteraction();
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(mocks.deleteVoice).not.toHaveBeenCalled();
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+    const notice = interaction.reply.mock.calls[0]![0].content as string;
+    expect(notice).toContain('既に受け付けています');
+    expect(notice).toContain('req-open');
+  });
+
+  it('Guild 外 (DM) では起票を登録しないが、申請自体は受け付ける', async () => {
+    mocks.ticketLinkEnabled.mockReturnValueOnce(true);
+    mocks.enqueue.mockClear();
+    mocks.erasureCaseCreate.mockResolvedValueOnce({
+      created: true,
+      erasureCase: { requestId: 'req-dm' },
+    });
+    const interaction = ticketedInteraction({ guildId: null });
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+    expect(mocks.erasureCaseCreate).toHaveBeenCalledWith(expect.anything(), {
+      userId: 'owner-user',
+      guildId: null,
+      reason: null,
+    });
+    const notice = interaction.reply.mock.calls[0]![0].content as string;
+    expect(notice).toContain('削除申請を受け付けました');
+    expect(notice).toContain('req-dm');
   });
 });
 
