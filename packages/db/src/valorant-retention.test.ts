@@ -72,6 +72,49 @@ test('90-day retention updates terminal session and match but does not delete hi
   });
 });
 
+test('90-day retention anonymizes portal session action actors (#1050 S6-H2)', async () => {
+  const actions: Array<{ name: string; data?: unknown }> = [];
+  const tx = {
+    valorantPickSession: {
+      updateMany: async (input: { data: unknown }) => {
+        actions.push({ name: 'session', data: input.data });
+        return { count: 1 };
+      },
+    },
+    valorantPickParticipant: {
+      deleteMany: async () => {
+        actions.push({ name: 'participants' });
+        return { count: 1 };
+      },
+    },
+    valorantPickSessionAction: {
+      updateMany: async (input: { where: unknown; data: unknown }) => {
+        actions.push({ name: 'session-actions', data: input.data });
+        return { count: 2 };
+      },
+    },
+    valorantMatchResult: {
+      findUnique: async () => null,
+      update: async () => ({}),
+    },
+  };
+  const prisma = {
+    valorantPickSession: {
+      updateMany: async () => ({ count: 0 }),
+      findMany: async () => [
+        { id: 'portal-session', guildId: 'synthetic-guild', result: null, mode: 'RANDOM' },
+      ],
+    },
+    $transaction: async (cb: (arg: typeof tx) => Promise<boolean>) => cb(tx),
+  } as unknown as PrismaClient;
+  assert.equal(await anonymizeOldValorantSessions(prisma, new Date('2027-03-01'), 1), 1);
+  assert.deepEqual(
+    actions.map((item) => item.name),
+    ['session', 'participants', 'session-actions'],
+  );
+  assert.deepEqual(actions[2]?.data, { actorUserId: 'redacted' });
+});
+
 test('werewolf game anonymization drops every identifier but keeps counts (#1049)', () => {
   const scrubbed = anonymizeWerewolfGameData({
     rosterSnapshot: [

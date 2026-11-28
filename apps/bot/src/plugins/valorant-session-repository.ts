@@ -101,6 +101,8 @@ export function createValorantSession(
     rulesVersion: string;
     voiceChannelId?: string | null;
     vcAutoJoin?: boolean;
+    /** Portal creation (S6-H2) may seed the creator's troll-off choice. */
+    trollOffUserIds?: string[];
   },
 ) {
   return prisma.valorantPickSession.create({ data: input, include: { participants: true } });

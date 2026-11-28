@@ -1337,6 +1337,11 @@ export class HertaBot {
    * 呼び出し側からの申告は受けない。メンバーでなければ null。
    * 権限の鮮度のためキャッシュに無ければ REST で取得する。
    */
+  /** VALORANT ポータル API (S6-H2) の Discord 反映ポート用クライアント */
+  getValorantPortalDiscordClient(): unknown {
+    return this.client;
+  }
+
   async getValorantPortalMember(
     guildId: string,
     userId: string,

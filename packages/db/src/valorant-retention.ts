@@ -102,6 +102,15 @@ export async function anonymizeOldValorantSessions(
       });
       if (update.count !== 1) return false;
       await tx.valorantPickParticipant.deleteMany({ where: { sessionId: session.id } });
+      // Portal/Discord operation actor records (#1050, S6-H2) carry the
+      // same Discord IDs, so they are anonymized on the same schedule.
+      // Guarded for callers whose transaction fake predates the table.
+      if (tx.valorantPickSessionAction) {
+        await tx.valorantPickSessionAction.updateMany({
+          where: { sessionId: session.id, actorUserId: { not: REDACTED } },
+          data: { actorUserId: REDACTED },
+        });
+      }
       if (session.mode === 'WEREWOLF') {
         // Werewolf secrets and votes must not outlive the retention
         // window (#1049): delete both outright and scrub the game's
