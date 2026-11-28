@@ -204,7 +204,7 @@ async function handleMyId(
   );
 }
 
-function buildValorantSessionMessage(
+export function buildValorantSessionMessage(
   session: ValorantSessionSnapshot,
   options: { trollGachaEnabled?: boolean } = {},
 ) {
@@ -584,7 +584,7 @@ async function buildWerewolfMessageForState(
   return buildValorantWerewolfMessage(session, game, { votedCount, revealed });
 }
 
-async function buildValorantRichMessage(
+export async function buildValorantRichMessage(
   session: ValorantSessionSnapshot,
   logger: Logger,
   displayName?: (userId: string) => string | undefined,
@@ -642,7 +642,7 @@ async function buildValorantRichMessage(
  * でも同じ縛りが見えるようにする。判定は ivrm-web 側 (S1) のみで、
  * ここでは二重抽選しない。
  */
-async function applyValorantTrollsToSession(
+export async function applyValorantTrollsToSession(
   prisma: PrismaClient,
   logger: Logger,
   session: ValorantSessionSnapshot,
@@ -704,7 +704,7 @@ async function applyValorantTrollsToSession(
   return { ...session, result: merged } as ValorantSessionSnapshot;
 }
 
-function pickValorantAssignments(
+export function pickValorantAssignments(
   participants: string[],
   available: readonly ValorantCandidate[],
   mode: string,
@@ -733,7 +733,7 @@ function pickValorantAssignments(
   });
 }
 
-async function getActiveValorantCandidates(
+export async function getActiveValorantCandidates(
   prisma: PrismaClient,
   guildId: string,
   config: ValorantPluginConfig,
@@ -1149,7 +1149,7 @@ interface ValorantRecruitmentClientLike {
  * reached through the client. Failures only log — the DB stays the source
  * of truth and the next interaction-driven rebuild catches the display up.
  */
-async function syncValorantRecruitmentFromClient(
+export async function syncValorantRecruitmentFromClient(
   client: unknown,
   prisma: PrismaClient,
   logger: Logger,
@@ -1181,6 +1181,88 @@ async function syncValorantRecruitmentFromClient(
     );
     return false;
   }
+}
+
+/**
+ * Discord reflection port for the portal API (S6-H2, #1050). The portal
+ * operations layer talks to Discord only through this port so tests can
+ * substitute a fake. Posting a recruitment message is the one operation
+ * allowed to throw (creation must fail without leaving a session row);
+ * every later reflection is fail-soft because the DB is the source of
+ * truth and the next interaction-driven rebuild catches the display up.
+ */
+export interface ValorantPortalDiscordPort {
+  postRecruitmentMessage(session: ValorantSessionSnapshot): Promise<string>;
+  syncRecruitment(session: ValorantSessionSnapshot): Promise<boolean>;
+  publishDrawResult(
+    session: ValorantSessionSnapshot,
+    displayName?: (userId: string) => string | undefined,
+  ): Promise<boolean>;
+}
+
+interface ValorantPortalSendableChannel {
+  isTextBased: () => boolean;
+  send: (options: unknown) => Promise<{ id: string }>;
+  messages: {
+    fetch: (messageId: string) => Promise<{ edit: (options: unknown) => Promise<unknown> }>;
+  };
+}
+
+export function createValorantPortalDiscordPort(
+  client: unknown,
+  prisma: PrismaClient,
+  logger: Logger,
+): ValorantPortalDiscordPort {
+  const fetchChannel = async (
+    session: ValorantSessionSnapshot,
+  ): Promise<ValorantPortalSendableChannel> => {
+    const candidate = client as ValorantRecruitmentClientLike | null;
+    if (typeof candidate?.guilds?.fetch !== 'function') throw new Error('guild unavailable');
+    const guild = await candidate.guilds.fetch(session.guildId);
+    if (!guild) throw new Error('guild unavailable');
+    const channel = (await guild.channels.fetch(
+      session.channelId,
+    )) as ValorantPortalSendableChannel | null;
+    if (!channel || !channel.isTextBased()) throw new Error('channel unavailable');
+    return channel;
+  };
+  return {
+    async postRecruitmentMessage(session) {
+      const channel = await fetchChannel(session);
+      const trollGachaEnabled = await loadValorantTrollGachaEnabled(prisma, session.guildId);
+      const message = await channel.send({
+        ...buildValorantSessionMessage(session, { trollGachaEnabled }),
+      });
+      return message.id;
+    },
+    async syncRecruitment(session) {
+      return syncValorantRecruitmentFromClient(client, prisma, logger, session);
+    },
+    async publishDrawResult(session, displayName) {
+      try {
+        if (!session.messageId) return false;
+        const channel = await fetchChannel(session);
+        const message = await channel.messages.fetch(session.messageId);
+        const trollGachaEnabled = await loadValorantTrollGachaEnabled(prisma, session.guildId);
+        await message.edit({
+          ...(await buildValorantRichMessage(session, logger, displayName, {
+            trollGachaEnabled,
+          })),
+        });
+        return true;
+      } catch (error) {
+        logger.warn(
+          {
+            guildId: session.guildId,
+            sessionId: session.id,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          },
+          'VALORANTポータル抽選結果のDiscord投稿に失敗',
+        );
+        return false;
+      }
+    },
+  };
 }
 
 /**
