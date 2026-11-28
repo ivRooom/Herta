@@ -13,11 +13,13 @@ import {
   buildCommunityMomentumV5,
   buildCommunityUserGamesV5,
   buildCommunityWeekdaySeconds,
+  buildCommunityWeeklyChampions,
   communityGamePreviousRange,
   COMMUNITY_CHANNEL_BREAKDOWN_LIMIT,
   COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT,
   COMMUNITY_GAME_STATS_PATH,
   COMMUNITY_GAME_STATS_PURPOSE,
+  COMMUNITY_WEEKLY_CHAMPION_LEADERS_LIMIT,
   formatCommunityGameEarliestDate,
   groupCommunityGameRows,
   communityGameGroupIdentity,
@@ -27,8 +29,10 @@ import {
   projectCommunityActivityUserTotals,
   projectCommunityActivityUserTotalsV4,
   projectCommunityActivityVoiceRankingRow,
+  projectCommunityChannelMessageMemberRow,
   projectCommunityChannelMessageRow,
   projectCommunityChannelName,
+  projectCommunityChannelVoiceMemberRow,
   projectCommunityChannelVoiceRow,
   projectCommunityCharUnitsRankingRow,
   projectCommunityCharUnitsTotalsRow,
@@ -49,6 +53,7 @@ import {
   projectCommunityTopGameRow,
   projectCommunityUserGameRow,
   projectCommunityWeekdaySecondsRow,
+  projectCommunityWeeklyChampionRow,
   resolveCommunityGame,
   summarizeCommunityPlayDates,
   toCommunityGameSeconds,
@@ -93,6 +98,8 @@ test('authenticates exact service body, binds Guild and defaults to overview', a
     gameName: null,
     gameApplicationId: null,
     gameKey: null,
+    channelId: null,
+    channelMetric: null,
     version: 1,
   });
   assert.deepEqual(
@@ -107,6 +114,8 @@ test('authenticates exact service body, binds Guild and defaults to overview', a
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 1,
     },
   );
@@ -248,8 +257,10 @@ test('read route casts every range bound to date (PG 42883 regression)', () => {
   // v5 insights reads and the game-detail selector reads;
   // v6 adds the leaderboards reads (the unified source rows,
   // the play-days read and count, and the growth window
-  // split, which names the range start twice more).
-  assert.equal(placeholders.length, 100);
+  // split, which names the range start twice more); v7 adds
+  // the weekly champions read and the channel-mode reads
+  // (totals, members, count, and the two viewer reads).
+  assert.equal(placeholders.length, 112);
   assert.equal(casted.length, placeholders.length);
 });
 test('read route casts every SUM(value) aggregate to bigint (PG numeric regression)', () => {
@@ -270,8 +281,13 @@ test('read route casts every SUM(value) aggregate to bigint (PG numeric regressi
   // 12 through v4; v5 adds eight more through the same
   // alias (overview / user / insights unified reads, the
   // momentum window, and the two game-detail selectors);
-  // v6 adds the leaderboards unified source read.
-  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 21);
+  // v6 adds the leaderboards unified source read; v7 adds
+  // the weekly champions read.
+  assert.equal((route.match(/SUM\(value\)::bigint AS "totalSeconds"/g) ?? []).length, 22);
+  // v7 channel mode reads the channel total, the member
+  // page and the viewer total through one metric-neutral
+  // alias; the branch projects it into the metric's field.
+  assert.equal((route.match(/SUM\(value\)::bigint AS "totalValue"/g) ?? []).length, 3);
   assert.equal((route.match(/SUM\(value\)::bigint AS total/g) ?? []).length, 4);
   assert.equal((route.match(/SUM\(value\)::bigint AS "totalCount"/g) ?? []).length, 2);
   // v4 additions follow the same rule: the char-units totals
@@ -298,6 +314,8 @@ test('version 2 is negotiated by the signed body and defaults to 1', async () =>
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 2,
     },
   );
@@ -313,6 +331,8 @@ test('version 2 is negotiated by the signed body and defaults to 1', async () =>
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 2,
     },
   );
@@ -325,6 +345,8 @@ test('version 2 is negotiated by the signed body and defaults to 1', async () =>
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 1,
     },
   );
@@ -487,6 +509,8 @@ test('version 3 negotiates like v2 and unlocks the game mode', async () => {
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 3,
     },
   );
@@ -502,6 +526,8 @@ test('version 3 negotiates like v2 and unlocks the game mode', async () => {
       gameName: 'VALORANT',
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 3,
     },
   );
@@ -523,6 +549,8 @@ test('version 3 negotiates like v2 and unlocks the game mode', async () => {
       gameName: '原神',
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 3,
     },
   );
@@ -543,6 +571,8 @@ test('version 3 negotiates like v2 and unlocks the game mode', async () => {
       gameName: 'VALORANT',
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 3,
     },
   ]) {
@@ -794,6 +824,8 @@ test('version 4 negotiates like v3 and keeps the game mode', async () => {
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 4,
     },
   );
@@ -809,6 +841,8 @@ test('version 4 negotiates like v3 and keeps the game mode', async () => {
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 4,
     },
   );
@@ -826,6 +860,8 @@ test('version 4 negotiates like v3 and keeps the game mode', async () => {
       gameName: 'VALORANT',
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 4,
     },
   );
@@ -990,7 +1026,10 @@ test('read route pins the v4 query shapes (channel table, breakdown cap, name lo
   );
   // Both channel breakdowns read the channel daily table;
   // recordedFrom is its guild-wide MIN, not range-limited.
-  assert.equal((route.match(/FROM community_activity_channel_daily/g) ?? []).length, 3);
+  // v7 adds the channel mode's six reads of the same table
+  // (recordedFrom, totals, members, count, and the two
+  // viewer reads).
+  assert.equal((route.match(/FROM community_activity_channel_daily/g) ?? []).length, 9);
   assert.ok(route.includes('MIN(activity_date) AS "recordedFrom"'));
   // The breakdown cap is the shared constant in both lists.
   assert.equal((route.match(/\$\{COMMUNITY_CHANNEL_BREAKDOWN_LIMIT\}/g) ?? []).length, 2);
@@ -1022,6 +1061,8 @@ test('version 5 negotiates like v4 and unlocks the id / key game selectors', asy
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 5,
     },
   );
@@ -1037,6 +1078,8 @@ test('version 5 negotiates like v4 and unlocks the id / key game selectors', asy
       gameName: null,
       gameApplicationId: '762434991303950386',
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 5,
     },
   );
@@ -1052,6 +1095,8 @@ test('version 5 negotiates like v4 and unlocks the id / key game selectors', asy
       gameName: null,
       gameApplicationId: null,
       gameKey: 'name:原神',
+      channelId: null,
+      channelMetric: null,
       version: 5,
     },
   );
@@ -1068,6 +1113,8 @@ test('version 5 negotiates like v4 and unlocks the id / key game selectors', asy
       gameName: 'VALORANT',
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 5,
     },
   );
@@ -1584,6 +1631,8 @@ test('version 6 negotiates like v5 and keeps the id / key game selectors', async
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 6,
     },
   );
@@ -1604,6 +1653,8 @@ test('version 6 negotiates like v5 and keeps the id / key game selectors', async
       gameName: null,
       gameApplicationId: '762434991303950386',
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 6,
     },
   );
@@ -1624,11 +1675,13 @@ test('version 6 negotiates like v5 and keeps the id / key game selectors', async
       gameName: null,
       gameApplicationId: null,
       gameKey: null,
+      channelId: null,
+      channelMetric: null,
       version: 6,
     },
   );
   for (const value of [
-    { ...input, version: 7 },
+    { ...input, version: 8 },
     {
       ...input,
       mode: 'game',
@@ -1956,4 +2009,369 @@ test('read route pins the v6 query shapes (distinct days, previous window, fail-
   // and only a v6 overview carries it.
   assert.ok(route.includes("console.error('community_leaderboards_read_failed', error)"));
   assert.ok(route.includes('leaderboards: await readOverviewLeaderboards(input, mappings)'));
+});
+test('version 7 negotiates like v6 and unlocks the channel mode', async () => {
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(signed({ ...input, version: 7 }), environment),
+    {
+      ...input,
+      mode: 'overview',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      channelId: null,
+      channelMetric: null,
+      version: 7,
+    },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({
+        ...input,
+        mode: 'game',
+        gameKey: 'app:762434991303950386',
+        version: 7,
+      }),
+      environment,
+    ),
+    {
+      ...input,
+      mode: 'game',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: 'app:762434991303950386',
+      channelId: null,
+      channelMetric: null,
+      version: 7,
+    },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({
+        ...input,
+        mode: 'channel',
+        channelId: '100000000000000090',
+        channelMetric: 'voice',
+        version: 7,
+      }),
+      environment,
+    ),
+    {
+      ...input,
+      mode: 'channel',
+      discordUserId: null,
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      channelId: '100000000000000090',
+      channelMetric: 'voice',
+      version: 7,
+    },
+  );
+  assert.deepEqual(
+    await authorizeCommunityGameStatsRead(
+      signed({
+        ...input,
+        mode: 'channel',
+        channelId: '100000000000000090',
+        channelMetric: 'messages',
+        discordUserId: '100000000000000002',
+        version: 7,
+      }),
+      environment,
+    ),
+    {
+      ...input,
+      mode: 'channel',
+      discordUserId: '100000000000000002',
+      gameName: null,
+      gameApplicationId: null,
+      gameKey: null,
+      channelId: '100000000000000090',
+      channelMetric: 'messages',
+      version: 7,
+    },
+  );
+  for (const value of [
+    { ...input, version: 8 },
+    // The channel mode exists only in v7.
+    {
+      ...input,
+      mode: 'channel',
+      channelId: '100000000000000090',
+      channelMetric: 'voice',
+      version: 6,
+    },
+    // Both channel selectors are required, and the metric
+    // is the closed wire enum.
+    { ...input, mode: 'channel', channelId: '100000000000000090', version: 7 },
+    { ...input, mode: 'channel', channelMetric: 'voice', version: 7 },
+    {
+      ...input,
+      mode: 'channel',
+      channelId: '100000000000000090',
+      channelMetric: 'online',
+      version: 7,
+    },
+    {
+      ...input,
+      mode: 'channel',
+      channelId: '123',
+      channelMetric: 'voice',
+      version: 7,
+    },
+    // The game selectors and the channel selectors never mix.
+    {
+      ...input,
+      mode: 'channel',
+      channelId: '100000000000000090',
+      channelMetric: 'voice',
+      gameName: 'VALORANT',
+      version: 7,
+    },
+    { ...input, channelId: '100000000000000090', version: 7 },
+    {
+      ...input,
+      mode: 'game',
+      gameName: 'VALORANT',
+      channelMetric: 'voice',
+      version: 7,
+    },
+    // The optional viewer still has to be a snowflake.
+    {
+      ...input,
+      mode: 'channel',
+      channelId: '100000000000000090',
+      channelMetric: 'voice',
+      discordUserId: 'nope',
+      version: 7,
+    },
+  ]) {
+    const response = await authorizeCommunityGameStatsRead(signed(value), environment);
+    assert.ok(response instanceof Response);
+    assert.equal(response.status, 422);
+  }
+});
+test('channel ranking projections emit exactly the contract fields', () => {
+  const voice = projectCommunityChannelVoiceMemberRow({
+    discordUserId: '100000000000000002',
+    totalSeconds: 7200n,
+  });
+  assert.deepEqual(voice, { discordUserId: '100000000000000002', totalSeconds: 7200 });
+  assert.deepEqual(Object.keys(voice).sort(), ['discordUserId', 'totalSeconds']);
+  const message = projectCommunityChannelMessageMemberRow({
+    discordUserId: '100000000000000002',
+    totalCount: 30n,
+  });
+  assert.deepEqual(message, { discordUserId: '100000000000000002', totalCount: 30 });
+  assert.deepEqual(Object.keys(message).sort(), ['discordUserId', 'totalCount']);
+  for (const bad of [
+    () =>
+      projectCommunityChannelVoiceMemberRow({
+        discordUserId: 'nope',
+        totalSeconds: 1n,
+      }),
+    () =>
+      projectCommunityChannelVoiceMemberRow({
+        discordUserId: '100000000000000002',
+        totalSeconds: -1n,
+      }),
+    () =>
+      projectCommunityChannelMessageMemberRow({
+        discordUserId: '100000000000000002',
+        totalCount: 1.5,
+      }),
+  ])
+    assert.throws(bad);
+});
+test('weekly champions assembly partitions weeks and caps the candidates', () => {
+  // Rows arrive unordered; the builder owns the week
+  // order, the candidate order and the cap.
+  const weeks = buildCommunityWeeklyChampions([
+    { weekStart: '2026-11-30', discordUserId: '100000000000000025', totalSeconds: 400 },
+    { weekStart: '2026-11-23', discordUserId: '100000000000000011', totalSeconds: 3600 },
+    { weekStart: '2026-11-30', discordUserId: '100000000000000021', totalSeconds: 700 },
+    { weekStart: '2026-11-30', discordUserId: '100000000000000027', totalSeconds: 200 },
+    { weekStart: '2026-11-23', discordUserId: '100000000000000012', totalSeconds: 7200 },
+    { weekStart: '2026-11-30', discordUserId: '100000000000000024', totalSeconds: 500 },
+    { weekStart: '2026-11-30', discordUserId: '100000000000000022', totalSeconds: 600 },
+    { weekStart: '2026-11-30', discordUserId: '100000000000000026', totalSeconds: 300 },
+    { weekStart: '2026-11-30', discordUserId: '100000000000000023', totalSeconds: 500 },
+    { weekStart: '2026-12-28', discordUserId: '100000000000000011', totalSeconds: 60 },
+  ]);
+  assert.deepEqual(weeks, [
+    {
+      weekStart: '2026-11-23',
+      weekEnd: '2026-11-29',
+      leaders: [
+        { discordUserId: '100000000000000012', totalSeconds: 7200 },
+        { discordUserId: '100000000000000011', totalSeconds: 3600 },
+      ],
+    },
+    {
+      weekStart: '2026-11-30',
+      weekEnd: '2026-12-06',
+      leaders: [
+        { discordUserId: '100000000000000021', totalSeconds: 700 },
+        { discordUserId: '100000000000000022', totalSeconds: 600 },
+        // Tied candidates break by id, and the cap keeps
+        // exactly the leaders limit.
+        { discordUserId: '100000000000000023', totalSeconds: 500 },
+        { discordUserId: '100000000000000024', totalSeconds: 500 },
+        { discordUserId: '100000000000000025', totalSeconds: 400 },
+      ],
+    },
+    {
+      // The week end crosses the year boundary.
+      weekStart: '2026-12-28',
+      weekEnd: '2027-01-03',
+      leaders: [{ discordUserId: '100000000000000011', totalSeconds: 60 }],
+    },
+  ]);
+  assert.equal(COMMUNITY_WEEKLY_CHAMPION_LEADERS_LIMIT, 5);
+  assert.deepEqual(buildCommunityWeeklyChampions([]), []);
+  // The row projection accepts the DATE the SQL returns
+  // (a Date at UTC midnight or a date string).
+  assert.deepEqual(
+    projectCommunityWeeklyChampionRow({
+      weekStart: new Date('2026-11-23T00:00:00.000Z'),
+      discordUserId: '100000000000000002',
+      totalSeconds: 60n,
+    }),
+    { weekStart: '2026-11-23', discordUserId: '100000000000000002', totalSeconds: 60 },
+  );
+  for (const bad of [
+    () =>
+      projectCommunityWeeklyChampionRow({
+        weekStart: null,
+        discordUserId: '100000000000000002',
+        totalSeconds: 60n,
+      }),
+    () =>
+      projectCommunityWeeklyChampionRow({
+        weekStart: '2026-11-23',
+        discordUserId: 'nope',
+        totalSeconds: 60n,
+      }),
+    () =>
+      projectCommunityWeeklyChampionRow({
+        weekStart: '2026-11-23',
+        discordUserId: '100000000000000002',
+        totalSeconds: -1n,
+      }),
+  ])
+    assert.throws(bad);
+});
+test('v7 contract JSON extends v6 without changing the v1–v6 shapes', () => {
+  const read = (name: string) =>
+    JSON.parse(
+      readFileSync(new URL(`../../../../contracts/ivrm/${name}`, import.meta.url), 'utf8'),
+    ) as {
+      $id: string;
+      description: string;
+      oneOf: Array<{ $ref: string }>;
+      $defs: Record<string, { required?: string[]; properties?: Record<string, unknown> }>;
+    };
+  const v6 = read('herta-community-game-stats-read.v6.json');
+  const v7 = read('herta-community-game-stats-read.v7.json');
+  assert.equal(v7.$id, 'https://ivrm.jp/contracts/herta-community-game-stats-read/v7');
+  assert.ok(v7.description.includes(COMMUNITY_GAME_STATS_PATH));
+  assert.ok(v7.description.includes(COMMUNITY_GAME_STATS_PURPOSE));
+  // Every v6 definition except the request is carried over
+  // unchanged in structure.
+  for (const name of Object.keys(v6.$defs).filter((key) => key !== 'request'))
+    assert.deepEqual(v7.$defs[name], v6.$defs[name]);
+  // The request only widens: the channel selectors join,
+  // the mode enum gains channel, the version enum gains 7.
+  assert.deepEqual(
+    Object.keys(v7.$defs.request.properties ?? {}).sort(),
+    [...Object.keys(v6.$defs.request.properties ?? {}), 'channelId', 'channelMetric'].sort(),
+  );
+  assert.deepEqual(v7.$defs.request.required, v6.$defs.request.required);
+  assert.deepEqual(
+    (v7.$defs.request.properties?.version as { enum: number[] }).enum,
+    [1, 2, 3, 4, 5, 6, 7],
+  );
+  assert.deepEqual((v7.$defs.request.properties?.mode as { enum: string[] }).enum, [
+    'overview',
+    'user',
+    'game',
+    'channel',
+  ]);
+  // The v7 overview is the v6 overview plus the required
+  // weeklyChampions section; nothing else moves.
+  assert.deepEqual(
+    Object.keys(v7.$defs.overviewResponseV7.properties ?? {}).sort(),
+    [...Object.keys(v6.$defs.overviewResponseV6.properties ?? {}), 'weeklyChampions'].sort(),
+  );
+  assert.deepEqual(Object.keys(v7.$defs.weeklyChampionsOverview.properties ?? {}).sort(), [
+    'weeks',
+  ]);
+  const week = v7.$defs.weeklyChampionWeek.properties as unknown as {
+    leaders: { maxItems: number };
+  };
+  assert.equal(week.leaders.maxItems, COMMUNITY_WEEKLY_CHAMPION_LEADERS_LIMIT);
+  assert.deepEqual(Object.keys(v7.$defs.weeklyChampionLeader.properties ?? {}).sort(), [
+    'discordUserId',
+    'totalSeconds',
+  ]);
+  // The channel response names the channel, its members
+  // and the viewer; the detail splits by metric.
+  assert.deepEqual(Object.keys(v7.$defs.channelResponse.properties ?? {}).sort(), [
+    'channel',
+    'guildId',
+    'members',
+    'meta',
+    'mode',
+    'range',
+    'status',
+    'viewer',
+  ]);
+  assert.deepEqual(Object.keys(v7.$defs.channelDetailVoice.properties ?? {}).sort(), [
+    'channelId',
+    'memberCount',
+    'metric',
+    'name',
+    'recordedFrom',
+    'totalSeconds',
+  ]);
+  assert.deepEqual(Object.keys(v7.$defs.channelDetailMessage.properties ?? {}).sort(), [
+    'channelId',
+    'memberCount',
+    'metric',
+    'name',
+    'recordedFrom',
+    'totalCount',
+  ]);
+  assert.deepEqual(
+    v7.oneOf.map((entry) => entry.$ref),
+    [
+      ...v6.oneOf.map((entry) => entry.$ref),
+      '#/$defs/overviewResponseV7',
+      '#/$defs/channelResponse',
+    ],
+  );
+});
+test('read route pins the v7 query shapes (week truncation, channel reads, fail-soft)', () => {
+  const route = readFileSync(
+    new URL('../app/api/ivrm/community-game-stats/read/route.ts', import.meta.url),
+    'utf8',
+  );
+  // Weekly champions bucket the JST dates by their
+  // Monday-start week.
+  assert.ok(route.includes('date_trunc(\'week\', activity_date)::date AS "weekStart"'));
+  assert.ok(route.includes("GROUP BY date_trunc('week', activity_date), user_id"));
+  // The section degrades to null like the other sections,
+  // and only a v7 overview carries it.
+  assert.ok(route.includes("console.error('community_weekly_champions_read_failed', error)"));
+  assert.ok(route.includes('weeklyChampions: await readOverviewWeeklyChampions(input)'));
+  // The channel mode reads the channel table through the
+  // metric map and dispatches on the mode like the game
+  // mode does.
+  assert.ok(route.includes("voice: 'voice_seconds'"));
+  assert.ok(route.includes("messages: 'messages'"));
+  assert.ok(route.includes("if (input.mode === 'channel')"));
+  assert.ok(route.includes('readChannelRanking(input)'));
 });

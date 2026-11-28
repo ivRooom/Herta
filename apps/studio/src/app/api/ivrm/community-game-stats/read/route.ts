@@ -12,6 +12,7 @@ import {
   buildCommunityMomentumV5,
   buildCommunityUserGamesV5,
   buildCommunityWeekdaySeconds,
+  buildCommunityWeeklyChampions,
   communityGameGroupIdentity,
   communityGamePreviousRange,
   COMMUNITY_CHANNEL_BREAKDOWN_LIMIT,
@@ -26,8 +27,10 @@ import {
   projectCommunityActivityUserTotals,
   projectCommunityActivityUserTotalsV4,
   projectCommunityActivityVoiceRankingRow,
+  projectCommunityChannelMessageMemberRow,
   projectCommunityChannelMessageRow,
   projectCommunityChannelName,
+  projectCommunityChannelVoiceMemberRow,
   projectCommunityChannelVoiceRow,
   projectCommunityCharUnitsRankingRow,
   projectCommunityCharUnitsTotalsRow,
@@ -50,6 +53,7 @@ import {
   projectCommunityTopGameRow,
   projectCommunityUserGameRow,
   projectCommunityWeekdaySecondsRow,
+  projectCommunityWeeklyChampionRow,
   resolveCommunityGame,
   summarizeCommunityPlayDates,
   toCommunityGameDateString,
@@ -59,6 +63,7 @@ import {
   type CommunityActivityUserTotals,
   type CommunityActivityUserTotalsV4,
   type CommunityActivityVoiceRankingItem,
+  type CommunityChannelMetric,
   type CommunityChannelsOverview,
   type CommunityGameDetail,
   type CommunityGameDetailV5,
@@ -71,6 +76,7 @@ import {
   type CommunityLeaderboardsOverview,
   type CommunityUserGameItem,
   type CommunityUserGameItemV5,
+  type CommunityWeeklyChampionsOverview,
 } from '@/lib/community-game-stats';
 export const dynamic = 'force-dynamic';
 interface ActivityPagination {
@@ -714,6 +720,155 @@ async function readOverviewLeaderboards(
   }
 }
 /**
+ * v7 overview weekly champions (S10, #1082): for every
+ * Monday-start week the range touches, the week's leader
+ * candidates by total play seconds — the raw list the
+ * relay counts weekly titles from (promoting the next
+ * candidate when a leader is opted out), so the supply
+ * applies no opt-out and fixes no champion here. One
+ * grouped read over community_game_activity_daily; the
+ * lib builder orders the weeks, sorts and caps the
+ * candidates. Same fail-soft and casting rules as the
+ * other sections.
+ */
+async function readOverviewWeeklyChampions(
+  input: CommunityGameStatsInput,
+): Promise<CommunityWeeklyChampionsOverview | null> {
+  try {
+    const rows = await prisma.$queryRaw<
+      Array<{ weekStart: Date | string; discordUserId: string; totalSeconds: bigint }>
+    >`SELECT date_trunc('week', activity_date)::date AS "weekStart",
+        user_id AS "discordUserId", SUM(value)::bigint AS "totalSeconds"
+      FROM community_game_activity_daily
+      WHERE guild_id = ${input.guildId}
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY date_trunc('week', activity_date), user_id`;
+    return {
+      weeks: buildCommunityWeeklyChampions(
+        rows.map((row) => projectCommunityWeeklyChampionRow(row)),
+      ),
+    };
+  } catch (error) {
+    console.error('community_weekly_champions_read_failed', error);
+    return null;
+  }
+}
+/**
+ * The stored metric behind a channel-mode metric: the
+ * wire names the axis (voice stay / message count), the
+ * channel table stores the bot's metric names.
+ */
+const COMMUNITY_CHANNEL_DB_METRIC: Record<CommunityChannelMetric, string> = {
+  voice: 'voice_seconds',
+  messages: 'messages',
+};
+interface CommunityChannelRankingDetail {
+  name: string | null;
+  recordedFrom: string | null;
+  totalValue: number;
+  memberCount: number;
+  items: Array<{ discordUserId: string; totalValue: number }>;
+  pagination: ActivityPagination;
+  viewer: { discordUserId: string; rank: number | null; totalValue: number } | null;
+}
+/**
+ * v7 channel mode (S10, #1082): one channel's member
+ * ranking from community_activity_channel_daily, the
+ * channel drill-down behind the v4 channels section.
+ * Like the game mode this is the response's main content,
+ * so a read failure propagates to the 503 catch; a
+ * channel with no rows in the range is not a failure and
+ * reports zeroed totals with an empty ranking. The
+ * channel total is the sum over the same rows the
+ * ranking pages through, so the two always agree with
+ * the v4 per-channel aggregate for the channel. The
+ * channel name resolves through the same guild-options
+ * lookup as the v4 section and degrades to null. The
+ * viewer follows the game mode: competition rank over
+ * all members of the channel, null when the viewer has
+ * no record in it.
+ */
+async function readChannelRanking(
+  input: CommunityGameStatsInput,
+): Promise<CommunityChannelRankingDetail> {
+  const channelId = input.channelId as string;
+  const dbMetric = COMMUNITY_CHANNEL_DB_METRIC[input.channelMetric as CommunityChannelMetric];
+  const recordedRows = await prisma.$queryRaw<Array<{ recordedFrom: Date | string | null }>>`
+    SELECT MIN(activity_date) AS "recordedFrom" FROM community_activity_channel_daily
+    WHERE guild_id = ${input.guildId}`;
+  const totalsRows = await prisma.$queryRaw<
+    Array<{ totalValue: bigint | null; memberCount: number }>
+  >`SELECT SUM(value)::bigint AS "totalValue",
+      COUNT(DISTINCT user_id)::int AS "memberCount"
+    FROM community_activity_channel_daily
+    WHERE guild_id = ${input.guildId} AND channel_id = ${channelId} AND metric = ${dbMetric}
+      AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date`;
+  const memberRows = await prisma.$queryRaw<
+    Array<{ discordUserId: string; totalValue: bigint }>
+  >`SELECT user_id AS "discordUserId", SUM(value)::bigint AS "totalValue"
+    FROM community_activity_channel_daily
+    WHERE guild_id = ${input.guildId} AND channel_id = ${channelId} AND metric = ${dbMetric}
+      AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+    GROUP BY user_id
+    ORDER BY SUM(value) DESC, user_id ASC
+    LIMIT ${input.limit} OFFSET ${input.offset}`;
+  const countRows = await prisma.$queryRaw<Array<{ total: number }>>`
+    SELECT COUNT(*)::int AS total FROM (
+      SELECT user_id FROM community_activity_channel_daily
+      WHERE guild_id = ${input.guildId} AND channel_id = ${channelId} AND metric = ${dbMetric}
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY user_id) ranked_members`;
+  const total = countRows[0]?.total ?? 0;
+  let viewer: CommunityChannelRankingDetail['viewer'] = null;
+  if (input.discordUserId !== null) {
+    const viewerRows = await prisma.$queryRaw<Array<{ totalValue: bigint | null }>>`
+      SELECT SUM(value)::bigint AS "totalValue" FROM community_activity_channel_daily
+      WHERE guild_id = ${input.guildId} AND channel_id = ${channelId} AND metric = ${dbMetric}
+        AND user_id = ${input.discordUserId}
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date`;
+    const viewerValue = toCommunityGameSeconds(viewerRows[0]?.totalValue ?? 0n);
+    let rank: number | null = null;
+    if (viewerValue > 0) {
+      const aheadRows = await prisma.$queryRaw<Array<{ ahead: number }>>`
+        SELECT COUNT(*)::int AS ahead FROM (
+          SELECT user_id FROM community_activity_channel_daily
+          WHERE guild_id = ${input.guildId} AND channel_id = ${channelId}
+            AND metric = ${dbMetric}
+            AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+          GROUP BY user_id
+          HAVING SUM(value) > ${BigInt(viewerValue)}) ahead_members`;
+      rank = (aheadRows[0]?.ahead ?? 0) + 1;
+    }
+    viewer = { discordUserId: input.discordUserId, rank, totalValue: viewerValue };
+  }
+  let name: string | null = null;
+  try {
+    const options = await getGuildConfigurationOptionsCached(input.guildId);
+    name = projectCommunityChannelName(
+      (options?.channels ?? []).find((channel) => channel.id === channelId)?.name,
+    );
+  } catch {
+    // Names degrade to null; the ranking itself stands.
+  }
+  return {
+    name,
+    recordedFrom: formatCommunityGameEarliestDate(recordedRows[0]?.recordedFrom),
+    totalValue: toCommunityGameSeconds(totalsRows[0]?.totalValue ?? 0n),
+    memberCount: totalsRows[0]?.memberCount ?? 0,
+    items: memberRows.map((row) => ({
+      discordUserId: row.discordUserId,
+      totalValue: row.totalValue,
+    })),
+    pagination: {
+      limit: input.limit,
+      offset: input.offset,
+      total,
+      hasNext: input.offset + memberRows.length < total,
+    },
+    viewer,
+  };
+}
+/**
  * v5 game mode by application id / unified key (S7b,
  * #1060): the selector resolves to one unified game; its
  * source rows are fetched per selector (by id, or by name
@@ -984,6 +1139,56 @@ export async function POST(request: Request) {
         viewer,
       });
     }
+    if (input.mode === 'channel') {
+      // v7 channel mode (S10, #1082): one channel's member
+      // ranking, the drill-down behind the v4 channels
+      // section. Like the game mode this is the response's
+      // main content, so a read failure is a 503, not a
+      // null; the items and the viewer carry the metric's
+      // own field (totalSeconds for voice, totalCount for
+      // messages).
+      const detail = await readChannelRanking(input);
+      const voice = input.channelMetric === 'voice';
+      return reply({
+        status: 'ok',
+        guildId: input.guildId,
+        mode: 'channel',
+        range,
+        meta,
+        channel: {
+          channelId: input.channelId as string,
+          name: detail.name,
+          metric: input.channelMetric as CommunityChannelMetric,
+          ...(voice ? { totalSeconds: detail.totalValue } : { totalCount: detail.totalValue }),
+          memberCount: detail.memberCount,
+          recordedFrom: detail.recordedFrom,
+        },
+        members: {
+          items: detail.items.map((item) =>
+            voice
+              ? projectCommunityChannelVoiceMemberRow({
+                  discordUserId: item.discordUserId,
+                  totalSeconds: item.totalValue,
+                })
+              : projectCommunityChannelMessageMemberRow({
+                  discordUserId: item.discordUserId,
+                  totalCount: item.totalValue,
+                }),
+          ),
+          pagination: detail.pagination,
+        },
+        viewer:
+          detail.viewer === null
+            ? null
+            : {
+                discordUserId: detail.viewer.discordUserId,
+                rank: detail.viewer.rank,
+                ...(voice
+                  ? { totalSeconds: detail.viewer.totalValue }
+                  : { totalCount: detail.viewer.totalValue }),
+              },
+      });
+    }
     if (input.mode === 'user') {
       const userId = input.discordUserId as string;
       const totals = await prisma.$queryRaw<Array<{ totalSeconds: bigint | null }>>`
@@ -1049,7 +1254,8 @@ export async function POST(request: Request) {
       // move into the aggregation, because unified totals
       // only exist after grouping. Activity and channels
       // keep the v2 / v4 reads; insights use the v5 variant.
-      // v6 adds the leaderboards section on top (S9, #1081);
+      // v6 adds the leaderboards section on top (S9, #1081)
+      // and v7 the weekly champions section (S10, #1082);
       // every other section is the v5 read unchanged.
       const userRows = await prisma.$queryRaw<
         Array<{
@@ -1097,8 +1303,11 @@ export async function POST(request: Request) {
         activity: await readOverviewActivity(input),
         insights: await readOverviewInsightsV5(input, mappings),
         channels: await readOverviewChannels(input),
-        ...(input.version === 6
+        ...(input.version >= 6
           ? { leaderboards: await readOverviewLeaderboards(input, mappings) }
+          : {}),
+        ...(input.version === 7
+          ? { weeklyChampions: await readOverviewWeeklyChampions(input) }
           : {}),
       });
     }
