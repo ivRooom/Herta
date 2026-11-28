@@ -4,6 +4,8 @@ import { normalizeActivityRulesConfig } from '@herta/shared';
 import {
   aggregateCommunityGamesOverviewV5,
   authorizeCommunityGameStatsRead,
+  buildCommunityLeaderboardGameCounts,
+  buildCommunityLeaderboardGrowth,
   buildCommunityMatrix,
   buildCommunityMatrixV5,
   buildCommunityMomentum,
@@ -11,6 +13,7 @@ import {
   buildCommunityUserGamesV5,
   buildCommunityWeekdaySeconds,
   communityGameGroupIdentity,
+  communityGamePreviousRange,
   COMMUNITY_CHANNEL_BREAKDOWN_LIMIT,
   COMMUNITY_GAME_STATS_GAMES_LIMIT,
   COMMUNITY_GAME_STATS_MATRIX_GAMES_LIMIT,
@@ -38,6 +41,8 @@ import {
   projectCommunityGameStatRow,
   projectCommunityGameUserSourceRow,
   projectCommunityInsightsTotalsRow,
+  projectCommunityLeaderboardGrowthRow,
+  projectCommunityLeaderboardPlayDaysRow,
   projectCommunityMatrixCellRow,
   projectCommunityMatrixMemberRow,
   projectCommunityMomentumNewPlayersRow,
@@ -63,6 +68,7 @@ import {
   type CommunityInsightsOverview,
   type CommunityInsightsOverviewV5,
   type CommunityInsightsUser,
+  type CommunityLeaderboardsOverview,
   type CommunityUserGameItem,
   type CommunityUserGameItemV5,
 } from '@/lib/community-game-stats';
@@ -604,6 +610,110 @@ async function readOverviewInsightsV5(
   }
 }
 /**
+ * v6 overview leaderboards (S9, #1081): three member
+ * rankings beyond raw play time, all from
+ * community_game_activity_daily. gameCount counts each
+ * member's distinct unified games, so it reuses the v5
+ * per-user source rows and resolves them through the same
+ * identity as the overview games; playDays counts distinct
+ * activity dates per member (the user insights figure,
+ * ranked); growth compares each member's total against the
+ * previous period — the same-length window immediately
+ * before the range, derived here on the supply side — and
+ * keeps only members with at least one previous hour and a
+ * positive increase (the lib builder owns that rule). Same
+ * fail-soft and casting rules as the other sections: a
+ * failure logs and degrades the whole section to null.
+ */
+async function readOverviewLeaderboards(
+  input: CommunityGameStatsInput,
+  mappings: CommunityGameIdentityMapping[],
+): Promise<CommunityLeaderboardsOverview | null> {
+  try {
+    const previousRange = communityGamePreviousRange({ from: input.from, to: input.to });
+    const userRows = await prisma.$queryRaw<
+      Array<{
+        discordUserId: string;
+        name: string;
+        applicationId: string;
+        totalSeconds: bigint;
+      }>
+    >`SELECT user_id AS "discordUserId", activity_name AS name,
+        application_id AS "applicationId", SUM(value)::bigint AS "totalSeconds"
+      FROM community_game_activity_daily
+      WHERE guild_id = ${input.guildId}
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY user_id, activity_name, application_id`;
+    const gameCounts = buildCommunityLeaderboardGameCounts(
+      userRows.map((row) => projectCommunityGameUserSourceRow(row)),
+      mappings,
+    );
+    const gameCountItems = gameCounts.slice(input.offset, input.offset + input.limit);
+    const playDayRows = await prisma.$queryRaw<
+      Array<{ discordUserId: string; playDays: number }>
+    >`SELECT user_id AS "discordUserId", COUNT(DISTINCT activity_date)::int AS "playDays"
+      FROM community_game_activity_daily
+      WHERE guild_id = ${input.guildId}
+        AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY user_id
+      ORDER BY COUNT(DISTINCT activity_date) DESC, user_id ASC
+      LIMIT ${input.limit} OFFSET ${input.offset}`;
+    const playDayCounts = await prisma.$queryRaw<Array<{ total: number }>>`
+      SELECT COUNT(*)::int AS total FROM (
+        SELECT user_id FROM community_game_activity_daily
+        WHERE guild_id = ${input.guildId}
+          AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date
+        GROUP BY user_id) ranked_users`;
+    const playDayTotal = playDayCounts[0]?.total ?? 0;
+    const growthRows = await prisma.$queryRaw<
+      Array<{ discordUserId: string; currentSeconds: bigint; previousSeconds: bigint }>
+    >`SELECT user_id AS "discordUserId",
+        SUM(CASE WHEN activity_date >= ${input.from}::date THEN value ELSE 0 END)::bigint AS "currentSeconds",
+        SUM(CASE WHEN activity_date < ${input.from}::date THEN value ELSE 0 END)::bigint AS "previousSeconds"
+      FROM community_game_activity_daily
+      WHERE guild_id = ${input.guildId}
+        AND activity_date >= ${previousRange.from}::date AND activity_date <= ${input.to}::date
+      GROUP BY user_id`;
+    const growth = buildCommunityLeaderboardGrowth(
+      growthRows.map((row) => projectCommunityLeaderboardGrowthRow(row)),
+    );
+    const growthItems = growth.slice(input.offset, input.offset + input.limit);
+    return {
+      gameCount: {
+        items: gameCountItems,
+        pagination: {
+          limit: input.limit,
+          offset: input.offset,
+          total: gameCounts.length,
+          hasNext: input.offset + gameCountItems.length < gameCounts.length,
+        },
+      },
+      playDays: {
+        items: playDayRows.map((row) => projectCommunityLeaderboardPlayDaysRow(row)),
+        pagination: {
+          limit: input.limit,
+          offset: input.offset,
+          total: playDayTotal,
+          hasNext: input.offset + playDayRows.length < playDayTotal,
+        },
+      },
+      growth: {
+        items: growthItems,
+        pagination: {
+          limit: input.limit,
+          offset: input.offset,
+          total: growth.length,
+          hasNext: input.offset + growthItems.length < growth.length,
+        },
+        previousRange,
+      },
+    };
+  } catch (error) {
+    console.error('community_leaderboards_read_failed', error);
+    return null;
+  }
+}
+/**
  * v5 game mode by application id / unified key (S7b,
  * #1060): the selector resolves to one unified game; its
  * source rows are fetched per selector (by id, or by name
@@ -751,8 +861,8 @@ export async function POST(request: Request) {
       WHERE guild_id = ${input.guildId}`;
     const meta = { earliestDate: formatCommunityGameEarliestDate(earliestRows[0]?.earliestDate) };
     const range = { from: input.from, to: input.to };
-    const mappings = input.version === 5 ? await readGameIdentityMappings(input.guildId) : [];
-    if (input.mode === 'game' && input.version === 5 && input.gameName === null) {
+    const mappings = input.version >= 5 ? await readGameIdentityMappings(input.guildId) : [];
+    if (input.mode === 'game' && input.version >= 5 && input.gameName === null) {
       // v5 game mode by application id / unified key (S7b):
       // the detail covers the whole unified game, not one
       // recorded name. Main content, so failures reach the
@@ -843,8 +953,7 @@ export async function POST(request: Request) {
       // figures of v3/v4; key / applicationId report the
       // unified identity the name resolves to on its own
       // (the relay addresses unified games by key instead).
-      const resolution =
-        input.version === 5 ? resolveCommunityGame(gameName, null, mappings) : null;
+      const resolution = input.version >= 5 ? resolveCommunityGame(gameName, null, mappings) : null;
       const gameDetail: CommunityGameDetail | CommunityGameDetailV5 = resolution
         ? {
             key: resolution.key,
@@ -882,7 +991,7 @@ export async function POST(request: Request) {
         WHERE guild_id = ${input.guildId} AND user_id = ${userId}
           AND activity_date >= ${input.from}::date AND activity_date <= ${input.to}::date`;
       let games: CommunityUserGameItem[] | CommunityUserGameItemV5[];
-      if (input.version === 5) {
+      if (input.version >= 5) {
         // v5 user games (S7b): the member's rows unified
         // like the overview games. The SQL cap moves into
         // the grouping — capping source rows first could
@@ -930,18 +1039,18 @@ export async function POST(request: Request) {
                   : await readUserActivity(input),
             }
           : {}),
-        ...(input.version === 3 || input.version === 4 || input.version === 5
-          ? { insights: await readUserInsights(input) }
-          : {}),
+        ...(input.version >= 3 ? { insights: await readUserInsights(input) } : {}),
       });
     }
-    if (input.version === 5) {
+    if (input.version >= 5) {
       // v5 overview (S7b, #1060): games and the ranking
       // aggregate per-user source rows through the unified
       // identity — the games cap and the ranking pagination
       // move into the aggregation, because unified totals
       // only exist after grouping. Activity and channels
       // keep the v2 / v4 reads; insights use the v5 variant.
+      // v6 adds the leaderboards section on top (S9, #1081);
+      // every other section is the v5 read unchanged.
       const userRows = await prisma.$queryRaw<
         Array<{
           discordUserId: string;
@@ -988,6 +1097,9 @@ export async function POST(request: Request) {
         activity: await readOverviewActivity(input),
         insights: await readOverviewInsightsV5(input, mappings),
         channels: await readOverviewChannels(input),
+        ...(input.version === 6
+          ? { leaderboards: await readOverviewLeaderboards(input, mappings) }
+          : {}),
       });
     }
     const gameRows = await prisma.$queryRaw<
