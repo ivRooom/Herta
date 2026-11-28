@@ -32,9 +32,10 @@ import { Pool } from 'pg';
  * チケットについて、Discord 側に専用スレッドがまだ無い状態から処理する
  * 唯一の kind。guild_plugins の tickets 設定 (Herta DB) から対象 Guild と
  * パネルチャンネルを解決し、非公開スレッドの作成 → 依頼者追加 → intro
- * 投稿 → TicketThreadLink 保存と署名付き /thread での Web リンク → 運用
- * 通知までを担う。冪等性は「スレッド名 (🎫 <TK-…> <件名>) の決定的命名＋
- * 作成前の同名スレッド検索」と「intro への ticket-outbox マーカー埋め込み」
+ * と受理メッセージ (一次受け) の投稿 → TicketThreadLink 保存と署名付き
+ * /thread での Web リンク → 運用通知までを担う。冪等性は「スレッド名
+ * (🎫 <TK-…> <件名>) の決定的命名＋作成前の同名スレッド検索」と
+ * 「intro への ticket-outbox マーカー埋め込み」「受理文面の完全一致検出」
  * 「TicketThreadLink の有無」で担保する (at-least-once の延長)。
  */
 
@@ -82,6 +83,15 @@ export const TICKET_THREAD_CREATE_CATEGORY_COLORS: Record<TicketThreadCreateCate
   privacy: 0xed4245,
   general: 0xfee75c,
 };
+
+/**
+ * 起票時の受理メッセージ (一次受け)。正本は bot の tickets-core の
+ * TICKET_ACCEPTANCE_MESSAGE で、worker からは bot のコードを import
+ * できないため同じ文面をここに写す (カテゴリラベル/色の写しと同じ流儀)。
+ * 両側のテストで文字列を固定する。文面を変えるときは両側を揃えること。
+ */
+export const TICKET_ACCEPTANCE_MESSAGE =
+  'お問い合わせを受け付けました。担当者が確認のうえ、こちらのスレッドで回答します。内容によっては、回答まで1週間ほどかかる場合があります。恐れ入りますが、しばらくお待ちください。';
 
 function isTicketThreadCreateCategory(value: unknown): value is TicketThreadCreateCategory {
   return (
@@ -473,6 +483,19 @@ export function buildTicketThreadIntroMessage(
 }
 
 /**
+ * thread_create の受理メッセージ (一次受け)。bot が Discord 起票時に
+ * 投稿する受理メッセージと同一文面の平文を、intro とは別メッセージで
+ * 投稿する。メンションは許可しない。
+ */
+export function buildTicketAcceptanceMessage(): DiscordMessageBody {
+  return {
+    content: TICKET_ACCEPTANCE_MESSAGE,
+    embeds: [],
+    allowed_mentions: { parse: [] },
+  };
+}
+
+/**
  * thread_create の運用通知。bot の notifyTicketCreated と同じ形
  * (Embed は buildTicketCreatedEmbed 相当、ロールメンションは Embed では
  * 発火しないため content 側に残す)。
@@ -571,6 +594,29 @@ export function findDeliveredMessageId(
         return id;
       }
     }
+  }
+  return null;
+}
+
+/**
+ * 受理メッセージの既送検出。受理メッセージは固定文面そのものが目印に
+ * なるため、Bot 本人の投稿で content が受理文面と完全一致するものを
+ * 探す (intro のマーカー検出と同じ範囲・同じ制約: 直近
+ * DEDUP_SCAN_LIMIT 件のみが対象で、Bot ID が分からない場合は未配送扱い)。
+ */
+export function findAcceptanceMessageId(
+  messages: unknown,
+  botUserId: string | null | undefined,
+): string | null {
+  if (!Array.isArray(messages)) return null;
+  if (!botUserId) return null;
+  for (const message of messages) {
+    if (!isRecord(message)) continue;
+    const id = message['id'];
+    if (typeof id !== 'string') continue;
+    const author = message['author'];
+    if (!isRecord(author) || author['id'] !== botUserId) continue;
+    if (message['content'] === TICKET_ACCEPTANCE_MESSAGE) return id;
   }
   return null;
 }
@@ -886,6 +932,18 @@ export async function startTicketDiscordPollerRuntime(
         token: options.discordBotToken,
         threadId,
         body: buildTicketThreadIntroMessage(row.id, payload),
+      });
+    }
+    // 受理メッセージ (一次受け) は intro の後に別メッセージで投稿する。
+    // 固定文面の完全一致で既送を検出し、再送時の二重投稿を避ける
+    // (intro のマーカー検出と同じ方針)。投稿に失敗した場合は配送全体を
+    // 再試行に倒し、次回に intro 済み検出＋受理未検出で投稿し直す。
+    if (!findAcceptanceMessageId(history, botUserId)) {
+      await postDiscordThreadMessage({
+        fetchImpl,
+        token: options.discordBotToken,
+        threadId,
+        body: buildTicketAcceptanceMessage(),
       });
     }
     // Web 側リンクは冪等なので毎回送る (前回がリンク保存後に失敗していても収束する)。

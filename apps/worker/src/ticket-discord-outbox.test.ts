@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildTicketAcceptanceMessage,
   buildTicketDiscordMessage,
   buildTicketThreadCreatedNotification,
   buildTicketThreadIntroMessage,
@@ -8,6 +9,7 @@ import {
   deriveTicketAttachmentEventId,
   deriveTicketThreadEventId,
   fetchDiscordBotUserId,
+  findAcceptanceMessageId,
   findDeliveredMessageId,
   findTicketThreadByName,
   normalizeTicketScanIntervalSeconds,
@@ -19,6 +21,7 @@ import {
   ticketAttachmentPlaceholder,
   ticketOutboxMarker,
   ticketThreadName,
+  TICKET_ACCEPTANCE_MESSAGE,
   type TicketDiscordOutboxStore,
   type TicketOutboxRow,
   type TicketThreadCreateDeps,
@@ -646,6 +649,39 @@ test('intro 投稿の形式: bot と同じ Embed・ボタン・運用通知', ()
   assert.deepEqual(silent.allowed_mentions, { parse: [] });
 });
 
+test('受理メッセージの文面: bot と同一の固定文面で、メンション無効の平文', () => {
+  // bot の tickets-core の TICKET_ACCEPTANCE_MESSAGE と同一文面であることを、
+  // 両側のテストで同じリテラルに固定する。
+  assert.equal(
+    TICKET_ACCEPTANCE_MESSAGE,
+    'お問い合わせを受け付けました。担当者が確認のうえ、こちらのスレッドで回答します。内容によっては、回答まで1週間ほどかかる場合があります。恐れ入りますが、しばらくお待ちください。',
+  );
+  const body = buildTicketAcceptanceMessage();
+  assert.equal(body.content, TICKET_ACCEPTANCE_MESSAGE);
+  assert.deepEqual(body.embeds, []);
+  assert.deepEqual(body.allowed_mentions, { parse: [] });
+});
+
+test('受理メッセージの既送検出: Bot 本人の完全一致投稿だけを検出する', () => {
+  const messages = [
+    {
+      id: '300000000000000071',
+      author: { id: OTHER_USER_ID },
+      content: TICKET_ACCEPTANCE_MESSAGE,
+    },
+    { id: '300000000000000072', author: { id: BOT_USER_ID }, content: '別の文面' },
+    {
+      id: '300000000000000073',
+      author: { id: BOT_USER_ID },
+      content: TICKET_ACCEPTANCE_MESSAGE,
+    },
+  ];
+  assert.equal(findAcceptanceMessageId(messages, BOT_USER_ID), '300000000000000073');
+  assert.equal(findAcceptanceMessageId(messages.slice(0, 2), BOT_USER_ID), null);
+  assert.equal(findAcceptanceMessageId(messages, null), null);
+  assert.equal(findAcceptanceMessageId('not-an-array', BOT_USER_ID), null);
+});
+
 interface RecordedCall {
   url: string;
   method: string;
@@ -763,7 +799,7 @@ const THREAD_CREATE_ROW: TicketOutboxRow = {
 
 const TEST_LOGGER = { error() {}, warn() {}, info() {}, debug() {} };
 
-test('thread_create 正常系: 作成→依頼者追加→intro→リンク保存→/thread→通知→ack', async () => {
+test('thread_create 正常系: 作成→依頼者追加→intro→受理→リンク保存→/thread→通知→ack', async () => {
   const { fetchImpl, calls } = createThreadCreateFetch();
   const { store, ackedSent, ackedFailed } = createRecordingStore(THREAD_CREATE_ROW);
   const { deps, savedLinks } = createFakeThreadCreateDeps();
@@ -805,6 +841,22 @@ test('thread_create 正常系: 作成→依頼者追加→intro→リンク保�
   assert.equal(introBody.embeds[0]?.title, '🎫 TK-ABCDEF012345 サーバーに入れません');
   assert.equal(introBody.embeds[1]?.footer?.text, 'ticket-outbox:7');
 
+  // 受理メッセージ (一次受け) が intro の直後に別メッセージで投稿される。
+  const threadMessageCalls = calls.filter(
+    (call) =>
+      call.method === 'POST' && call.url.endsWith(`/channels/${CREATED_THREAD_ID}/messages`),
+  );
+  assert.equal(threadMessageCalls.length, 2);
+  assert.equal(threadMessageCalls[0], introCall);
+  const acceptanceBody = threadMessageCalls[1]?.body as {
+    content?: string;
+    embeds: unknown[];
+    allowed_mentions: unknown;
+  };
+  assert.equal(acceptanceBody.content, TICKET_ACCEPTANCE_MESSAGE);
+  assert.deepEqual(acceptanceBody.embeds, []);
+  assert.deepEqual(acceptanceBody.allowed_mentions, { parse: [] });
+
   assert.deepEqual(savedLinks, [
     {
       ticketId: 'TK-ABCDEF012345',
@@ -835,7 +887,58 @@ test('thread_create 正常系: 作成→依頼者追加→intro→リンク保�
   assert.equal((notifyCall.body as { content?: string }).content, `<@&${STAFF_ROLE_ID}>`);
 });
 
-test('thread_create 冪等: 同名スレッドと intro マーカーがあれば作り直さず通知もしない', async () => {
+test('thread_create 冪等: 同名スレッドと intro マーカー・受理メッセージがあれば作り直さず通知もしない', async () => {
+  const existingIntroId = '300000000000000055';
+  const { fetchImpl, calls } = createThreadCreateFetch({
+    activeThreads: [
+      {
+        id: CREATED_THREAD_ID,
+        parent_id: PANEL_CHANNEL_ID,
+        name: '🎫 TK-ABCDEF012345 サーバーに入れません',
+      },
+    ],
+    threadHistory: [
+      {
+        id: existingIntroId,
+        author: { id: BOT_USER_ID },
+        content: '',
+        embeds: [{ footer: { text: 'ticket-outbox:7' } }],
+      },
+      {
+        id: '300000000000000056',
+        author: { id: BOT_USER_ID },
+        content: TICKET_ACCEPTANCE_MESSAGE,
+        embeds: [],
+      },
+    ],
+  });
+  const { store, ackedSent, ackedFailed } = createRecordingStore(THREAD_CREATE_ROW);
+  const { deps, savedLinks } = createFakeThreadCreateDeps();
+  const runtime = await startTicketDiscordPollerRuntime({
+    logger: TEST_LOGGER as never,
+    store,
+    discordBotToken: 'token',
+    fetchImpl,
+    threadCreate: deps,
+  });
+  await runtime.close();
+
+  assert.deepEqual(ackedFailed, []);
+  assert.deepEqual(ackedSent, [{ id: '7', messageId: existingIntroId }]);
+  assert.equal(
+    calls.some((call) => /\/channels\/\d+\/threads$/.test(call.url) && call.method === 'POST'),
+    false,
+  );
+  assert.equal(
+    calls.some((call) => call.method === 'POST' && call.url.includes('/messages')),
+    false,
+  );
+  // リンク保存と /thread 配送は冪等なので行われる。
+  assert.equal(savedLinks.length, 1);
+  assert.ok(calls.some((call) => call.url.includes('/v1/herta/tickets/thread')));
+});
+
+test('thread_create 冪等: intro 済みで受理メッセージが無ければ受理メッセージだけを投稿する', async () => {
   const existingIntroId = '300000000000000055';
   const { fetchImpl, calls } = createThreadCreateFetch({
     activeThreads: [
@@ -867,15 +970,23 @@ test('thread_create 冪等: 同名スレッドと intro マーカーがあれば
 
   assert.deepEqual(ackedFailed, []);
   assert.deepEqual(ackedSent, [{ id: '7', messageId: existingIntroId }]);
+  const threadMessageCalls = calls.filter(
+    (call) =>
+      call.method === 'POST' && call.url.endsWith(`/channels/${CREATED_THREAD_ID}/messages`),
+  );
+  assert.equal(threadMessageCalls.length, 1);
   assert.equal(
-    calls.some((call) => /\/channels\/\d+\/threads$/.test(call.url) && call.method === 'POST'),
+    (threadMessageCalls[0]?.body as { content?: string }).content,
+    TICKET_ACCEPTANCE_MESSAGE,
+  );
+  // intro を今回投稿していないため運用通知は出ない。
+  assert.equal(
+    calls.some(
+      (call) =>
+        call.method === 'POST' && call.url.endsWith(`/channels/${NOTIFY_CHANNEL_ID}/messages`),
+    ),
     false,
   );
-  assert.equal(
-    calls.some((call) => call.method === 'POST' && call.url.includes('/messages')),
-    false,
-  );
-  // リンク保存と /thread 配送は冪等なので行われる。
   assert.equal(savedLinks.length, 1);
   assert.ok(calls.some((call) => call.url.includes('/v1/herta/tickets/thread')));
 });
