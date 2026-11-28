@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { aggregateValorantStats, type DrawSample } from './valorant-stats.js';
+import { VALORANT_MAPS } from './valorant-maps.js';
 
 /**
  * VALORANT ポータル向け Herta 側サービス API (S6-H1、Herta #1050)。
@@ -217,6 +218,91 @@ export interface ValorantPortalDeps {
   prisma: ValorantPortalPrisma;
   guild: ValorantPortalGuildPort;
   guildId: string;
+  /** S6-H2 の操作系。未配線の間は mutation ルートが 503 を返す */
+  operations?: ValorantPortalOperations;
+  /** S6-H2 の操作主体の記録 + create/reroll 冪等キーの保存先 */
+  actions?: ValorantPortalActionStore;
+  logger?: {
+    warn: (fields: Record<string, unknown>, message: string) => void;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// S6-H2: 操作系 (mutation) の依存
+// ---------------------------------------------------------------------------
+
+export interface ValorantPortalCreateInput {
+  mode: 'RANDOM' | 'TACTICAL';
+  mapId: string | null;
+  channelId: string;
+  voiceChannelId: string | null;
+  vcAutoJoin: boolean;
+  /** 作成者の縛りオフ初期値 (S2 の trollOffUserIds へ種として入れる) */
+  trollOff: boolean;
+}
+
+/**
+ * 操作系の結果。`status` は repository の戻り値
+ * (`missing / closed / forbidden / full / not_joined / empty /
+ * insufficient / invalid`) に `ok` と、基盤側の失敗を表す
+ * `unavailable` を加えたもの。そのままエラーコードへ写像する。
+ */
+export interface ValorantPortalMutationOutcome {
+  status: string;
+  session?: ValorantPortalSessionRow;
+}
+
+export interface ValorantPortalOperations {
+  createSession(
+    actor: ValorantPortalMemberInfo,
+    input: ValorantPortalCreateInput,
+  ): Promise<ValorantPortalMutationOutcome>;
+  joinSession(
+    actor: ValorantPortalMemberInfo,
+    sessionId: string,
+  ): Promise<ValorantPortalMutationOutcome>;
+  leaveSession(
+    actor: ValorantPortalMemberInfo,
+    sessionId: string,
+  ): Promise<ValorantPortalMutationOutcome>;
+  toggleTrollOff(
+    actor: ValorantPortalMemberInfo,
+    sessionId: string,
+  ): Promise<ValorantPortalMutationOutcome>;
+  manageParticipants(
+    actor: ValorantPortalMemberInfo,
+    sessionId: string,
+    action: 'add' | 'remove',
+    targetUserId: string,
+  ): Promise<ValorantPortalMutationOutcome>;
+  drawSession(
+    actor: ValorantPortalMemberInfo,
+    sessionId: string,
+  ): Promise<ValorantPortalMutationOutcome>;
+  rerollSession(
+    actor: ValorantPortalMemberInfo,
+    sessionId: string,
+  ): Promise<ValorantPortalMutationOutcome>;
+  cancelSession(
+    actor: ValorantPortalMemberInfo,
+    sessionId: string,
+  ): Promise<ValorantPortalMutationOutcome>;
+}
+
+export interface ValorantPortalActionRecord {
+  sessionId: string;
+  actorUserId: string;
+  action: string;
+  idempotencyKey?: string;
+}
+
+/**
+ * `valorant_pick_session_actions` への最小インターフェース。
+ * 冪等キーはこのテーブルの unique 制約に相乗りする (S6-PLAN §3.5)。
+ */
+export interface ValorantPortalActionStore {
+  findSessionIdByIdempotencyKey(key: string): Promise<string | null>;
+  recordAction(record: ValorantPortalActionRecord): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -457,10 +543,244 @@ async function handleHistory(
   return ok({ sessions, retentionDays: VALORANT_PORTAL_STATS_RETENTION_DAYS });
 }
 
+// ---------------------------------------------------------------------------
+// S6-H2: 操作系ハンドラ
+//
+// 認可の最終判定は repository (行ロック + 状態再検査 + 作成者/isAdmin)
+// が行う。ここでは入力検証、人狼セッションの秘匿、repository 戻り値の
+// HTTP 写像、操作主体の記録 (source=portal) と冪等キーの解決だけを行う。
+// ---------------------------------------------------------------------------
+
+const MUTATION_ERROR_HTTP: Record<string, number> = {
+  missing: 404,
+  forbidden: 403,
+  closed: 409,
+  full: 409,
+  not_joined: 409,
+  empty: 409,
+  insufficient: 409,
+  invalid: 400,
+  unavailable: 503,
+};
+
+function mutationError(status: string): ValorantPortalResponse {
+  return error(MUTATION_ERROR_HTTP[status] ?? 503, status);
+}
+
+function parseSessionId(body: Record<string, unknown>): string | null {
+  const sessionId = body['sessionId'];
+  return typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 64
+    ? sessionId
+    : null;
+}
+
+function parseIdempotencyKey(body: Record<string, unknown>): string | null {
+  const key = body['idempotencyKey'];
+  return typeof key === 'string' && key.length >= 8 && key.length <= 128 ? key : null;
+}
+
+async function fetchPortalSessionRow(
+  deps: ValorantPortalDeps,
+  sessionId: string,
+): Promise<ValorantPortalSessionRow | null> {
+  const row = await deps.prisma.valorantPickSession.findFirst({
+    where: { id: sessionId, guildId: deps.guildId },
+    include: { participants: { orderBy: PARTICIPANT_ORDER } },
+  });
+  // 人狼セッションは S6-W まで存在自体を伏せる (読み取り系と同じ)
+  if (!row || row.mode === 'WEREWOLF') return null;
+  return row;
+}
+
+async function sessionResponse(
+  deps: ValorantPortalDeps,
+  actor: ValorantPortalMemberInfo,
+  row: ValorantPortalSessionRow,
+  extra: Record<string, unknown> = {},
+): Promise<ValorantPortalResponse> {
+  const [session] = await buildSessionDtos(deps, [row], actor);
+  return ok({ session, ...extra });
+}
+
+/** 操作主体の記録は fail-soft: セッション側の操作成否を記録失敗で覆さない */
+async function recordPortalAction(
+  deps: ValorantPortalDeps,
+  record: ValorantPortalActionRecord,
+): Promise<void> {
+  if (!deps.actions) return;
+  try {
+    await deps.actions.recordAction(record);
+  } catch {
+    deps.logger?.warn(
+      { sessionId: record.sessionId, action: record.action },
+      'VALORANTポータル操作の記録に失敗しました',
+    );
+  }
+}
+
+async function replayByIdempotencyKey(
+  deps: ValorantPortalDeps,
+  actor: ValorantPortalMemberInfo,
+  key: string,
+  extra: Record<string, unknown> = {},
+): Promise<ValorantPortalResponse | null> {
+  if (!deps.actions) return null;
+  const sessionId = await deps.actions.findSessionIdByIdempotencyKey(key);
+  if (!sessionId) return null;
+  const row = await fetchPortalSessionRow(deps, sessionId);
+  if (!row) return null;
+  return sessionResponse(deps, actor, row, { idempotentReplay: true, ...extra });
+}
+
+async function runSessionMutation(
+  deps: ValorantPortalDeps,
+  actor: ValorantPortalMemberInfo,
+  body: Record<string, unknown>,
+  action: string,
+  invoke: (
+    operations: ValorantPortalOperations,
+    sessionId: string,
+  ) => Promise<ValorantPortalMutationOutcome>,
+  extra: (outcome: ValorantPortalMutationOutcome) => Record<string, unknown> = () => ({}),
+): Promise<ValorantPortalResponse> {
+  if (!deps.operations) return error(503, 'unavailable');
+  const sessionId = parseSessionId(body);
+  if (!sessionId) return error(400, 'invalid_request');
+  const existing = await fetchPortalSessionRow(deps, sessionId);
+  if (!existing) return error(404, 'not_found');
+  const outcome = await invoke(deps.operations, sessionId);
+  if (outcome.status !== 'ok' || !outcome.session) return mutationError(outcome.status);
+  await recordPortalAction(deps, {
+    sessionId: outcome.session.id,
+    actorUserId: actor.userId,
+    action,
+  });
+  return sessionResponse(deps, actor, outcome.session, extra(outcome));
+}
+
+async function handleCreate(
+  deps: ValorantPortalDeps,
+  actor: ValorantPortalMemberInfo,
+  body: Record<string, unknown>,
+): Promise<ValorantPortalResponse> {
+  if (!deps.operations) return error(503, 'unavailable');
+  const idempotencyKey = parseIdempotencyKey(body);
+  if (!idempotencyKey) return error(400, 'invalid_request');
+  const replay = await replayByIdempotencyKey(deps, actor, idempotencyKey);
+  if (replay) return replay;
+
+  const channelId = body['channelId'];
+  if (typeof channelId !== 'string' || !DISCORD_ID_PATTERN.test(channelId)) {
+    return error(400, 'invalid_request');
+  }
+  const voiceChannelId = body['voiceChannelId'] ?? null;
+  if (
+    voiceChannelId !== null &&
+    (typeof voiceChannelId !== 'string' || !DISCORD_ID_PATTERN.test(voiceChannelId))
+  ) {
+    return error(400, 'invalid_request');
+  }
+  const mapId = body['mapId'] ?? null;
+  if (
+    mapId !== null &&
+    (typeof mapId !== 'string' || !VALORANT_MAPS.some(([id]) => id === mapId))
+  ) {
+    return error(400, 'invalid_request');
+  }
+  const mode = body['mode'] ?? 'RANDOM';
+  if (mode !== 'RANDOM' && mode !== 'TACTICAL') return error(400, 'invalid_request');
+
+  const outcome = await deps.operations.createSession(actor, {
+    mode,
+    mapId: mapId as string | null,
+    channelId,
+    voiceChannelId: voiceChannelId as string | null,
+    vcAutoJoin: body['vcAutoJoin'] === true,
+    trollOff: body['trollOff'] === true,
+  });
+  if (outcome.status !== 'ok' || !outcome.session) return mutationError(outcome.status);
+  await recordPortalAction(deps, {
+    sessionId: outcome.session.id,
+    actorUserId: actor.userId,
+    action: 'create',
+    idempotencyKey,
+  });
+  return sessionResponse(deps, actor, outcome.session);
+}
+
+async function handleManage(
+  deps: ValorantPortalDeps,
+  actor: ValorantPortalMemberInfo,
+  body: Record<string, unknown>,
+): Promise<ValorantPortalResponse> {
+  const action = body['action'];
+  const targetUserId = body['targetUserId'];
+  if (
+    (action !== 'add' && action !== 'remove') ||
+    typeof targetUserId !== 'string' ||
+    !DISCORD_ID_PATTERN.test(targetUserId)
+  ) {
+    return error(400, 'invalid_request');
+  }
+  // VC 在室者の一括追加は初版対象外 (推奨セット⑦)。個別追加・削除のみ。
+  const target = await deps.guild.getMember(targetUserId).catch(() => null);
+  if (!target) return error(400, 'target_not_in_guild');
+  return runSessionMutation(deps, actor, body, `manage_${action}`, (operations, sessionId) =>
+    operations.manageParticipants(actor, sessionId, action, targetUserId),
+  );
+}
+
+async function handleReroll(
+  deps: ValorantPortalDeps,
+  actor: ValorantPortalMemberInfo,
+  body: Record<string, unknown>,
+): Promise<ValorantPortalResponse> {
+  if (!deps.operations) return error(503, 'unavailable');
+  const idempotencyKey = parseIdempotencyKey(body);
+  if (!idempotencyKey) return error(400, 'invalid_request');
+  const sessionId = parseSessionId(body);
+  if (!sessionId) return error(400, 'invalid_request');
+  if (deps.actions) {
+    const replayedSessionId = await deps.actions.findSessionIdByIdempotencyKey(idempotencyKey);
+    if (replayedSessionId) {
+      const row = await fetchPortalSessionRow(deps, replayedSessionId);
+      if (row) {
+        return sessionResponse(deps, actor, row, {
+          idempotentReplay: true,
+          newSessionId: row.id,
+          previousSessionId: sessionId,
+        });
+      }
+    }
+  }
+  const existing = await fetchPortalSessionRow(deps, sessionId);
+  if (!existing) return error(404, 'not_found');
+  const outcome = await deps.operations.rerollSession(actor, sessionId);
+  if (outcome.status !== 'ok' || !outcome.session) return mutationError(outcome.status);
+  await recordPortalAction(deps, {
+    sessionId: outcome.session.id,
+    actorUserId: actor.userId,
+    action: 'reroll',
+    idempotencyKey,
+  });
+  return sessionResponse(deps, actor, outcome.session, {
+    newSessionId: outcome.session.id,
+    previousSessionId: sessionId,
+  });
+}
+
 export const VALORANT_PORTAL_ROUTES = [
   `${VALORANT_PORTAL_API_PREFIX}/channels`,
   `${VALORANT_PORTAL_API_PREFIX}/sessions/list`,
   `${VALORANT_PORTAL_API_PREFIX}/sessions/get`,
+  `${VALORANT_PORTAL_API_PREFIX}/sessions/create`,
+  `${VALORANT_PORTAL_API_PREFIX}/sessions/join`,
+  `${VALORANT_PORTAL_API_PREFIX}/sessions/leave`,
+  `${VALORANT_PORTAL_API_PREFIX}/sessions/troll-off`,
+  `${VALORANT_PORTAL_API_PREFIX}/sessions/manage`,
+  `${VALORANT_PORTAL_API_PREFIX}/sessions/draw`,
+  `${VALORANT_PORTAL_API_PREFIX}/sessions/reroll`,
+  `${VALORANT_PORTAL_API_PREFIX}/sessions/cancel`,
   `${VALORANT_PORTAL_API_PREFIX}/stats`,
   `${VALORANT_PORTAL_API_PREFIX}/history`,
 ] as const;
@@ -500,6 +820,32 @@ export async function handleValorantPortalRequest(
         return await handleStats(deps);
       case `${VALORANT_PORTAL_API_PREFIX}/history`:
         return await handleHistory(deps, actor, body);
+      case `${VALORANT_PORTAL_API_PREFIX}/sessions/create`:
+        return await handleCreate(deps, actor, body);
+      case `${VALORANT_PORTAL_API_PREFIX}/sessions/join`:
+        return await runSessionMutation(deps, actor, body, 'join', (ops, id) =>
+          ops.joinSession(actor, id),
+        );
+      case `${VALORANT_PORTAL_API_PREFIX}/sessions/leave`:
+        return await runSessionMutation(deps, actor, body, 'leave', (ops, id) =>
+          ops.leaveSession(actor, id),
+        );
+      case `${VALORANT_PORTAL_API_PREFIX}/sessions/troll-off`:
+        return await runSessionMutation(deps, actor, body, 'troll_off', (ops, id) =>
+          ops.toggleTrollOff(actor, id),
+        );
+      case `${VALORANT_PORTAL_API_PREFIX}/sessions/manage`:
+        return await handleManage(deps, actor, body);
+      case `${VALORANT_PORTAL_API_PREFIX}/sessions/draw`:
+        return await runSessionMutation(deps, actor, body, 'draw', (ops, id) =>
+          ops.drawSession(actor, id),
+        );
+      case `${VALORANT_PORTAL_API_PREFIX}/sessions/reroll`:
+        return await handleReroll(deps, actor, body);
+      case `${VALORANT_PORTAL_API_PREFIX}/sessions/cancel`:
+        return await runSessionMutation(deps, actor, body, 'cancel', (ops, id) =>
+          ops.cancelSession(actor, id),
+        );
       default:
         return error(404, 'not_found');
     }

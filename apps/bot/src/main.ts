@@ -30,6 +30,8 @@ import {
   startValorantPortalApiServer,
   type ValorantPortalApiServer,
 } from './plugins/valorant-portal-server.js';
+import { createValorantPortalDiscordPort } from './plugins/valorant.js';
+import { createValorantPortalOperations } from './plugins/valorant-portal-operations.js';
 import { HertaHealthService } from './health/service.js';
 import { RuleProductionRuntime } from './rules/runtime.js';
 import { createPrismaRuleRuntimeStore } from './rules/store.js';
@@ -128,12 +130,13 @@ async function startValorantPortalApi(): Promise<void> {
     return;
   }
   const guildId = valorantPortalConfig.guildId;
+  const portalPrisma = getPrismaClient();
   valorantPortalServer = await startValorantPortalApiServer({
     config: valorantPortalConfig,
     secret: valorantPortalConfig.secret,
     logger,
     deps: {
-      prisma: getPrismaClient() as unknown as ValorantPortalPrisma,
+      prisma: portalPrisma as unknown as ValorantPortalPrisma,
       guildId,
       guild: {
         getMember: (userId) => bot.getValorantPortalMember(guildId, userId),
@@ -141,6 +144,40 @@ async function startValorantPortalApi(): Promise<void> {
           bot.listValorantPortalChannels(guildId)?.textChannels ?? [],
         listVoiceChannels: async () => bot.listValorantPortalChannels(guildId)?.voiceChannels ?? [],
         resolveDisplayNames: (userIds) => bot.resolveValorantPortalDisplayNames(guildId, userIds),
+      },
+      // S6-H2: 操作系の実体と、操作主体の記録 + 冪等キーの保存先
+      operations: createValorantPortalOperations({
+        prisma: portalPrisma,
+        guildId,
+        logger,
+        discord: createValorantPortalDiscordPort(
+          bot.getValorantPortalDiscordClient(),
+          portalPrisma,
+          logger,
+        ),
+      }),
+      actions: {
+        findSessionIdByIdempotencyKey: async (key) => {
+          const row = await portalPrisma.valorantPickSessionAction.findUnique({
+            where: { idempotencyKey: key },
+            select: { sessionId: true },
+          });
+          return row?.sessionId ?? null;
+        },
+        recordAction: async (record) => {
+          await portalPrisma.valorantPickSessionAction.create({
+            data: {
+              sessionId: record.sessionId,
+              actorUserId: record.actorUserId,
+              source: 'portal',
+              action: record.action,
+              idempotencyKey: record.idempotencyKey ?? null,
+            },
+          });
+        },
+      },
+      logger: {
+        warn: (fields, message) => logger.warn(fields, message),
       },
     },
   });

@@ -437,7 +437,7 @@ describe('valorant portal api read endpoints', () => {
     const { deps } = createDeps([], new Map([[ACTOR_ID, actorMember]]));
     const response = await handleValorantPortalRequest(
       deps,
-      `${VALORANT_PORTAL_API_PREFIX}/sessions/draw`,
+      `${VALORANT_PORTAL_API_PREFIX}/sessions/unknown`,
       { actorDiscordUserId: ACTOR_ID },
     );
     expect(response.httpStatus).toBe(404);
