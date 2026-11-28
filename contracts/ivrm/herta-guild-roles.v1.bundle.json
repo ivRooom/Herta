@@ -18,7 +18,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://ivrm.jp/contracts/herta/guild-roles/v1/directory.schema.json",
     "title": "Herta guild role directory v1",
-    "description": "Complete configured-guild role directory, excluding @everyone because member role IDs exclude it. Role IDs must be unique. No token, permission bitset, channel or member information is returned.",
+    "description": "Complete configured-guild role directory, excluding @everyone because member role IDs exclude it. Role IDs must be unique. No token, permission bitset, channel or member information is returned. The optional botHighestRolePosition reports only the position of the Bot's own highest role (null when unknown) so consumers can warn about roles the Bot cannot manage; no Bot role ID, name or permission detail is exposed.",
     "type": "object",
     "additionalProperties": false,
     "required": ["status", "guildId", "roles", "fetchedAt"],
@@ -35,6 +35,11 @@
       "fetchedAt": {
         "type": "string",
         "format": "date-time"
+      },
+      "botHighestRolePosition": {
+        "type": ["integer", "null"],
+        "minimum": 0,
+        "description": "Optional. Position of the Bot's own highest role in this guild, or null when the Bot snapshot does not state one. Consumers must treat an absent key the same as null."
       },
       "roles": {
         "type": "array",

@@ -7,6 +7,7 @@ import {
   buildTicketAttachmentSkipNote,
   buildTicketCreatePayload,
   buildTicketCreatedEmbed,
+  buildTicketErasureCreatePayload,
   buildTicketCreatedSuccessEmbed,
   buildTicketIntroEmbed,
   buildTicketMessageBody,
@@ -32,6 +33,9 @@ import {
   TICKET_ATTACHMENTS_PATH,
   TICKET_BODY_MAX_LENGTH,
   TICKET_CATEGORY_COLORS,
+  TICKET_ERASURE_BODY,
+  TICKET_ERASURE_SUBJECT,
+  TICKET_SUBJECT_MAX_LENGTH,
 } from './tickets-core.js';
 
 const bridge = { apiBaseUrl: 'https://api.example.test', secret: 'test-secret' };
@@ -126,6 +130,33 @@ describe('payload builders', () => {
       discordChannelId: '333333333333333333',
       discordThreadId: '444444444444444444',
     });
+  });
+
+  it('erasure create は requestId を冪等キーにし、理由を body に含めない (#750 T2)', () => {
+    const payload = buildTicketErasureCreatePayload({
+      requestId: '3f6b0e62-9d4c-4d3f-9f6e-2f5a1b8c7d90',
+      discordUserId: '222222222222222222',
+      requesterName: 'requester',
+    });
+    expect(payload.kind).toBe('create');
+    expect(payload.sourceEventId).toBe(
+      'ticket-erasure-create:3f6b0e62-9d4c-4d3f-9f6e-2f5a1b8c7d90',
+    );
+    expect(payload.eventId).toBe(deriveTicketEventId(payload.sourceEventId));
+    // 起票前はチケットIDが無いため、相関キーとして requestId が入る。
+    expect(payload.ticketId).toBe('3f6b0e62-9d4c-4d3f-9f6e-2f5a1b8c7d90');
+    const parsed = JSON.parse(payload.body) as Record<string, unknown>;
+    expect(parsed).toEqual({
+      discordUserId: '222222222222222222',
+      requesterName: 'requester',
+      category: 'privacy',
+      subject: TICKET_ERASURE_SUBJECT,
+      body: TICKET_ERASURE_BODY,
+      erasureRequestId: '3f6b0e62-9d4c-4d3f-9f6e-2f5a1b8c7d90',
+    });
+    expect('reason' in parsed).toBe(false);
+    expect(TICKET_ERASURE_SUBJECT.length).toBeLessThanOrEqual(TICKET_SUBJECT_MAX_LENGTH);
+    expect(TICKET_ERASURE_BODY.length).toBeLessThanOrEqual(TICKET_BODY_MAX_LENGTH);
   });
 
   it('message は authorKind を含まない (サーバー側が正本から導出する)', () => {

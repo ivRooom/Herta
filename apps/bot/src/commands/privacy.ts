@@ -1,9 +1,11 @@
 import { AttachmentBuilder, MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import {
+  createVcRecapErasureCase,
   deleteUserVoiceData,
   getPrismaClient,
   hasDailyBonusSchema,
   getUserDataConsent,
+  isVcRecapErasureTicketLinkEnabled,
   listVcRecapSessionsForUser,
   listVcRecapTranscriptSegmentsForUser,
   requestVcRecapErasure,
@@ -11,6 +13,8 @@ import {
   setVcRecapOpenAiAudioConsent,
 } from '@herta/db';
 import { createLogger, type Logger } from '@herta/logger';
+import { buildTicketErasureCreatePayload } from '../plugins/tickets-core.js';
+import { enqueueTicketPayloads } from '../plugins/tickets-outbox-repository.js';
 import { buildConsentWebLinkMessage } from '../voice/vc-recap-consent-interaction.js';
 import { revokeVcRecapConsent } from '../voice/vc-recap-session-manager.js';
 import type { SlashCommand } from './registry.js';
@@ -67,6 +71,12 @@ async function executeOpenAiAudioConsent(interaction: ChatInputCommandInteractio
 }
 
 async function executeDeleteVoiceData(interaction: ChatInputCommandInteraction) {
+  // #750 方式B: チケット連携フラグが有効な間は、削除を審査制にする
+  // (fence は即時、PG 削除は承認後)。フラグ OFF では従来どおり即時削除する。
+  if (isVcRecapErasureTicketLinkEnabled()) {
+    await executeDeleteVoiceDataWithTicketReview(interaction);
+    return;
+  }
   // Deny future archive/recording writes before removing current PostgreSQL data.
   // S3 deletion is NOT reported complete until object versions and restores are verified.
   await requestVcRecapErasure(prisma, interaction.user.id);
@@ -84,6 +94,55 @@ async function executeDeleteVoiceData(interaction: ChatInputCommandInteraction) 
       `\n- 他の参加者もいたセッション: ${result.redactedSessions}件からあなたの参加記録を除去(要約は複数人の発言から生成されているため、他の参加者の分も含めて併せて削除しました)` +
       `\n- 新しい長期保存・録音のための削除障壁を登録しました` +
       `\n⚠️ これは全コピーの完全削除完了通知ではありません。S3長期保存は未提供ですが、バックアップ・復元コピーを含む消去の検証は別途必要です。`,
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+/**
+ * #750 方式B (審査制) の削除申請。fence (削除障壁)・同意失効・録音中
+ * セッションの停止は申請時点で従来どおり即時に効かせるが、PG 削除
+ * (deleteUserVoiceData) はここでは実行しない。削除は Admin の承認
+ * (チケットの approved) を受けて worker が後から実行する (T3)。
+ * 申請はケースとして記録し、チケット起票は outbox 経由の永続配送にする
+ * ため、Web が落ちていても fence が先に効き、チケットは後から作られる。
+ */
+async function executeDeleteVoiceDataWithTicketReview(interaction: ChatInputCommandInteraction) {
+  await requestVcRecapErasure(prisma, interaction.user.id);
+  // Stop existing voice capture as well: otherwise an active stream could
+  // recreate the transcript while the request waits for review.
+  revokeVcRecapConsent(interaction.user.id);
+  const reason = interaction.options.getString('reason')?.trim().slice(0, 1000) || null;
+  const outcome = await createVcRecapErasureCase(prisma, {
+    userId: interaction.user.id,
+    guildId: interaction.guildId,
+    reason,
+  });
+  if (outcome.created && interaction.guildId) {
+    // 起票の配送は tickets プラグインの outbox worker が担う。登録に失敗しても
+    // fence とケースは確定しているため申請自体は受け付け、失敗はログに残す。
+    await enqueueTicketPayloads(prisma, interaction.guildId, [
+      buildTicketErasureCreatePayload({
+        requestId: outcome.erasureCase.requestId,
+        discordUserId: interaction.user.id,
+        requesterName: interaction.user.displayName ?? interaction.user.username,
+      }),
+    ]).catch((error) =>
+      getSharedLogger().warn(
+        { err: error, requestId: outcome.erasureCase.requestId },
+        '削除申請チケットの起票登録に失敗しました',
+      ),
+    );
+  }
+  await setVoiceTranscriptionConsent(prisma, interaction.user.id, false);
+  await interaction.reply({
+    content: outcome.created
+      ? `🗑️ VC要約データの削除申請を受け付けました（申請ID: ${outcome.erasureCase.requestId}）。` +
+        `\n- 新しい録音・保存は直ちに遮断し、文字起こしへの同意も取り消しました` +
+        `\n- データの削除は運営の審査・承認の後に実行されます。進み具合はチケットでお知らせします` +
+        `\n⚠️ バックアップ・復元コピーについては、保持期間の経過で消去されます。`
+      : `🗑️ VC要約データの削除申請は既に受け付けています（申請ID: ${outcome.erasureCase.requestId}）。` +
+        `\n- 新しい録音・保存の遮断と、文字起こしへの同意の取り消しは引き続き有効です` +
+        `\n- 運営の審査・承認の後に削除が実行されます。重複した申請は不要です`,
     flags: MessageFlags.Ephemeral,
   });
 }
@@ -236,6 +295,15 @@ export const privacyCommand: SlashCommand = {
       {
         name: 'delete-voice-data',
         description: 'あなたが参加したVC要約データの削除を依頼します',
+        options: [
+          {
+            name: 'reason',
+            description:
+              '削除を依頼する理由（任意。運営の審査にのみ使われ、チケットには転記されません）',
+            type: 'string',
+            required: false,
+          },
+        ],
       },
       {
         name: 'export',

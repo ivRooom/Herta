@@ -10,6 +10,13 @@ excluded, matching member role IDs. Channels, member data, permissions, editable
 flags and Bot credentials are not forwarded. Invalid/duplicate role entries fail
 the whole response; an empty additional-role list remains valid.
 
+The response also carries `botHighestRolePosition`: the position of the Bot's
+own highest role, taken from the Bot options snapshot. It is a bare position
+number (never a role ID or name) so the ivrm Admin can warn when a selected
+role sits above the Bot and cannot be assigned or removed by it. When the
+snapshot does not state a valid position the field is null and consumers treat
+it as unknown; the directory itself still succeeds.
+
 All responses are private/no-store. Authentication failure is 401, another guild
 is 404, and unavailable configuration/upstream data is 503. The existing
 Studio-to-Bot authenticated options request retains its bounded timeout. No
