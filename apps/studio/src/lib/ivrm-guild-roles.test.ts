@@ -71,7 +71,16 @@ test('actual producer response conforms to the portable contract without interna
   const body = await response.json();
   assert.equal(validate(body), true, JSON.stringify(validate.errors));
   assert.equal(body.roles[0].color, 0x5ee6b0);
-  assert.deepEqual(Object.keys(body).sort(), ['fetchedAt', 'guildId', 'roles', 'status']);
+  // The fixture Bot snapshot states no highest role position, so the
+  // forwarded value degrades to null instead of failing the directory.
+  assert.equal(body.botHighestRolePosition, null);
+  assert.deepEqual(Object.keys(body).sort(), [
+    'botHighestRolePosition',
+    'fetchedAt',
+    'guildId',
+    'roles',
+    'status',
+  ]);
   assert.deepEqual(Object.keys(body.roles[0]).sort(), [
     'color',
     'id',
@@ -81,6 +90,39 @@ test('actual producer response conforms to the portable contract without interna
   ]);
   assert.ok(!JSON.stringify(body).includes(token));
   assert.equal(response.headers.get('cache-control'), bundle.cacheControl);
+});
+
+test('a stated Bot highest role position is forwarded as a bare number', async () => {
+  const fixture = options();
+  fixture.bot = {
+    manageMessages: true,
+    manageRoles: true,
+    moderateMembers: false,
+    kickMembers: false,
+    banMembers: false,
+    mentionEveryone: false,
+    highestRolePosition: 10,
+  } as GuildConfigurationOptions['bot'];
+  const response = await handleIvrmGuildRoles(request(), guildId, async () => fixture, environment);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.botHighestRolePosition, 10);
+});
+
+test('an unusable Bot highest role position degrades to null, never a malformed value', async () => {
+  for (const highestRolePosition of [-1, 1.5, '10', Number.NaN]) {
+    const fixture = options();
+    fixture.bot = { highestRolePosition } as unknown as GuildConfigurationOptions['bot'];
+    const response = await handleIvrmGuildRoles(
+      request(),
+      guildId,
+      async () => fixture,
+      environment,
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.botHighestRolePosition, null);
+  }
 });
 
 test('mismatched guild, duplicate IDs and malformed role lists fail as a whole', async () => {
