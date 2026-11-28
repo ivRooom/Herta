@@ -151,6 +151,7 @@ erDiagram
 | user_data_consents                | UserDataConsent               | 4            | 同意/VC Recap  |
 | vc_recap_explicit_consents        | VcRecapExplicitConsent        | 6            | 同意/VC Recap  |
 | vc_recap_erasure_requests         | VcRecapErasureRequest         | 4            | 同意/VC Recap  |
+| vc_recap_erasure_cases            | VcRecapErasureCase            | 17           | 同意/VC Recap  |
 | vc_recap_storage_objects          | VcRecapStorageObject          | 11           | VC Recap       |
 | voice_consent_access              | VoiceConsentAccess            | 3            | 同意/VC Recap  |
 | vc_recap_sessions                 | VcRecapSession                | 14           | VC Recap       |
@@ -1502,6 +1503,32 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 | requestedAt               | DateTime  | requested_at                 | @default(now()) / @db.Timestamptz(3) |
 | storageDeletionVerifiedAt | DateTime? | storage_deletion_verified_at | @db.Timestamptz(3)                   |
 | updatedAt                 | DateTime  | updated_at                   | @updatedAt / @db.Timestamptz(3)      |
+
+#### vc_recap_erasure_cases（model: VcRecapErasureCase）
+
+- 主キー: `id`（@id）
+- ユニーク制約: `requestId`（@unique。契約 v1.1 の erasureRequestId と同一の冪等キー）
+- インデックス: `@@index([userId, status])`
+- 録音削除申請のケース（#750 方式B）。fence の正本は vc_recap_erasure_requests で、本テーブルは申請単位の履歴・審査状態・チケット紐付けを持つ。理由は Herta 側にのみ保持し Web へ送らない
+
+| フィールド（Prisma） | 型        | 実列名（DB）  | 属性                                 |
+| -------------------- | --------- | ------------- | ------------------------------------ |
+| id                   | String    | id            | @id / @default(uuid())               |
+| requestId            | String    | request_id    | @unique                              |
+| userId               | String    | user_id       |                                      |
+| guildId              | String?   | guild_id      |                                      |
+| ticketId             | String?   | ticket_id     |                                      |
+| scope                | String    | scope         | @default("all")                      |
+| recordingIds         | String[]  | recording_ids | @default([])                         |
+| reason               | String?   | reason        |                                      |
+| status               | String    | status        | @default("requested")                |
+| requestedAt          | DateTime  | requested_at  | @default(now()) / @db.Timestamptz(3) |
+| decidedAt            | DateTime? | decided_at    | @db.Timestamptz(3)                   |
+| decidedBy            | String?   | decided_by    |                                      |
+| executedAt           | DateTime? | executed_at   | @db.Timestamptz(3)                   |
+| verifiedAt           | DateTime? | verified_at   | @db.Timestamptz(3)                   |
+| createdAt            | DateTime  | created_at    | @default(now()) / @db.Timestamptz(3) |
+| updatedAt            | DateTime  | updated_at    | @updatedAt / @db.Timestamptz(3)      |
 
 #### voice_consent_access（model: VoiceConsentAccess）
 

@@ -97,6 +97,9 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     assert local['services']['bot']['environment'].pop('VC_RECAP_LOCAL_WHISPER_TOKEN') == values['VC_RECAP_LOCAL_WHISPER_TOKEN']
     assert local['services']['bot']['environment'].pop('VC_RECAP_LOCAL_WHISPER_BACKEND') == 'python'
     assert local['services']['bot']['environment'].pop('VC_RECAP_NATIVE_WHISPER_ACCEPTED') == 'false'
+    # Erasure ticket link (#750 method B) is not a database topology change.
+    # It stays off by default; only an explicit env-file value enables it.
+    assert local['services']['bot']['environment'].pop('VC_RECAP_ERASURE_TICKET_LINK_ENABLED') == 'false'
     assert 'whisper' not in local['services'], 'Opt-in Python Whisper must remain OFF by default'
     assert 'whisper-native' not in local['services'], 'Opt-in native Whisper must remain OFF by default'
     assert local == baseline, 'Default-local topology changed beyond the mode guard'
