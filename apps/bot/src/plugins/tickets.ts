@@ -36,6 +36,7 @@ import {
   ticketCategoryLabel,
   TicketAttachmentByteBudget,
   TicketAttachmentIntakeLimiter,
+  TICKET_ACCEPTANCE_MESSAGE,
   TICKET_BODY_MAX_LENGTH,
   TICKET_SUBJECT_MAX_LENGTH,
   type TicketAttachmentDownloadResult,
@@ -469,6 +470,11 @@ async function handleTicketModalSubmit(
         url,
       }),
     )
+    .catch(() => undefined);
+  // 一次受けの受理メッセージは intro とは別メッセージで投稿する。
+  // Bot 自身の投稿は handleTicketMessage で取り込まないため Web には出ない。
+  await thread
+    .send({ content: TICKET_ACCEPTANCE_MESSAGE, allowedMentions: { parse: [] } })
     .catch(() => undefined);
   await notifyTicketCreated(context, config, {
     ticketId,

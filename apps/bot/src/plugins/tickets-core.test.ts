@@ -28,6 +28,7 @@ import {
   ticketRetryDelayMs,
   TicketAttachmentByteBudget,
   TicketAttachmentIntakeLimiter,
+  TICKET_ACCEPTANCE_MESSAGE,
   TICKET_ATTACHMENT_MAX_BYTES,
   TICKET_ATTACHMENT_MESSAGE_MAX_BYTES,
   TICKET_ATTACHMENTS_PATH,
@@ -781,5 +782,13 @@ describe('Embed 化 (第2段 E1〜E3)', () => {
       ticketId: 'TK-0123456789AB',
     });
     expect(embed.description).toContain('アーカイブされます');
+  });
+});
+
+describe('受理メッセージ (一次受け)', () => {
+  it('確定文面と一致する (worker 側の写しと同一文面であること)', () => {
+    expect(TICKET_ACCEPTANCE_MESSAGE).toBe(
+      'お問い合わせを受け付けました。担当者が確認のうえ、こちらのスレッドで回答します。内容によっては、回答まで1週間ほどかかる場合があります。恐れ入りますが、しばらくお待ちください。',
+    );
   });
 });
