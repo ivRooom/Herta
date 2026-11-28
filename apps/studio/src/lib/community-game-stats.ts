@@ -9,7 +9,7 @@ export const COMMUNITY_GAME_STATS_PURPOSE = 'herta-community-game-stats-read-v1'
  * ranking paginates, via limit/offset.
  */
 export const COMMUNITY_GAME_STATS_GAMES_LIMIT = 25;
-export type CommunityGameStatsMode = 'overview' | 'user' | 'game';
+export type CommunityGameStatsMode = 'overview' | 'user' | 'game' | 'channel';
 /**
  * Contract version negotiated by the signed request body:
  * 1 (or absent) returns exactly the v1 response; 2 adds the
@@ -28,12 +28,17 @@ export type CommunityGameStatsMode = 'overview' | 'user' | 'game';
  * rankings by distinct unified games played (gameCount),
  * by distinct play days (playDays) and by absolute growth
  * against the previous period (growth), all aggregated
- * from community_game_activity_daily. Signing is unchanged
- * across versions (the
- * v1 purpose string stays the key-derivation domain
+ * from community_game_activity_daily; 7 adds the overview
+ * `weeklyChampions` section (S10): the raw per-week leader
+ * candidates the relay counts weekly titles from, and the
+ * `channel` mode: one channel's member ranking from
+ * community_activity_channel_daily, selected by
+ * `channelId` / `channelMetric` exactly like the game mode
+ * selects one game. Signing is unchanged across versions
+ * (the v1 purpose string stays the key-derivation domain
  * separator).
  */
-export type CommunityGameStatsVersion = 1 | 2 | 3 | 4 | 5 | 6;
+export type CommunityGameStatsVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export interface CommunityGameStatsInput {
   guildId: string;
   from: string;
@@ -45,6 +50,8 @@ export interface CommunityGameStatsInput {
   gameName: string | null;
   gameApplicationId: string | null;
   gameKey: string | null;
+  channelId: string | null;
+  channelMetric: CommunityChannelMetric | null;
   version: CommunityGameStatsVersion;
 }
 /**
@@ -1350,6 +1357,151 @@ export function buildCommunityLeaderboardGrowth(
         a.discordUserId.localeCompare(b.discordUserId),
     );
 }
+/**
+ * v7 channel mode shapes (S10, #1082): one channel's
+ * member ranking from community_activity_channel_daily,
+ * selected by channelId and metric exactly like the game
+ * mode selects one game. The wire metric is `voice`
+ * (voice_seconds stay) or `messages` (the cooldown-filtered
+ * message count); the stored metric names stay a database
+ * concern of the route. Items and the viewer carry the
+ * metric's own field (totalSeconds / totalCount), like the
+ * v2 activity rankings do. Channel names are resolved by
+ * the route through the same guild-options lookup as the
+ * v4 channels section and degrade to null.
+ */
+export const COMMUNITY_CHANNEL_METRICS = ['voice', 'messages'] as const;
+export type CommunityChannelMetric = (typeof COMMUNITY_CHANNEL_METRICS)[number];
+export interface CommunityChannelVoiceMemberItem {
+  discordUserId: string;
+  totalSeconds: number;
+}
+export interface CommunityChannelMessageMemberItem {
+  discordUserId: string;
+  totalCount: number;
+}
+export interface CommunityChannelViewer {
+  discordUserId: string;
+  rank: number | null;
+  totalSeconds: number;
+}
+export interface CommunityChannelMessageViewer {
+  discordUserId: string;
+  rank: number | null;
+  totalCount: number;
+}
+/**
+ * Channel ranking projections follow the same rule as the
+ * activity ones: only the selected columns, re-validated
+ * field by field, aggregates through toCommunityGameSeconds
+ * so an uncast SUM throws here (#1004).
+ */
+export function projectCommunityChannelVoiceMemberRow(row: {
+  discordUserId: unknown;
+  totalSeconds: unknown;
+}): CommunityChannelVoiceMemberItem {
+  return {
+    discordUserId: activityUserId(row.discordUserId),
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+  };
+}
+export function projectCommunityChannelMessageMemberRow(row: {
+  discordUserId: unknown;
+  totalCount: unknown;
+}): CommunityChannelMessageMemberItem {
+  return {
+    discordUserId: activityUserId(row.discordUserId),
+    totalCount: toCommunityGameSeconds(row.totalCount),
+  };
+}
+/**
+ * v7 weekly champions shapes (S10, #1082): for every
+ * Monday-start week the range touches, the week's leader
+ * candidates by total play seconds from
+ * community_game_activity_daily. The supply deliberately
+ * returns this raw list and nothing derived from it: the
+ * relay counts weekly titles (the hall of fame) from the
+ * candidates, promoting the next one when a week's leader
+ * is opted out — a supply-side count could never be
+ * corrected that way, so no counts and no fixed champion
+ * are ever baked in here. The candidate list is capped so
+ * the relay has runner-ups to promote; five is headroom
+ * over the handful of opt-outs the board has ever seen,
+ * not a paging surface. weekStart is the week's Monday
+ * and weekEnd its Sunday (JST calendar dates): the first
+ * and last weeks may extend beyond the requested range,
+ * and the candidates are ranked over the days inside the
+ * range only. Weeks with no play inside the range are
+ * omitted.
+ */
+export const COMMUNITY_WEEKLY_CHAMPION_LEADERS_LIMIT = 5;
+export interface CommunityWeeklyChampionLeader {
+  discordUserId: string;
+  totalSeconds: number;
+}
+export interface CommunityWeeklyChampionWeek {
+  weekStart: string;
+  weekEnd: string;
+  leaders: CommunityWeeklyChampionLeader[];
+}
+export interface CommunityWeeklyChampionsOverview {
+  weeks: CommunityWeeklyChampionWeek[];
+}
+export interface CommunityWeeklyChampionRow {
+  weekStart: string;
+  discordUserId: string;
+  totalSeconds: number;
+}
+export function projectCommunityWeeklyChampionRow(row: {
+  weekStart: unknown;
+  discordUserId: unknown;
+  totalSeconds: unknown;
+}): CommunityWeeklyChampionRow {
+  return {
+    weekStart: toCommunityGameDateString(row.weekStart),
+    discordUserId: leaderboardUserId(row.discordUserId),
+    totalSeconds: toCommunityGameSeconds(row.totalSeconds),
+  };
+}
+function communityGameWeekEnd(weekStart: string): string {
+  if (!date(weekStart)) throw new Error('InvalidCommunityGameDate');
+  return new Date(Date.parse(`${weekStart}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
+}
+/**
+ * Assembles the weekly champions section from per-week,
+ * per-member totals (the route groups by
+ * date_trunc('week', activity_date), whose Monday is the
+ * weekStart): weeks ascending, candidates by seconds
+ * descending with the id as tie-break — the order every
+ * ranking in this contract uses — capped at the leaders
+ * limit. The builder re-sorts rather than trusting the
+ * query order, like the growth builder.
+ */
+export function buildCommunityWeeklyChampions(
+  rows: readonly CommunityWeeklyChampionRow[],
+): CommunityWeeklyChampionWeek[] {
+  const leadersByWeek = new Map<string, CommunityWeeklyChampionLeader[]>();
+  for (const row of rows) {
+    let leaders = leadersByWeek.get(row.weekStart);
+    if (!leaders) {
+      leaders = [];
+      leadersByWeek.set(row.weekStart, leaders);
+    }
+    leaders.push({ discordUserId: row.discordUserId, totalSeconds: row.totalSeconds });
+  }
+  return [...leadersByWeek.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([weekStart, leaders]) => ({
+      weekStart,
+      weekEnd: communityGameWeekEnd(weekStart),
+      leaders: leaders
+        .sort(
+          (a, b) =>
+            b.totalSeconds - a.totalSeconds || a.discordUserId.localeCompare(b.discordUserId),
+        )
+        .slice(0, COMMUNITY_WEEKLY_CHAMPION_LEADERS_LIMIT),
+    }));
+}
 export async function authorizeCommunityGameStatsRead(
   request: Request,
   environment: Record<string, string | undefined> = process.env,
@@ -1406,6 +1558,8 @@ export async function authorizeCommunityGameStatsRead(
     return fail(422, 'invalid_request');
   const keys = Object.keys(value).sort();
   const allowed = [
+    'channelId',
+    'channelMetric',
     'discordUserId',
     'from',
     'gameApplicationId',
@@ -1430,11 +1584,12 @@ export async function authorizeCommunityGameStatsRead(
     version !== 3 &&
     version !== 4 &&
     version !== 5 &&
-    version !== 6
+    version !== 6 &&
+    version !== 7
   )
     return fail(422, 'invalid_request');
   const mode = value.mode === undefined ? 'overview' : value.mode;
-  if (mode !== 'overview' && mode !== 'user' && mode !== 'game')
+  if (mode !== 'overview' && mode !== 'user' && mode !== 'game' && mode !== 'channel')
     return fail(422, 'invalid_request');
   const discordUserId = value.discordUserId === undefined ? null : value.discordUserId;
   if (mode === 'overview' && discordUserId !== null) return fail(422, 'invalid_request');
@@ -1443,6 +1598,8 @@ export async function authorizeCommunityGameStatsRead(
   const gameName = value.gameName === undefined ? null : value.gameName;
   const gameApplicationId = value.gameApplicationId === undefined ? null : value.gameApplicationId;
   const gameKey = value.gameKey === undefined ? null : value.gameKey;
+  const channelId = value.channelId === undefined ? null : value.channelId;
+  const channelMetric = value.channelMetric === undefined ? null : value.channelMetric;
   if (mode === 'game') {
     // The game mode exists only in contract v3 and later,
     // names the one game to detail, and takes discordUserId
@@ -1450,10 +1607,11 @@ export async function authorizeCommunityGameStatsRead(
     // the players. v3/v4 select by exact gameName only; v5
     // adds the gameApplicationId / gameKey selectors for the
     // unified identity (S7b), and exactly one of the three
-    // selectors must be present. v6 keeps the v5 selectors
-    // and game shape unchanged.
-    if (version !== 3 && version !== 4 && version !== 5 && version !== 6)
+    // selectors must be present. v6 and v7 keep the v5
+    // selectors and game shape unchanged.
+    if (version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7)
       return fail(422, 'invalid_request');
+    if (channelId !== null || channelMetric !== null) return fail(422, 'invalid_request');
     if (
       discordUserId !== null &&
       (typeof discordUserId !== 'string' || !/^\d{17,20}$/.test(discordUserId))
@@ -1468,19 +1626,46 @@ export async function authorizeCommunityGameStatsRead(
       return fail(422, 'invalid_request');
     if (
       gameApplicationId !== null &&
-      ((version !== 5 && version !== 6) ||
+      ((version !== 5 && version !== 6 && version !== 7) ||
         typeof gameApplicationId !== 'string' ||
         !/^\d{17,20}$/.test(gameApplicationId))
     )
       return fail(422, 'invalid_request');
     if (
       gameKey !== null &&
-      ((version !== 5 && version !== 6) ||
+      ((version !== 5 && version !== 6 && version !== 7) ||
         typeof gameKey !== 'string' ||
         !isCommunityGameKey(gameKey))
     )
       return fail(422, 'invalid_request');
-  } else if (gameName !== null || gameApplicationId !== null || gameKey !== null)
+  } else if (mode === 'channel') {
+    // The channel mode exists only in contract v7 (S10),
+    // names the one channel and metric to rank, and takes
+    // discordUserId as an optional viewer like the game
+    // mode. Both selectors must be present; the game
+    // selectors belong to the game mode only.
+    if (version !== 7) return fail(422, 'invalid_request');
+    if (typeof channelId !== 'string' || !/^\d{17,20}$/.test(channelId))
+      return fail(422, 'invalid_request');
+    if (
+      typeof channelMetric !== 'string' ||
+      !(COMMUNITY_CHANNEL_METRICS as readonly string[]).includes(channelMetric)
+    )
+      return fail(422, 'invalid_request');
+    if (
+      discordUserId !== null &&
+      (typeof discordUserId !== 'string' || !/^\d{17,20}$/.test(discordUserId))
+    )
+      return fail(422, 'invalid_request');
+    if (gameName !== null || gameApplicationId !== null || gameKey !== null)
+      return fail(422, 'invalid_request');
+  } else if (
+    gameName !== null ||
+    gameApplicationId !== null ||
+    gameKey !== null ||
+    channelId !== null ||
+    channelMetric !== null
+  )
     return fail(422, 'invalid_request');
   if (
     value.guildId !== guild ||
@@ -1506,6 +1691,8 @@ export async function authorizeCommunityGameStatsRead(
     gameName: gameName as string | null,
     gameApplicationId: gameApplicationId as string | null,
     gameKey: gameKey as string | null,
+    channelId: channelId as string | null,
+    channelMetric: channelMetric as CommunityChannelMetric | null,
     version: version as CommunityGameStatsVersion,
   };
 }
