@@ -4,6 +4,21 @@ import { authorizeIvrmIntegrationRequest } from './ivrm-integration-auth.ts';
 type Environment = Record<string, string | undefined>;
 type LoadOptions = (guildId: string) => Promise<GuildConfigurationOptions | null>;
 
+/**
+ * Resolve the Bot's own highest role position for the ivrm consumer.
+ *
+ * The Bot options payload always carries the value, but a partial snapshot
+ * must degrade to null (unknown) instead of failing the whole directory:
+ * the consumer lights its above-the-Bot warning only when a position is
+ * known, and rejects any present value that is not a safe integer >= 0.
+ */
+function resolveBotHighestRolePosition(options: GuildConfigurationOptions): number | null {
+  const position = options.bot?.highestRolePosition;
+  return typeof position === 'number' && Number.isSafeInteger(position) && position >= 0
+    ? position
+    : null;
+}
+
 /** Project a complete Bot role directory without forwarding internal option fields. */
 export function serializeIvrmGuildRoles(options: GuildConfigurationOptions, guildId: string) {
   if (options.guildId !== guildId || !Number.isFinite(Date.parse(options.fetchedAt))) return null;
@@ -30,7 +45,13 @@ export function serializeIvrmGuildRoles(options: GuildConfigurationOptions, guil
       managed: role.managed,
     });
   }
-  return { status: 'ok' as const, guildId, roles, fetchedAt: options.fetchedAt };
+  return {
+    status: 'ok' as const,
+    guildId,
+    roles,
+    botHighestRolePosition: resolveBotHighestRolePosition(options),
+    fetchedAt: options.fetchedAt,
+  };
 }
 
 /** Authorize the configured guild before loading options; expose only bounded public errors. */
