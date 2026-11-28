@@ -952,7 +952,7 @@ describe('game command reply visibility (#923)', () => {
     expect(embeds).toContain('合計 2,270');
   });
 
-  it('keeps StarRail progress on the text embed without rendering a card', async () => {
+  it('renders the StarRail progress image card when a snapshot exists', async () => {
     const result: IvrmGameAccountsResult = {
       status: 'ok',
       action: 'progress',
@@ -971,10 +971,49 @@ describe('game command reply visibility (#923)', () => {
         endgame: [],
       },
     };
-    const render = vi.fn(async () => Buffer.from('png'));
-    const view = await buildProgressViewReply(result, render as never);
-    expect(render).not.toHaveBeenCalled();
+    const renderGenshin = vi.fn(async () => Buffer.from('genshin'));
+    const renderStarRail = vi.fn(async () => Buffer.from('starrail'));
+    const view = await buildProgressViewReply(
+      result,
+      renderGenshin as never,
+      renderStarRail as never,
+    );
+    expect(renderGenshin).not.toHaveBeenCalled();
+    expect(renderStarRail).toHaveBeenCalledTimes(1);
+    expect(view.files).toHaveLength(1);
+    expect(view.files?.[0]?.name).toBe('starrail-progress-card.png');
+    expect(view.content).toContain('崩壊：スターレイルの戦績');
+    expect(view.embeds).toEqual([]);
+  });
+
+  it('falls back to the StarRail text embed when the card render fails', async () => {
+    const result: IvrmGameAccountsResult = {
+      status: 'ok',
+      action: 'progress',
+      gameCode: 'starrail',
+      uid: '800000002',
+      progressStatus: 'ok',
+      fetchedAt: '2026-11-16T01:15:00.000Z',
+      succeededAt: '2026-11-16T01:15:00.000Z',
+      hasProgress: true,
+      progress: {
+        gameCode: 'starrail',
+        uid: '800000002',
+        player: { nickname: 'いゔる。', level: 70 },
+        stats: { chests: 123 },
+        explorations: [],
+        endgame: [],
+      },
+    };
+    const view = await buildProgressViewReply(
+      result,
+      (async () => Buffer.from('genshin')) as never,
+      (async () => {
+        throw new Error('render failed');
+      }) as never,
+    );
     expect(view.files).toBeUndefined();
+    expect(view.content).toBeUndefined();
     expect(JSON.stringify(view.embeds)).toContain('記録');
   });
 });

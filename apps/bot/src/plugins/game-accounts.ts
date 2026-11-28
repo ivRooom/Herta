@@ -61,6 +61,10 @@ import {
   GENSHIN_PROGRESS_CARD_FILE_NAME,
   renderGenshinProgressCard,
 } from './game-progress-card.js';
+import {
+  STARRAIL_PROGRESS_CARD_FILE_NAME,
+  renderStarRailProgressCard,
+} from './game-progress-starrail-card.js';
 
 const UNLINK_CUSTOM_ID_PREFIX = 'game-accounts:unlink:';
 const SCORE_CUSTOM_ID_PREFIX = 'game-accounts:score:';
@@ -873,16 +877,17 @@ export interface ProgressViewReply {
 }
 
 /**
- * Builds the progress reply (#1010): for Genshin with a stored
- * snapshot, the reply is the generated image card plus a short
- * caption; every other case (StarRail, no snapshot yet, non-ok
- * results) keeps the text embed. A card render failure silently
- * degrades to the text embed, exactly like the ranking card.
+ * Builds the progress reply (#1010, #1079): for Genshin or Star Rail
+ * with a stored snapshot, the reply is the generated image card plus
+ * a short caption; every other case (no snapshot yet, non-ok results)
+ * keeps the text embed. A card render failure silently degrades to
+ * the text embed, exactly like the ranking card.
  * Exported for tests.
  */
 export async function buildProgressViewReply(
   result: IvrmGameAccountsResult,
   renderCard: typeof renderGenshinProgressCard = renderGenshinProgressCard,
+  renderStarRailCard: typeof renderStarRailProgressCard = renderStarRailProgressCard,
 ): Promise<ProgressViewReply> {
   if (result.status !== 'ok') {
     return { embeds: [buildGameAccountsErrorEmbed(result)] };
@@ -903,6 +908,22 @@ export async function buildProgressViewReply(
         content: `🗺️ ${gameName(result.gameCode)}の探索度`,
         embeds: [],
         files: [new AttachmentBuilder(png, { name: GENSHIN_PROGRESS_CARD_FILE_NAME })],
+      };
+    } catch {
+      // A failed render is just the text view; never fail the progress reply.
+    }
+  }
+  if (result.gameCode === 'starrail' && result.hasProgress && result.progress) {
+    try {
+      const png = await renderStarRailCard({
+        snapshot: result.progress,
+        uid: result.uid,
+        fetchedAtLabel: formatJstDateTime(result.succeededAt ?? result.fetchedAt),
+      });
+      return {
+        content: `🗺️ ${gameName(result.gameCode)}の戦績`,
+        embeds: [],
+        files: [new AttachmentBuilder(png, { name: STARRAIL_PROGRESS_CARD_FILE_NAME })],
       };
     } catch {
       // A failed render is just the text view; never fail the progress reply.
