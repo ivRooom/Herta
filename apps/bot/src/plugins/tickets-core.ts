@@ -102,6 +102,15 @@ export function ticketCategoryDescription(category: TicketCategory): string {
 /** 起票直後の状態ラベル (Web 側の初期状態 received に対応)。 */
 export const TICKET_INITIAL_STATUS_LABEL = '受理';
 
+/**
+ * 起票時の受理メッセージ (一次受け)。intro Embed とは別メッセージで
+ * スレッドへ平文投稿する。worker (apps/worker/src/ticket-discord-outbox.ts)
+ * にも同じ文面を写して持ち、両側のテストで文字列を固定する
+ * (文面を変えるときは両側を揃えること)。
+ */
+export const TICKET_ACCEPTANCE_MESSAGE =
+  'お問い合わせを受け付けました。担当者が確認のうえ、こちらのスレッドで回答します。内容によっては、回答まで1週間ほどかかる場合があります。恐れ入りますが、しばらくお待ちください。';
+
 /** パネル Embed。カテゴリごとの説明をフィールドに併記する (E1)。 */
 export function buildTicketPanelEmbed(enabledCategories: readonly TicketCategory[]): TicketEmbed {
   return {
