@@ -111,6 +111,10 @@ Provider失敗・timeout時はlexical searchへfallbackします。
 | `JWT_EXPIRATION`         | -    | アクセストークン有効期間     | `15m`            |
 | `JWT_REFRESH_EXPIRATION` | -    | リフレッシュトークン有効期間 | `7d`             |
 | `INTERNAL_JWT_SECRET`    | -    | Bot ↔ API 内部通信用署名キー | 本番では必ず変更 |
+| `VALORANT_PORTAL_API_ENABLED` | - | VALORANT ポータル API リスナーの有効化 (既定 OFF) | Bot。[VALORANT_PORTAL_API.md](./VALORANT_PORTAL_API.md) 参照 |
+| `HERTA_PORTAL_API_SECRET` | -    | ポータル API の HMAC 秘密 (S6 専用、値はリポジトリに書かない) | Bot / ポータル API 有効時必須 |
+| `VALORANT_PORTAL_API_HOST` | -    | ポータル API の待受ホスト | Bot (既定 `127.0.0.1`) |
+| `VALORANT_PORTAL_API_PORT` | -    | ポータル API の待受ポート | Bot (既定 `3100`) |
 
 ## ロギング
 
